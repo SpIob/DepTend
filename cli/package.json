@@ -1,0 +1,22 @@
+{
+  "name": "@deptend/cli",
+  "version": "0.0.1",
+  "private": true,
+  "description": "npx-runnable CLI — reproduces the same analysis locally and exports JSON",
+  "type": "module",
+  "bin": {
+    "deptend": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "typecheck": "tsc --noEmit",
+    "test": "node --experimental-vm-modules node_modules/.bin/jest"
+  },
+  "dependencies": {
+    "@deptend/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.5.0"
+  }
+}

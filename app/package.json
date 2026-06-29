@@ -1,0 +1,26 @@
+{
+  "name": "@deptend/app",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --turbopack",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@deptend/core": "workspace:*",
+    "next": "^15.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "next-auth": "^5.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "postcss": "^8.0.0",
+    "tailwindcss": "^3.4.0",
+    "typescript": "^5.5.0"
+  }
+}

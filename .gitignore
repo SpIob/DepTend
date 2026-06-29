@@ -1,0 +1,43 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Next.js
+.next/
+out/
+
+# Build outputs
+dist/
+build/
+
+# Environment files — never commit secrets
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/settings.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# TypeScript
+*.tsbuildinfo
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# Vercel
+.vercel/
