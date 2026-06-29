@@ -8,8 +8,8 @@ const config: NextConfig = {
   transpilePackages: ["@deptend/core"],
 
   // Security headers (applied to all routes)
-  async headers() {
-    return [
+  headers() {
+    return Promise.resolve([
       {
         source: "/(.*)",
         headers: [
@@ -26,7 +26,7 @@ const config: NextConfig = {
           },
         ],
       },
-    ];
+    ]);
   },
 };
 

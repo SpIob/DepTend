@@ -16,27 +16,23 @@
 // Enums (mirror PostgreSQL TYPE definitions in schema.sql)
 // ---------------------------------------------------------------------------
 
-export type IngestionStatus = 'pending' | 'running' | 'complete' | 'failed';
+export type IngestionStatus = "pending" | "running" | "complete" | "failed";
 
-export type DepType = 'production' | 'development' | 'peer' | 'optional';
+export type DepType = "production" | "development" | "peer" | "optional";
 
-export type Ecosystem = 'npm'; // 'pypi' added in Phase 6+
+export type Ecosystem = "npm"; // 'pypi' added in Phase 6+
 
-export type AdvisorySource = 'osv' | 'ghsa';
+export type AdvisorySource = "osv" | "ghsa";
 
-export type Severity = 'critical' | 'high' | 'medium' | 'low' | 'unknown';
+export type Severity = "critical" | "high" | "medium" | "low" | "unknown";
 
-export type MissionType =
-  | 'vulnerability_fix'
-  | 'dep_update'
-  | 'maintenance'
-  | 'license_issue';
+export type MissionType = "vulnerability_fix" | "dep_update" | "maintenance" | "license_issue";
 
-export type MissionStatus = 'open' | 'claimed' | 'resolved' | 'dismissed';
+export type MissionStatus = "open" | "claimed" | "resolved" | "dismissed";
 
-export type EffortLabel = 'trivial' | 'low' | 'medium' | 'high';
+export type EffortLabel = "trivial" | "low" | "medium" | "high";
 
-export type ScoreConfidence = 'high' | 'medium' | 'low';
+export type ScoreConfidence = "high" | "medium" | "low";
 
 // ---------------------------------------------------------------------------
 // JSONB payload shapes
@@ -44,8 +40,8 @@ export type ScoreConfidence = 'high' | 'medium' | 'low';
 
 /** One entry in an OSV "ranges" array */
 export interface OsvVersionRange {
-  type: 'SEMVER' | 'ECOSYSTEM' | 'GIT';
-  events: Array<{ introduced?: string; fixed?: string; last_affected?: string }>;
+  type: "SEMVER" | "ECOSYSTEM" | "GIT";
+  events: { introduced?: string; fixed?: string; last_affected?: string }[];
 }
 
 /** Raw scoring inputs stored on mission_scores for auditability */
@@ -68,7 +64,7 @@ export interface EcosystemValueInputs {
 
 export interface EffortInputs {
   /** e.g. "major" | "minor" | "patch" */
-  semver_bump: 'major' | 'minor' | 'patch' | 'unknown';
+  semver_bump: "major" | "minor" | "patch" | "unknown";
   has_migration_guide: boolean;
   /** signals parsed from changelog / release notes */
   breaking_change_signals: string[];
@@ -106,7 +102,7 @@ export interface Repo {
 
 export type RepoInsert = Omit<
   Repo,
-  'id' | 'created_at' | 'updated_at' | 'last_ingested_at' | 'ingestion_error'
+  "id" | "created_at" | "updated_at" | "last_ingested_at" | "ingestion_error"
 >;
 
 // -----------
@@ -126,7 +122,7 @@ export interface Dependency {
   updated_at: Date;
 }
 
-export type DependencyInsert = Omit<Dependency, 'id' | 'created_at' | 'updated_at'>;
+export type DependencyInsert = Omit<Dependency, "id" | "created_at" | "updated_at">;
 
 // -----------
 
@@ -149,7 +145,7 @@ export interface Advisory {
   updated_at: Date;
 }
 
-export type AdvisoryInsert = Omit<Advisory, 'id' | 'created_at' | 'updated_at'>;
+export type AdvisoryInsert = Omit<Advisory, "id" | "created_at" | "updated_at">;
 
 // -----------
 
@@ -158,11 +154,11 @@ export interface DependencyAdvisory {
   dependency_id: string;
   advisory_id: string;
   is_affected: boolean;
-  match_method: 'version_spec' | 'resolved_version';
+  match_method: "version_spec" | "resolved_version";
   created_at: Date;
 }
 
-export type DependencyAdvisoryInsert = Omit<DependencyAdvisory, 'id' | 'created_at'>;
+export type DependencyAdvisoryInsert = Omit<DependencyAdvisory, "id" | "created_at">;
 
 // -----------
 
@@ -185,7 +181,7 @@ export interface Mission {
   updated_at: Date;
 }
 
-export type MissionInsert = Omit<Mission, 'id' | 'created_at' | 'updated_at'>;
+export type MissionInsert = Omit<Mission, "id" | "created_at" | "updated_at">;
 
 // -----------
 
@@ -207,14 +203,14 @@ export interface MissionScore {
   updated_at: Date;
 }
 
-export type MissionScoreInsert = Omit<MissionScore, 'id' | 'created_at' | 'updated_at'>;
+export type MissionScoreInsert = Omit<MissionScore, "id" | "created_at" | "updated_at">;
 
 // -----------
 
 export interface IngestionRun {
   id: string;
   repo_id: string;
-  triggered_by: 'cron' | 'manual' | 'submit';
+  triggered_by: "cron" | "manual" | "submit";
   status: IngestionStatus;
   dependencies_found: number;
   advisories_fetched: number;
@@ -227,7 +223,7 @@ export interface IngestionRun {
   created_at: Date;
 }
 
-export type IngestionRunInsert = Omit<IngestionRun, 'id' | 'created_at'>;
+export type IngestionRunInsert = Omit<IngestionRun, "id" | "created_at">;
 
 // ---------------------------------------------------------------------------
 // Convenience join types (common query shapes)
@@ -242,8 +238,5 @@ export interface MissionWithScore extends Mission {
 
 /** Repo with its latest ingestion run status */
 export interface RepoWithIngestionStatus extends Repo {
-  latest_run: Pick<
-    IngestionRun,
-    'status' | 'started_at' | 'finished_at' | 'error_message'
-  > | null;
+  latest_run: Pick<IngestionRun, "status" | "started_at" | "finished_at" | "error_message"> | null;
 }
