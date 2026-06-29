@@ -7,11 +7,7 @@ export const metadata: Metadata = {
     "A maintenance-first dashboard that turns dependency data into prioritized, explainable maintenance missions.",
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}): React.JSX.Element {
+export default function RootLayout({ children }: { children: React.ReactNode }): React.JSX.Element {
   return (
     <html lang="en">
       <body>{children}</body>

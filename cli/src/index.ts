@@ -6,7 +6,5 @@
  * Running this before Phase 4 prints a status message and exits cleanly.
  */
 
-console.error(
-  "deptend CLI is not yet implemented. It ships in Phase 4 of the roadmap."
-);
+console.error("deptend CLI is not yet implemented. It ships in Phase 4 of the roadmap.");
 process.exit(1);

@@ -14,9 +14,7 @@
 
 const args = process.argv.slice(2);
 const triggeredBy = args[args.indexOf("--triggered-by") + 1] ?? "manual";
-const repoId = args.includes("--repo-id")
-  ? args[args.indexOf("--repo-id") + 1]
-  : null;
+const repoId = args.includes("--repo-id") ? args[args.indexOf("--repo-id") + 1] : null;
 
 console.log(`[ingest] triggered-by=${triggeredBy} repo-id=${repoId ?? "all"}`);
 console.log("[ingest] Ingestion pipeline not yet implemented (Phase 1). Exiting.");

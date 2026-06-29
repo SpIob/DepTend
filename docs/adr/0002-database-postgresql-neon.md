@@ -31,13 +31,13 @@ Alternatives considered: Prisma (heavier runtime, less suited to edge), Kysely (
 
 ## Alternatives considered
 
-| Option | Rejected because |
-|---|---|
-| PlanetScale MySQL | MySQL is not Postgres; OSV JSONB queries would require different handling. PlanetScale's free tier was discontinued (2024). |
-| Supabase | Free tier available, but adds Auth and Storage services that are out of scope; Neon is leaner. |
-| SQLite (primary) | No managed hosting; not suitable for Vercel serverless without hacks (e.g. Turso/libsql adds a free-tier account dependency). Good for local dev and CLI only. |
-| MongoDB Atlas | Non-relational; relational joins (deps ↔ advisories ↔ missions) are cleaner in SQL. |
-| Redis | Not a primary store; could be added for caching in a later phase. |
+| Option            | Rejected because                                                                                                                                               |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PlanetScale MySQL | MySQL is not Postgres; OSV JSONB queries would require different handling. PlanetScale's free tier was discontinued (2024).                                    |
+| Supabase          | Free tier available, but adds Auth and Storage services that are out of scope; Neon is leaner.                                                                 |
+| SQLite (primary)  | No managed hosting; not suitable for Vercel serverless without hacks (e.g. Turso/libsql adds a free-tier account dependency). Good for local dev and CLI only. |
+| MongoDB Atlas     | Non-relational; relational joins (deps ↔ advisories ↔ missions) are cleaner in SQL.                                                                            |
+| Redis             | Not a primary store; could be added for caching in a later phase.                                                                                              |
 
 ## Consequences
 

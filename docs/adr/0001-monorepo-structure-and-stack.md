@@ -14,13 +14,13 @@ deptend.dev is a zero-budget, solo-developer project that shares logic across th
 
 Use a **pnpm monorepo** with the following package layout:
 
-| Package | Path | Language | Notes |
-|---|---|---|---|
-| Next.js app | `/app` | TypeScript | Frontend + API routes |
-| CLI companion | `/cli` | TypeScript | npx-runnable; Phase 4 |
-| Shared core | `/packages/core` | TypeScript | Dependency parsing, scoring |
-| Ingestion scripts | `/scripts` | JavaScript | Runs in GitHub Actions |
-| Documentation | `/docs` | Markdown | ADRs, data model, setup guide |
+| Package           | Path             | Language   | Notes                         |
+| ----------------- | ---------------- | ---------- | ----------------------------- |
+| Next.js app       | `/app`           | TypeScript | Frontend + API routes         |
+| CLI companion     | `/cli`           | TypeScript | npx-runnable; Phase 4         |
+| Shared core       | `/packages/core` | TypeScript | Dependency parsing, scoring   |
+| Ingestion scripts | `/scripts`       | JavaScript | Runs in GitHub Actions        |
+| Documentation     | `/docs`          | Markdown   | ADRs, data model, setup guide |
 
 **Package manager:** pnpm (not npm, not yarn).  
 **Reason:** pnpm's symlinked `node_modules` prevents phantom dependency bugs common in monorepos, it is free, and Vercel supports it natively.
@@ -29,12 +29,12 @@ Use a **pnpm monorepo** with the following package layout:
 
 ## Alternatives considered
 
-| Option | Rejected because |
-|---|---|
-| Separate repositories | Requires publishing `@deptend/core` to npm registry or using git submodules; adds release overhead unacceptable solo. |
-| Turborepo | Adds an orchestration dependency with its own learning curve. pnpm's built-in `--filter` and `--recursive` are sufficient at this scale. |
-| Yarn workspaces | No material advantage over pnpm for this project; pnpm is already decided. |
-| npm workspaces | Slower than pnpm; phantom dependency risk in flat `node_modules`. |
+| Option                | Rejected because                                                                                                                         |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Separate repositories | Requires publishing `@deptend/core` to npm registry or using git submodules; adds release overhead unacceptable solo.                    |
+| Turborepo             | Adds an orchestration dependency with its own learning curve. pnpm's built-in `--filter` and `--recursive` are sufficient at this scale. |
+| Yarn workspaces       | No material advantage over pnpm for this project; pnpm is already decided.                                                               |
+| npm workspaces        | Slower than pnpm; phantom dependency risk in flat `node_modules`.                                                                        |
 
 ## Consequences
 

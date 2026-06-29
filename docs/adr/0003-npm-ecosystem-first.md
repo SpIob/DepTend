@@ -26,12 +26,12 @@ Three factors drove this choice:
 
 ## Alternatives considered
 
-| Ecosystem | Notes |
-|---|---|
-| PyPI | Strong second choice. Good OSV coverage. Deferred to Phase 6+. |
-| Maven (Java) | Adequate OSV coverage, but adds JVM complexity to a Node.js-only build. |
+| Ecosystem        | Notes                                                                                   |
+| ---------------- | --------------------------------------------------------------------------------------- |
+| PyPI             | Strong second choice. Good OSV coverage. Deferred to Phase 6+.                          |
+| Maven (Java)     | Adequate OSV coverage, but adds JVM complexity to a Node.js-only build.                 |
 | crates.io (Rust) | Excellent data quality (RUSTSEC), but Rust ecosystem is smaller; fewer potential users. |
-| RubyGems | OSV coverage is more sparse. |
+| RubyGems         | OSV coverage is more sparse.                                                            |
 
 ## Consequences
 
