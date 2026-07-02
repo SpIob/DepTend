@@ -14,6 +14,7 @@
  */
 
 import { describe, expect, it, vi, beforeEach } from "vitest";
+import { getTableName, type Table } from "drizzle-orm";
 import { IngestionWriter } from "./writer.js";
 import type { WriteIngestionInput } from "./writer.js";
 import type { IngestorResult } from "./interface.js";
@@ -121,13 +122,13 @@ function makeMockDb(overrides: {
   const db: MockDb = {
     _calls: calls,
 
-    insert: vi.fn((table: { _: { name: string } }): Chain => {
-      calls.inserts.push(table._.name);
+    insert: vi.fn((table: Table): Chain => {
+      calls.inserts.push(getTableName(table));
       return makeChain();
     }),
 
-    update: vi.fn((table: { _: { name: string } }): Chain => {
-      calls.updates.push(table._.name);
+    update: vi.fn((table: Table): Chain => {
+      calls.updates.push(getTableName(table));
       return makeChain();
     }),
 
