@@ -53,3 +53,7 @@ jobs:
 
       - name: Report failure
         if: failure()
+        run: |
+          echo "::error::Ingestion run failed — see the 'Run ingestion' step above for details."
+          echo "## ❌ Ingestion failed" >> "$GITHUB_STEP_SUMMARY"
+          echo "Check the **Run ingestion** step log for the error." >> "$GITHUB_STEP_SUMMARY"
