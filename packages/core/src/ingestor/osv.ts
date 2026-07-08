@@ -2,15 +2,28 @@
  * OSV Advisory Fetcher
  *
  * Queries the OSV batch API (https://osv.dev/docs/#tag/api/operation/OSV_QueryAffectedBatch)
- * for all dependencies parsed from a repository's package.json and maps
- * each result to a NewAdvisory insert shape ready for the DB write layer.
+ * to find which advisory IDs affect each dependency, then fetches the full
+ * record for each unique advisory via the single-vulnerability endpoint
+ * (https://osv.dev/docs/#tag/api/operation/OSV_GetVulnById) and maps each to
+ * a NewAdvisory insert shape ready for the DB write layer.
  *
  * Design decisions:
- *   - Single batch request per repo (OSV supports up to 1,000 packages per
- *     call, which comfortably exceeds any realistic package.json).
+ *   - The batch endpoint (`querybatch`) returns only {id, modified} per
+ *     result — never severity, affected ranges, summary, or details. This
+ *     is OSV's documented contract, not a partial/flaky response. A
+ *     follow-up GET /v1/vulns/{id} is required for the full record (ADR
+ *     0010 — this was a real bug in the original Phase 1 implementation,
+ *     which treated the batch result as if it were already the full record).
+ *   - Detail fetches are deduplicated by advisory ID first (the same
+ *     advisory can affect multiple packages) and run with bounded
+ *     concurrency (default 10), mirroring registry.ts's pattern.
+ *   - A single advisory's detail fetch failing does not fail the whole run
+ *     — it's warned about and dropped from both the advisories map and
+ *     packageAdvisoryMap; every other advisory in the batch still writes.
  *   - No auth required — OSV is a fully public API.
- *   - Raw OSV response stored verbatim in advisory.rawData for full
- *     auditability and future re-processing without re-fetching.
+ *   - Raw OSV response (the full record, not the minimal batch entry)
+ *     stored verbatim in advisory.rawData for full auditability and future
+ *     re-processing without re-fetching.
  *   - Severity mapped from CVSS v3 score using NIST thresholds where CVSS
  *     is available; falls back to OSV's own severity enum; defaults to
  *     "unknown" when neither is present.
@@ -22,7 +35,8 @@
  *   - Version range matching against resolved versions (requires lock file)
  *   - Transitive dependency advisories
  *
- * ADR: docs/adr/0003-npm-ecosystem-first.md
+ * ADR: docs/adr/0003-npm-ecosystem-first.md (ecosystem choice)
+ *      docs/adr/0010-osv-fetcher-detail-fetch-fix.md (batch/detail split)
  */
 
 import type { NewAdvisory } from "../db/schema.js";
@@ -34,9 +48,13 @@ import type { ParsedDependency } from "../ingestor/interface.js";
 // ---------------------------------------------------------------------------
 
 const OSV_BATCH_URL = "https://api.osv.dev/v1/querybatch";
+const OSV_VULN_BASE_URL = "https://api.osv.dev/v1/vulns";
 
 /** OSV enforces a 1,000-package limit per batch request. */
 const OSV_BATCH_LIMIT = 1000;
+
+/** Default number of in-flight GET /v1/vulns/{id} requests at once. */
+const DEFAULT_DETAIL_CONCURRENCY = 10;
 
 // ---------------------------------------------------------------------------
 // Raw OSV API response types
@@ -48,6 +66,20 @@ interface OsvQuery {
 
 interface OsvBatchRequest {
   queries: OsvQuery[];
+}
+
+/** What the batch endpoint actually returns per result — id + modified only. */
+interface OsvMinimalVuln {
+  id: string;
+  modified?: string;
+}
+
+interface OsvBatchQueryResult {
+  vulns?: OsvMinimalVuln[];
+}
+
+interface OsvBatchResponse {
+  results: OsvBatchQueryResult[];
 }
 
 interface OsvSeverity {
@@ -68,6 +100,8 @@ interface OsvAffected {
   ecosystem_specific?: Record<string, unknown>;
 }
 
+/** The full record returned by GET /v1/vulns/{id} — everything is optional
+ * except id, since OSV/GHSA entries don't uniformly populate every field. */
 interface OsvVulnerability {
   id: string;
   modified: string;
@@ -79,14 +113,6 @@ interface OsvVulnerability {
   affected?: OsvAffected[];
   database_specific?: Record<string, unknown>;
   references?: { type: string; url: string }[];
-}
-
-interface OsvQueryResult {
-  vulns?: OsvVulnerability[];
-}
-
-interface OsvBatchResponse {
-  results: OsvQueryResult[];
 }
 
 // ---------------------------------------------------------------------------
@@ -111,17 +137,32 @@ export interface OsvFetchResult {
 
 export class OsvFetcher {
   private readonly batchUrl: string;
+  private readonly vulnUrlBase: string;
+  private readonly concurrency: number;
 
-  constructor(batchUrl = OSV_BATCH_URL) {
+  constructor(
+    batchUrl = OSV_BATCH_URL,
+    vulnUrlBase = OSV_VULN_BASE_URL,
+    concurrency = DEFAULT_DETAIL_CONCURRENCY,
+  ) {
     // Injected in tests to point at a mock server
     this.batchUrl = batchUrl;
+    this.vulnUrlBase = vulnUrlBase;
+    this.concurrency = concurrency;
   }
 
   /**
-   * Fetch advisories for all provided dependencies in a single batch call.
+   * Fetch advisories for all provided dependencies.
    *
-   * Deduplicates by package name before sending — the same package appearing
-   * as both a production and dev dependency only needs one OSV query.
+   * Two network stages: one batch query to find which advisory IDs affect
+   * which packages, then one detail fetch per unique advisory ID to get the
+   * full record (severity, affected ranges, summary — see ADR 0010 for why
+   * the batch response alone isn't enough).
+   *
+   * Deduplicates packages before the batch query, and deduplicates advisory
+   * IDs before the detail fetch — the same package appearing as both a
+   * production and dev dependency only needs one query, and the same
+   * advisory affecting multiple packages only needs one detail fetch.
    *
    * @param dependencies - Parsed dependencies from NpmIngestor
    * @returns OsvFetchResult with advisory insert rows and the package→advisory map
@@ -147,7 +188,7 @@ export class OsvFetcher {
     const queried = uniquePackages.slice(0, OSV_BATCH_LIMIT);
 
     // ------------------------------------------------------------------
-    // Build and send the batch request
+    // Stage 1: batch query — returns only {id, modified} per result
     // ------------------------------------------------------------------
     const requestBody: OsvBatchRequest = {
       queries: queried.map((name) => ({
@@ -184,40 +225,66 @@ export class OsvFetcher {
     }
 
     // ------------------------------------------------------------------
-    // Map results back to their packages and build advisory rows
+    // Build package -> [ids] from the (minimal) batch response, and
+    // collect the set of unique ids needing a full-detail fetch. Also
+    // track the first package each id was seen under — advisories.
+    // packageName is NOT NULL, and an advisory can affect more than one
+    // package (see "deduplicates advisories that affect multiple packages"
+    // below), so this preserves the original code's convention of
+    // attributing the row to whichever package it was first encountered
+    // under, now that fetching happens independently of any one package.
     // ------------------------------------------------------------------
-    const advisories = new Map<string, NewAdvisory>();
     const packageAdvisoryMap = new Map<string, string[]>();
+    const uniqueIds = new Set<string>();
+    const firstPackageForId = new Map<string, string>();
 
     for (let i = 0; i < queried.length; i++) {
       const packageName = queried[i];
       if (packageName === undefined) continue;
 
       const result = batchResponse.results[i];
-      const vulns = result?.vulns ?? [];
+      const minimalVulns = result?.vulns ?? [];
 
-      const osvIdsForPackage: string[] = [];
+      const idsForPackage: string[] = [];
 
-      for (const vuln of vulns) {
+      for (const vuln of minimalVulns) {
         if (!vuln.id) {
           warnings.push(
             `OSV returned a vulnerability with no id for package "${packageName}" — skipped.`,
           );
           continue;
         }
-
-        osvIdsForPackage.push(vuln.id);
-
-        // Avoid re-processing a vuln that affects multiple packages in this
-        // batch (e.g. a monorepo advisory covering several npm packages).
-        if (advisories.has(vuln.id)) continue;
-
-        const advisory = this.mapVulnToAdvisory(vuln, packageName, warnings);
-        advisories.set(vuln.id, advisory);
+        idsForPackage.push(vuln.id);
+        uniqueIds.add(vuln.id);
+        if (!firstPackageForId.has(vuln.id)) {
+          firstPackageForId.set(vuln.id, packageName);
+        }
       }
 
-      if (osvIdsForPackage.length > 0) {
-        packageAdvisoryMap.set(packageName, osvIdsForPackage);
+      if (idsForPackage.length > 0) {
+        packageAdvisoryMap.set(packageName, idsForPackage);
+      }
+    }
+
+    // ------------------------------------------------------------------
+    // Stage 2: fetch full details per unique advisory id
+    // ------------------------------------------------------------------
+    const { advisories, failedIds } = await this.fetchFullDetails(
+      [...uniqueIds],
+      firstPackageForId,
+      warnings,
+    );
+
+    // Drop any advisory whose detail fetch failed from the package map too
+    // — we can't write a valid row for it, so it shouldn't be referenced.
+    if (failedIds.size > 0) {
+      for (const [packageName, ids] of packageAdvisoryMap) {
+        const remaining = ids.filter((id) => !failedIds.has(id));
+        if (remaining.length === 0) {
+          packageAdvisoryMap.delete(packageName);
+        } else {
+          packageAdvisoryMap.set(packageName, remaining);
+        }
       }
     }
 
@@ -225,19 +292,92 @@ export class OsvFetcher {
   }
 
   // ---------------------------------------------------------------------------
-  // Private helpers
+  // Private helpers — detail fetch
   // ---------------------------------------------------------------------------
 
   /**
-   * Map a single OSV vulnerability object to a NewAdvisory insert shape.
-   * The raw OSV object is stored verbatim in rawData.
+   * Fetch the full record for each unique advisory id, with at most
+   * `this.concurrency` requests in flight at once. A single failed fetch is
+   * warned about and excluded from the result — it does not throw or stop
+   * the other ids from being processed.
+   */
+  private async fetchFullDetails(
+    ids: string[],
+    firstPackageForId: Map<string, string>,
+    warnings: string[],
+  ): Promise<{ advisories: Map<string, NewAdvisory>; failedIds: Set<string> }> {
+    const advisories = new Map<string, NewAdvisory>();
+    const failedIds = new Set<string>();
+
+    let index = 0;
+
+    const worker = async (): Promise<void> => {
+      while (index < ids.length) {
+        const current = index++;
+        const id = ids[current];
+        if (id === undefined) continue;
+
+        try {
+          const vuln = await this.fetchVulnById(id);
+          // Guaranteed present: every id here came from firstPackageForId's
+          // own key set (built from the same ids in fetchAdvisories).
+          const packageName = firstPackageForId.get(id) ?? "";
+          advisories.set(id, this.mapVulnToAdvisory(vuln, packageName, warnings));
+        } catch (err) {
+          failedIds.add(id);
+          warnings.push(
+            `Failed to fetch full details for advisory ${id}: ${String(err)}. ` +
+              `Skipped — this advisory will not appear in results this run.`,
+          );
+        }
+      }
+    };
+
+    const workers = Array.from({ length: Math.min(this.concurrency, ids.length) }, () => worker());
+    await Promise.all(workers);
+
+    return { advisories, failedIds };
+  }
+
+  private async fetchVulnById(id: string): Promise<OsvVulnerability> {
+    let response: Response;
+    try {
+      response = await fetch(`${this.vulnUrlBase}/${encodeURIComponent(id)}`);
+    } catch (err) {
+      throw new Error(`Network error: ${String(err)}`);
+    }
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${String(response.status)}`);
+    }
+
+    try {
+      return (await response.json()) as OsvVulnerability;
+    } catch (err) {
+      throw new Error(`Failed to parse response: ${String(err)}`);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Private helpers — mapping a full record to a NewAdvisory
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Map a single full OSV vulnerability record to a NewAdvisory insert
+   * shape. The raw OSV object is stored verbatim in rawData.
+   *
+   * packageName is the first package this advisory id was encountered
+   * under in the batch response (see fetchAdvisories) — preserved from
+   * the original Phase 1 convention. advisories.packageName is NOT NULL,
+   * and the full picture of every package an advisory affects lives in
+   * dependency_advisories, not on this single column.
    */
   private mapVulnToAdvisory(
     vuln: OsvVulnerability,
     packageName: string,
     warnings: string[],
   ): NewAdvisory {
-    const severity = this.extractSeverity(vuln, packageName, warnings);
+    const severity = this.extractSeverity(vuln, warnings);
     const cvssScore = this.extractCvssScore(vuln);
     const affectedVersions = this.extractAffectedRanges(vuln);
     const fixedVersion = this.extractFixedVersion(affectedVersions);
@@ -281,11 +421,7 @@ export class OsvFetcher {
    * NIST CVSS v3 thresholds:
    *   Critical ≥ 9.0 | High ≥ 7.0 | Medium ≥ 4.0 | Low ≥ 0.1 | None = 0.0
    */
-  private extractSeverity(
-    vuln: OsvVulnerability,
-    packageName: string,
-    warnings: string[],
-  ): Severity {
+  private extractSeverity(vuln: OsvVulnerability, warnings: string[]): Severity {
     // 1. Try CVSS v3 numeric score
     const cvss3 = vuln.severity?.find((s) => s.type === "CVSS_V3");
     if (cvss3) {
@@ -308,8 +444,7 @@ export class OsvFetcher {
     }
 
     warnings.push(
-      `No CVSS score or severity level found for advisory ${vuln.id} ` +
-        `(package "${packageName}"). Severity recorded as "unknown".`,
+      `No CVSS score or severity level found for advisory ${vuln.id}. Severity recorded as "unknown".`,
     );
     return "unknown";
   }

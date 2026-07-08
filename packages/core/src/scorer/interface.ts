@@ -5,11 +5,11 @@
  * value) must implement its interface and be covered by unit tests before
  * use in production.
  *
- * Scoring weights v0.1:
+ * Scoring weights v1.0.0:
  *   composite = (impact * 0.60) + (ecosystem_value * 0.40)
  *   effort_label is a categorical tie-breaker, not a numeric multiplier.
  *
- * ADR: docs/adr/0005-scoring-algorithm.md (written in Phase 2)
+ * ADR: docs/adr/0006-scoring-algorithm.md
  */
 
 import type {

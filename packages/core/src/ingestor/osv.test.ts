@@ -2,8 +2,21 @@
  * OsvFetcher unit tests
  *
  * All OSV API calls are mocked via vi.stubGlobal — no network access.
+ *
+ * Mocking mirrors OSV's real, documented two-endpoint contract (ADR 0010):
+ *   - POST .../querybatch returns only {id, modified} per result — never
+ *     severity/affected/summary/details. mockOsvApi's batchResults param
+ *     reflects this; it only ever takes {id, modified}.
+ *   - GET  .../vulns/{id} returns the full record. mockOsvApi's detailsById
+ *     param supplies these, keyed by advisory id.
+ *   - mockOsvApiForVulns is a convenience wrapper for the common case of "N
+ *     packages, each with a known set of full vulnerability records" — it
+ *     derives both the minimal batch entries and the detail lookup from a
+ *     single list of full records, so most tests just supply full vulns.
+ *
  * Tests cover: happy path, deduplication, severity mapping, version
- * extraction, edge cases, and error handling.
+ * extraction, edge cases, batch-level error handling, and detail-fetch
+ * error handling (a single failed detail fetch must not fail the run).
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -18,7 +31,7 @@ function dep(package_name: string): ParsedDependency {
   return { package_name, version_spec: "^1.0.0", dep_type: "production" };
 }
 
-/** Minimal OSV vulnerability shape */
+/** Full OSV vulnerability record — what GET /v1/vulns/{id} returns. */
 function makeVuln(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     id: "GHSA-xxxx-yyyy-zzzz",
@@ -42,14 +55,60 @@ function makeVuln(overrides: Record<string, unknown> = {}): Record<string, unkno
   };
 }
 
-function mockOsvResponse(results: { vulns?: unknown[] }[]): () => Response {
-  return vi.fn(
-    (): Response =>
-      new Response(JSON.stringify({ results }), {
+interface MinimalVuln {
+  id: string;
+  modified?: string;
+}
+
+/**
+ * Mocks both OSV endpoints in one fetch stub:
+ *   - POST .../querybatch -> { results: batchResults } (minimal entries only)
+ *   - GET  .../vulns/{id} -> detailsById[id], or a 404 if not present
+ */
+function mockOsvApi(
+  batchResults: { vulns?: MinimalVuln[] }[],
+  detailsById: Record<string, Record<string, unknown>> = {},
+): ReturnType<typeof vi.fn> {
+  return vi.fn((url: string | URL, init?: RequestInit): Response => {
+    if (init?.method === "POST") {
+      return new Response(JSON.stringify({ results: batchResults }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
-      }),
-  );
+      });
+    }
+
+    // GET .../vulns/{id}
+    const id = url.toString().split("/").pop() ?? "";
+    const detail = detailsById[id];
+    if (detail === undefined) {
+      return new Response("not found", { status: 404 });
+    }
+    return new Response(JSON.stringify(detail), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  });
+}
+
+/**
+ * Convenience wrapper for the common case: each package's results is a list
+ * of FULL vulnerability records. Derives the minimal batch entries and the
+ * detail-endpoint lookup map from them automatically.
+ */
+function mockOsvApiForVulns(
+  perPackageFullVulns: Record<string, unknown>[][],
+): ReturnType<typeof vi.fn> {
+  const detailsById: Record<string, Record<string, unknown>> = {};
+
+  const batchResults = perPackageFullVulns.map((vulns) => ({
+    vulns: vulns.map((v): MinimalVuln => {
+      const id = v.id as string;
+      detailsById[id] = v;
+      return { id, modified: v.modified as string | undefined };
+    }),
+  }));
+
+  return mockOsvApi(batchResults, detailsById);
 }
 
 // ---------------------------------------------------------------------------
@@ -76,8 +135,8 @@ describe("OsvFetcher", () => {
       expect(result.warnings).toHaveLength(0);
     });
 
-    it("maps a single advisory correctly", async () => {
-      vi.stubGlobal("fetch", mockOsvResponse([{ vulns: [makeVuln()] }]));
+    it("maps a single advisory correctly, using the detail endpoint's full record", async () => {
+      vi.stubGlobal("fetch", mockOsvApiForVulns([[makeVuln()]]));
 
       const result = await fetcher.fetchAdvisories([dep("lodash")]);
 
@@ -100,7 +159,7 @@ describe("OsvFetcher", () => {
 
     it("sets source to 'osv' for non-GHSA IDs", async () => {
       const vuln = makeVuln({ id: "OSV-2024-001" });
-      vi.stubGlobal("fetch", mockOsvResponse([{ vulns: [vuln] }]));
+      vi.stubGlobal("fetch", mockOsvApiForVulns([[vuln]]));
 
       const result = await fetcher.fetchAdvisories([dep("lodash")]);
       expect(result.advisories.get("OSV-2024-001")?.source).toBe("osv");
@@ -110,7 +169,7 @@ describe("OsvFetcher", () => {
       const vuln1 = makeVuln({ id: "GHSA-aaaa-bbbb-cccc" });
       const vuln2 = makeVuln({ id: "GHSA-dddd-eeee-ffff" });
 
-      vi.stubGlobal("fetch", mockOsvResponse([{ vulns: [vuln1, vuln2] }, { vulns: [] }]));
+      vi.stubGlobal("fetch", mockOsvApiForVulns([[vuln1, vuln2], []]));
 
       const result = await fetcher.fetchAdvisories([dep("lodash"), dep("express")]);
 
@@ -126,8 +185,11 @@ describe("OsvFetcher", () => {
       vi.stubGlobal(
         "fetch",
         vi.fn((_url: unknown, init?: RequestInit): Response => {
-          capturedBody.push(JSON.parse(init?.body as string) as unknown);
-          return new Response(JSON.stringify({ results: [{ vulns: [] }] }), { status: 200 });
+          if (init?.method === "POST") {
+            capturedBody.push(JSON.parse(init.body as string) as unknown);
+            return new Response(JSON.stringify({ results: [{ vulns: [] }] }), { status: 200 });
+          }
+          return new Response("not found", { status: 404 });
         }),
       );
 
@@ -142,23 +204,42 @@ describe("OsvFetcher", () => {
       expect(body.queries).toHaveLength(1);
     });
 
-    it("deduplicates advisories that affect multiple packages in the same batch", async () => {
-      // Same advisory ID returned for two different packages
+    it("deduplicates advisories that affect multiple packages, fetching details only once", async () => {
       const sharedVuln = makeVuln({ id: "GHSA-shared-0000-0000" });
+      let detailFetchCount = 0;
 
-      vi.stubGlobal("fetch", mockOsvResponse([{ vulns: [sharedVuln] }, { vulns: [sharedVuln] }]));
+      vi.stubGlobal(
+        "fetch",
+        vi.fn((url: string | URL, init?: RequestInit): Response => {
+          if (init?.method === "POST") {
+            return new Response(
+              JSON.stringify({
+                results: [
+                  { vulns: [{ id: "GHSA-shared-0000-0000" }] },
+                  { vulns: [{ id: "GHSA-shared-0000-0000" }] },
+                ],
+              }),
+              { status: 200 },
+            );
+          }
+          detailFetchCount++;
+          return new Response(JSON.stringify(sharedVuln), { status: 200 });
+        }),
+      );
 
       const result = await fetcher.fetchAdvisories([dep("pkg-a"), dep("pkg-b")]);
 
       // Stored only once
       expect(result.advisories.size).toBe(1);
+      // Fetched only once, despite affecting two packages
+      expect(detailFetchCount).toBe(1);
       // But both packages reference it
       expect(result.packageAdvisoryMap.get("pkg-a")).toContain("GHSA-shared-0000-0000");
       expect(result.packageAdvisoryMap.get("pkg-b")).toContain("GHSA-shared-0000-0000");
     });
 
     it("returns no advisories for a package with no known vulnerabilities", async () => {
-      vi.stubGlobal("fetch", mockOsvResponse([{ vulns: [] }]));
+      vi.stubGlobal("fetch", mockOsvApiForVulns([[]]));
 
       const result = await fetcher.fetchAdvisories([dep("safe-package")]);
 
@@ -166,13 +247,30 @@ describe("OsvFetcher", () => {
       expect(result.packageAdvisoryMap.size).toBe(0);
       expect(result.warnings).toHaveLength(0);
     });
+
+    it("attributes packageName to the first package an advisory was encountered under", async () => {
+      const sharedVuln = makeVuln({ id: "GHSA-shared-1111-1111" });
+      vi.stubGlobal(
+        "fetch",
+        mockOsvApi(
+          [
+            { vulns: [{ id: "GHSA-shared-1111-1111" }] },
+            { vulns: [{ id: "GHSA-shared-1111-1111" }] },
+          ],
+          { "GHSA-shared-1111-1111": sharedVuln },
+        ),
+      );
+
+      const result = await fetcher.fetchAdvisories([dep("first-pkg"), dep("second-pkg")]);
+      expect(result.advisories.get("GHSA-shared-1111-1111")?.packageName).toBe("first-pkg");
+    });
   });
 
   // -------------------------------------------------------------------------
   describe("fetchAdvisories — severity extraction", () => {
     it("uses CVSS v3 score for severity", async () => {
       const vuln = makeVuln({ severity: [{ type: "CVSS_V3", score: "9.8" }] });
-      vi.stubGlobal("fetch", mockOsvResponse([{ vulns: [vuln] }]));
+      vi.stubGlobal("fetch", mockOsvApiForVulns([[vuln]]));
 
       const result = await fetcher.fetchAdvisories([dep("pkg")]);
       expect(result.advisories.get("GHSA-xxxx-yyyy-zzzz")?.severity).toBe("critical");
@@ -180,7 +278,7 @@ describe("OsvFetcher", () => {
 
     it("falls back to CVSS v2 when v3 is absent", async () => {
       const vuln = makeVuln({ severity: [{ type: "CVSS_V2", score: "5.0" }] });
-      vi.stubGlobal("fetch", mockOsvResponse([{ vulns: [vuln] }]));
+      vi.stubGlobal("fetch", mockOsvApiForVulns([[vuln]]));
 
       const result = await fetcher.fetchAdvisories([dep("pkg")]);
       expect(result.advisories.get("GHSA-xxxx-yyyy-zzzz")?.severity).toBe("medium");
@@ -191,7 +289,7 @@ describe("OsvFetcher", () => {
         severity: [],
         database_specific: { severity: "MODERATE" },
       });
-      vi.stubGlobal("fetch", mockOsvResponse([{ vulns: [vuln] }]));
+      vi.stubGlobal("fetch", mockOsvApiForVulns([[vuln]]));
 
       const result = await fetcher.fetchAdvisories([dep("pkg")]);
       expect(result.advisories.get("GHSA-xxxx-yyyy-zzzz")?.severity).toBe("medium");
@@ -199,7 +297,7 @@ describe("OsvFetcher", () => {
 
     it("records 'unknown' severity and warns when no severity data present", async () => {
       const vuln = makeVuln({ severity: undefined, database_specific: undefined });
-      vi.stubGlobal("fetch", mockOsvResponse([{ vulns: [vuln] }]));
+      vi.stubGlobal("fetch", mockOsvApiForVulns([[vuln]]));
 
       const result = await fetcher.fetchAdvisories([dep("pkg")]);
       expect(result.advisories.get("GHSA-xxxx-yyyy-zzzz")?.severity).toBe("unknown");
@@ -208,7 +306,7 @@ describe("OsvFetcher", () => {
 
     it("records null cvssScore when no numeric score is parseable", async () => {
       const vuln = makeVuln({ severity: [] });
-      vi.stubGlobal("fetch", mockOsvResponse([{ vulns: [vuln] }]));
+      vi.stubGlobal("fetch", mockOsvApiForVulns([[vuln]]));
 
       const result = await fetcher.fetchAdvisories([dep("pkg")]);
       expect(result.advisories.get("GHSA-xxxx-yyyy-zzzz")?.cvssScore).toBeNull();
@@ -230,7 +328,7 @@ describe("OsvFetcher", () => {
           },
         ],
       });
-      vi.stubGlobal("fetch", mockOsvResponse([{ vulns: [vuln] }]));
+      vi.stubGlobal("fetch", mockOsvApiForVulns([[vuln]]));
 
       const result = await fetcher.fetchAdvisories([dep("pkg")]);
       expect(result.advisories.get("GHSA-xxxx-yyyy-zzzz")?.fixedVersion).toBe("2.0.0");
@@ -249,7 +347,7 @@ describe("OsvFetcher", () => {
           },
         ],
       });
-      vi.stubGlobal("fetch", mockOsvResponse([{ vulns: [vuln] }]));
+      vi.stubGlobal("fetch", mockOsvApiForVulns([[vuln]]));
 
       const result = await fetcher.fetchAdvisories([dep("pkg")]);
       expect(result.advisories.get("GHSA-xxxx-yyyy-zzzz")?.fixedVersion).toBeNull();
@@ -267,7 +365,7 @@ describe("OsvFetcher", () => {
           },
         ],
       });
-      vi.stubGlobal("fetch", mockOsvResponse([{ vulns: [vuln] }]));
+      vi.stubGlobal("fetch", mockOsvApiForVulns([[vuln]]));
 
       const result = await fetcher.fetchAdvisories([dep("pkg")]);
       const advisory = result.advisories.get("GHSA-xxxx-yyyy-zzzz");
@@ -278,7 +376,7 @@ describe("OsvFetcher", () => {
 
     it("stores empty affectedVersions array when no ranges exist", async () => {
       const vuln = makeVuln({ affected: [] });
-      vi.stubGlobal("fetch", mockOsvResponse([{ vulns: [vuln] }]));
+      vi.stubGlobal("fetch", mockOsvApiForVulns([[vuln]]));
 
       const result = await fetcher.fetchAdvisories([dep("pkg")]);
       expect(result.advisories.get("GHSA-xxxx-yyyy-zzzz")?.affectedVersions).toEqual([]);
@@ -289,7 +387,7 @@ describe("OsvFetcher", () => {
   describe("fetchAdvisories — data quality edge cases", () => {
     it("uses advisory ID as summary fallback when summary is absent", async () => {
       const vuln = makeVuln({ summary: undefined });
-      vi.stubGlobal("fetch", mockOsvResponse([{ vulns: [vuln] }]));
+      vi.stubGlobal("fetch", mockOsvApiForVulns([[vuln]]));
 
       const result = await fetcher.fetchAdvisories([dep("pkg")]);
       expect(result.advisories.get("GHSA-xxxx-yyyy-zzzz")?.summary).toBe(
@@ -297,29 +395,34 @@ describe("OsvFetcher", () => {
       );
     });
 
-    it("skips vulns with no id and records a warning", async () => {
-      const vuln = makeVuln({ id: undefined });
-      vi.stubGlobal("fetch", mockOsvResponse([{ vulns: [vuln] }]));
+    it("skips vulns with no id (checked against the batch response, before any detail fetch)", async () => {
+      vi.stubGlobal(
+        "fetch",
+        mockOsvApi([{ vulns: [{ modified: "2024-01-15T00:00:00Z" } as MinimalVuln] }]),
+      );
 
       const result = await fetcher.fetchAdvisories([dep("pkg")]);
       expect(result.advisories.size).toBe(0);
       expect(result.warnings.some((w) => w.includes("no id"))).toBe(true);
     });
 
-    it("records rawData verbatim on the advisory", async () => {
+    it("records the full detail response verbatim as rawData, not the minimal batch entry", async () => {
       const vuln = makeVuln();
-      vi.stubGlobal("fetch", mockOsvResponse([{ vulns: [vuln] }]));
+      vi.stubGlobal("fetch", mockOsvApiForVulns([[vuln]]));
 
       const result = await fetcher.fetchAdvisories([dep("pkg")]);
       const advisory = result.advisories.get("GHSA-xxxx-yyyy-zzzz");
-      expect((advisory?.rawData as Record<string, unknown>).id).toBe("GHSA-xxxx-yyyy-zzzz");
+      const rawData = advisory?.rawData as Record<string, unknown>;
+      expect(rawData.id).toBe("GHSA-xxxx-yyyy-zzzz");
+      // Only present on the full record, never on the minimal batch entry —
+      // proves rawData came from the detail fetch, not the batch response.
+      expect(rawData.summary).toBe("Test vulnerability");
     });
 
     it("warns when batch exceeds 1000 packages and truncates to limit", async () => {
       const manyDeps = Array.from({ length: 1001 }, (_, i) => dep(`pkg-${String(i)}`));
-      // Return 1000 empty results (matching the truncated query count)
       const results = Array.from({ length: 1000 }, () => ({ vulns: [] }));
-      vi.stubGlobal("fetch", mockOsvResponse(results));
+      vi.stubGlobal("fetch", mockOsvApi(results));
 
       const result = await fetcher.fetchAdvisories(manyDeps);
       expect(result.warnings.some((w) => w.includes("1001"))).toBe(true);
@@ -327,7 +430,7 @@ describe("OsvFetcher", () => {
   });
 
   // -------------------------------------------------------------------------
-  describe("fetchAdvisories — network and API errors", () => {
+  describe("fetchAdvisories — batch query network and API errors", () => {
     it("throws a descriptive error on network failure", async () => {
       vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("ECONNREFUSED")));
 
@@ -363,6 +466,79 @@ describe("OsvFetcher", () => {
       await expect(fetcher.fetchAdvisories([dep("pkg")])).rejects.toThrow(
         /missing expected 'results'/,
       );
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  describe("fetchAdvisories — detail fetch failures (ADR 0010)", () => {
+    it("warns and drops just the one advisory when its detail fetch 404s, without failing the run", async () => {
+      const goodVuln = makeVuln({ id: "GHSA-good-0000-0000" });
+      vi.stubGlobal(
+        "fetch",
+        mockOsvApi(
+          [{ vulns: [{ id: "GHSA-good-0000-0000" }, { id: "GHSA-missing-0000-0000" }] }],
+          { "GHSA-good-0000-0000": goodVuln }, // no entry for the "missing" id -> mock 404s it
+        ),
+      );
+
+      const result = await fetcher.fetchAdvisories([dep("pkg")]);
+
+      expect(result.advisories.size).toBe(1);
+      expect(result.advisories.has("GHSA-good-0000-0000")).toBe(true);
+      expect(result.advisories.has("GHSA-missing-0000-0000")).toBe(false);
+      expect(result.warnings.some((w) => w.includes("GHSA-missing-0000-0000"))).toBe(true);
+    });
+
+    it("drops a failed advisory from packageAdvisoryMap too, not just the advisories map", async () => {
+      vi.stubGlobal("fetch", mockOsvApi([{ vulns: [{ id: "GHSA-missing-1111-1111" }] }], {}));
+
+      const result = await fetcher.fetchAdvisories([dep("pkg")]);
+      expect(result.packageAdvisoryMap.has("pkg")).toBe(false);
+    });
+
+    it("keeps a package's other advisories when only one of several fails", async () => {
+      const goodVuln = makeVuln({ id: "GHSA-good-2222-2222" });
+      vi.stubGlobal(
+        "fetch",
+        mockOsvApi([{ vulns: [{ id: "GHSA-good-2222-2222" }, { id: "GHSA-missing-2222-2222" }] }], {
+          "GHSA-good-2222-2222": goodVuln,
+        }),
+      );
+
+      const result = await fetcher.fetchAdvisories([dep("pkg")]);
+      expect(result.packageAdvisoryMap.get("pkg")).toEqual(["GHSA-good-2222-2222"]);
+    });
+
+    it("handles a network error on the detail fetch the same way as a 404", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn((_url: string | URL, init?: RequestInit): Response | Promise<Response> => {
+          if (init?.method === "POST") {
+            return new Response(
+              JSON.stringify({ results: [{ vulns: [{ id: "GHSA-neterr-0000" }] }] }),
+              {
+                status: 200,
+              },
+            );
+          }
+          return Promise.reject(new Error("ECONNRESET"));
+        }),
+      );
+
+      const result = await fetcher.fetchAdvisories([dep("pkg")]);
+      expect(result.advisories.size).toBe(0);
+      expect(result.warnings.some((w) => w.includes("GHSA-neterr-0000"))).toBe(true);
+    });
+
+    it("processes more unique advisories than the default concurrency limit correctly", async () => {
+      const manyVulns = Array.from({ length: 25 }, (_, i) =>
+        makeVuln({ id: `GHSA-many-${String(i)}` }),
+      );
+      vi.stubGlobal("fetch", mockOsvApiForVulns([manyVulns]));
+
+      const result = await fetcher.fetchAdvisories([dep("pkg")]);
+      expect(result.advisories.size).toBe(25);
+      expect(result.packageAdvisoryMap.get("pkg")).toHaveLength(25);
     });
   });
 });

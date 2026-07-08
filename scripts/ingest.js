@@ -25,12 +25,14 @@
  *   0  All targeted repos processed successfully (warnings are non-fatal).
  *   1  One or more repos failed, or a fatal startup error occurred.
  *
- * Phase 1 scope — ingests repos, dependencies, and advisories only.
- * Missions and scores are populated in Phase 2.
+ * Phase 1: ingests repos, dependencies, and advisories.
+ * Phase 2: also generates/refreshes vulnerability_fix missions and scores
+ * for every is_affected dependency, immediately after a repo's ingestion
+ * write succeeds (see MissionWriter, packages/core/src/scorer/writer.ts).
  */
 
-import { neon } from "@neondatabase/serverless";
-import { drizzle } from "drizzle-orm/neon-http";
+import { Pool } from "@neondatabase/serverless";
+import { drizzle } from "drizzle-orm/neon-serverless";
 import { eq, or } from "drizzle-orm";
 
 // Internal imports via direct dist paths — the scripts/ directory is an
@@ -41,6 +43,7 @@ import { NpmIngestor } from "../packages/core/dist/ingestor/npm.js";
 import { OsvFetcher } from "../packages/core/dist/ingestor/osv.js";
 import { NpmRegistryFetcher } from "../packages/core/dist/ingestor/registry.js";
 import { IngestionWriter } from "../packages/core/dist/ingestor/writer.js";
+import { MissionWriter } from "../packages/core/dist/scorer/writer.js";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -82,9 +85,14 @@ async function main() {
   // ------------------------------------------------------------------
   // Initialise DB client
   // ------------------------------------------------------------------
-  const sql = neon(databaseUrl);
-  const db = drizzle(sql, { schema });
+  // neon-serverless (WebSocket) driver — required for real transaction
+  // support; the neon-http driver cannot run db.transaction() at all
+  // (ADR 0009). Native Node WebSocket support (Node 22+) means no `ws`
+  // package is needed here; this project runs Node 24/26.
+  const pool = new Pool({ connectionString: databaseUrl });
+  const db = drizzle(pool, { schema });
   const writer = new IngestionWriter(db);
+  const missionWriter = new MissionWriter(db);
 
   // ------------------------------------------------------------------
   // Resolve which repos to process
@@ -105,6 +113,7 @@ async function main() {
 
   if (targetRepos.length === 0) {
     log("info", "No repos to process. Exiting.");
+    await pool.end();
     process.exit(0);
   }
 
@@ -119,18 +128,27 @@ async function main() {
 
   let failCount = 0;
 
-  for (const repo of targetRepos) {
-    const success = await ingestRepo(
-      repo,
-      db,
-      writer,
-      ingestor,
-      osvFetcher,
-      registryFetcher,
-      githubToken ?? null,
-      args.triggeredBy,
-    );
-    if (!success) failCount++;
+  // try/finally guarantees pool.end() runs even if something above the
+  // per-repo try/catch inside ingestRepo somehow still throws — a Pool
+  // holds an open WebSocket that must be closed explicitly, unlike the
+  // stateless neon-http client this used to be (ADR 0009).
+  try {
+    for (const repo of targetRepos) {
+      const success = await ingestRepo(
+        repo,
+        db,
+        writer,
+        missionWriter,
+        ingestor,
+        osvFetcher,
+        registryFetcher,
+        githubToken ?? null,
+        args.triggeredBy,
+      );
+      if (!success) failCount++;
+    }
+  } finally {
+    await pool.end();
   }
 
   if (failCount > 0) {
@@ -154,6 +172,7 @@ async function ingestRepo(
   repo,
   db,
   writer,
+  missionWriter,
   ingestor,
   osvFetcher,
   registryFetcher,
@@ -234,6 +253,40 @@ async function ingestRepo(
       dependencyAdvisoriesWritten: output.dependencyAdvisoriesWritten,
       warnings: output.allWarnings.length,
     });
+
+    // 7. Generate/refresh vulnerability_fix missions + scores
+    // Dependency/advisory data above is already written and valid on its
+    // own, so a failure here does not roll it back or mark the repo
+    // 'failed' — but this repo did not fully succeed (its missions are
+    // stale or missing), so it still counts as a failure for exit-code
+    // purposes (ADR 0008 §5).
+    try {
+      log("info", `[${label}] Generating missions`);
+      const missionOutput = await missionWriter.generateMissionsForRepo(output.repoId);
+
+      log("info", `[${label}] Missions done`, {
+        candidatesFound: missionOutput.candidatesFound,
+        created: missionOutput.created,
+        updated: missionOutput.updated,
+      });
+
+      await db
+        .update(schema.ingestionRuns)
+        .set({
+          missionsCreated: missionOutput.created,
+          missionsUpdated: missionOutput.updated,
+        })
+        .where(eq(schema.ingestionRuns.id, output.runId));
+    } catch (err) {
+      log(
+        "error",
+        `[${label}] Mission generation failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      if (err instanceof Error && err.stack) {
+        log("error", err.stack);
+      }
+      return false;
+    }
 
     return true;
   } catch (err) {

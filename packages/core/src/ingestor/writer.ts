@@ -25,7 +25,7 @@
  */
 
 import { eq, inArray, sql } from "drizzle-orm";
-import type { NeonHttpDatabase, NeonTransaction } from "drizzle-orm/neon-http";
+import type { NeonDatabase, NeonTransaction } from "drizzle-orm/neon-serverless";
 import {
   advisories,
   dependencyAdvisories,
@@ -80,7 +80,7 @@ export interface WriteIngestionOutput {
 // ---------------------------------------------------------------------------
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type AnyNeonDb = NeonHttpDatabase<any>;
+type AnyNeonDb = NeonDatabase<any>;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyNeonTx = NeonTransaction<any, any>;
 /** Accepts both the outer db instance and the transaction callback parameter */
