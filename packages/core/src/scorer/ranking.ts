@@ -14,7 +14,7 @@
  * ADR: docs/adr/0006-scoring-algorithm.md
  */
 
-import type { EffortLabel } from "../db/types.js";
+import type { EffortLabel } from "../db/schema.js";
 
 const COMPOSITE_TIE_EPSILON = 0.5;
 

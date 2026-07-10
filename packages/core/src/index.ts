@@ -7,4 +7,9 @@
  * accidental coupling.
  */
 
-export * from "./db/types.js";
+// type-only: schema.ts also exports pgTable/pgEnum runtime objects, which
+// stay internal per this file's own rule above — /app imports those
+// directly from db/schema.js when it needs to build queries.
+export type * from "./db/schema.js";
+export * from "./db/json-types.js";
+export * from "./db/query-types.js";

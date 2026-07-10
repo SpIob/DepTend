@@ -1,6 +1,6 @@
 # deptend.dev — Data Model Reference
 
-_Auto-sync this document with `packages/core/src/db/schema.sql` on every schema change._
+_Auto-sync this document with `packages/core/src/db/schema.ts` on every schema change. Column types below reflect the TypeScript-level types after ADR 0011 (`schema.ts` is the sole row-type source; JSONB payload shapes live in `packages/core/src/db/json-types.ts`)._
 
 ---
 
@@ -153,9 +153,9 @@ One row per mission. Stores final scores AND all raw inputs for full auditabilit
 | `ecosystem_value_score`  | numeric(4,1)              | 0.0–10.0                                         |
 | `composite_score`        | numeric(4,1)              | `(impact × 0.60) + (ecosystem_value × 0.40)`     |
 | `effort_label`           | enum                      | `trivial \| low \| medium \| high`               |
-| `impact_inputs`          | jsonb                     | See `ImpactInputs` type                          |
-| `ecosystem_value_inputs` | jsonb                     | See `EcosystemValueInputs` type                  |
-| `effort_inputs`          | jsonb                     | See `EffortInputs` type                          |
+| `impact_inputs`          | jsonb                     | See `ImpactInputs` in `db/json-types.ts`         |
+| `ecosystem_value_inputs` | jsonb                     | See `EcosystemValueInputs` in `db/json-types.ts` |
+| `effort_inputs`          | jsonb                     | See `EffortInputs` in `db/json-types.ts`         |
 | `confidence`             | enum                      | `high \| medium \| low`                          |
 | `confidence_notes`       | text[]?                   | Human-readable confidence warnings               |
 | `confidence_flags`       | jsonb                     | Programmatic flags (e.g. `{no_lock_file: true}`) |
@@ -213,6 +213,7 @@ Append-only audit log. Rows are never updated or deleted.
 
 ## Schema changelog
 
-| Version | Date       | Change                   |
-| ------- | ---------- | ------------------------ |
-| 0.1.0   | 2026-06-29 | Initial schema — Phase 0 |
+| Version | Date       | Change                                                                                                                                                                                         |
+| ------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0.1.0   | 2026-06-29 | Initial schema — Phase 0                                                                                                                                                                       |
+| 0.1.1   | 2026-07-09 | ADR 0011: schema.ts is now the sole row-type source (db/types.ts removed); jsonb columns and numeric score columns gained precise TS types via `.$type<>()` / `mode: "number"` — no DDL change |

@@ -19,7 +19,7 @@ import {
   SCORING_VERSION,
   type MissionScoringContext,
 } from "./mission-scorer.js";
-import type { Advisory, Dependency, Repo } from "../db/types.js";
+import type { Advisory, Dependency, Repo } from "../db/schema.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -28,17 +28,17 @@ import type { Advisory, Dependency, Repo } from "../db/types.js";
 function makeDependency(overrides: Partial<Dependency> = {}): Dependency {
   return {
     id: "dep-1",
-    repo_id: "repo-1",
+    repoId: "repo-1",
     ecosystem: "npm",
-    package_name: "left-pad",
-    version_spec: "^1.2.3",
-    resolved_version: null,
-    dep_type: "production",
-    latest_version: "1.4.0",
-    is_deprecated: false,
-    deprecation_note: null,
-    created_at: new Date("2026-06-01T00:00:00Z"),
-    updated_at: new Date("2026-06-01T00:00:00Z"),
+    packageName: "left-pad",
+    versionSpec: "^1.2.3",
+    resolvedVersion: null,
+    depType: "production",
+    latestVersion: "1.4.0",
+    isDeprecated: false,
+    deprecationNote: null,
+    createdAt: new Date("2026-06-01T00:00:00Z"),
+    updatedAt: new Date("2026-06-01T00:00:00Z"),
     ...overrides,
   };
 }
@@ -46,21 +46,21 @@ function makeDependency(overrides: Partial<Dependency> = {}): Dependency {
 function makeAdvisory(overrides: Partial<Advisory> = {}): Advisory {
   return {
     id: "adv-1",
-    osv_id: "GHSA-xxxx-xxxx-xxxx",
+    osvId: "GHSA-xxxx-xxxx-xxxx",
     source: "osv",
     ecosystem: "npm",
-    package_name: "left-pad",
+    packageName: "left-pad",
     severity: "high",
-    cvss_score: 7.5,
+    cvssScore: 7.5,
     summary: "Example advisory",
     details: null,
-    affected_versions: [],
-    fixed_version: "1.2.4",
-    published_at: new Date("2026-06-01T00:00:00Z"),
-    modified_at: null,
-    raw_data: {},
-    created_at: new Date("2026-06-01T00:00:00Z"),
-    updated_at: new Date("2026-06-01T00:00:00Z"),
+    affectedVersions: [],
+    fixedVersion: "1.2.4",
+    publishedAt: new Date("2026-06-01T00:00:00Z"),
+    modifiedAt: null,
+    rawData: {},
+    createdAt: new Date("2026-06-01T00:00:00Z"),
+    updatedAt: new Date("2026-06-01T00:00:00Z"),
     ...overrides,
   };
 }
@@ -68,21 +68,21 @@ function makeAdvisory(overrides: Partial<Advisory> = {}): Advisory {
 function makeRepo(overrides: Partial<Repo> = {}): Repo {
   return {
     id: "repo-1",
-    github_url: "https://github.com/example/example",
+    githubUrl: "https://github.com/example/example",
     owner: "example",
     name: "example",
-    default_branch: "main",
+    defaultBranch: "main",
     description: null,
     stars: 1000,
-    open_issues_count: 100,
+    openIssuesCount: 100,
     topics: [],
-    homepage_url: null,
-    ingestion_status: "complete",
-    last_ingested_at: new Date("2026-07-01T00:00:00Z"),
-    ingestion_error: null,
-    submitted_by: null,
-    created_at: new Date("2026-06-01T00:00:00Z"),
-    updated_at: new Date("2026-07-01T00:00:00Z"),
+    homepageUrl: null,
+    ingestionStatus: "complete",
+    lastIngestedAt: new Date("2026-07-01T00:00:00Z"),
+    ingestionError: null,
+    submittedBy: null,
+    createdAt: new Date("2026-06-01T00:00:00Z"),
+    updatedAt: new Date("2026-07-01T00:00:00Z"),
     ...overrides,
   };
 }
@@ -104,8 +104,8 @@ describe("buildImpactInputs", () => {
   it("maps cvss_score, severity, and dep_type directly from the advisory/dependency", () => {
     const inputs = buildImpactInputs(
       makeContext({
-        advisory: makeAdvisory({ cvss_score: 8.1, severity: "critical" }),
-        dependency: makeDependency({ dep_type: "peer" }),
+        advisory: makeAdvisory({ cvssScore: 8.1, severity: "critical" }),
+        dependency: makeDependency({ depType: "peer" }),
       }),
     );
     expect(inputs.cvss_score).toBe(8.1);
@@ -120,15 +120,13 @@ describe("buildImpactInputs", () => {
 
   it("computes days_since_advisory from published_at", () => {
     const publishedAt = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000); // 10 days ago
-    const inputs = buildImpactInputs(
-      makeContext({ advisory: makeAdvisory({ published_at: publishedAt }) }),
-    );
+    const inputs = buildImpactInputs(makeContext({ advisory: makeAdvisory({ publishedAt }) }));
     expect(inputs.days_since_advisory).toBe(10);
   });
 
   it("returns null days_since_advisory when published_at is null", () => {
     const inputs = buildImpactInputs(
-      makeContext({ advisory: makeAdvisory({ published_at: null }) }),
+      makeContext({ advisory: makeAdvisory({ publishedAt: null }) }),
     );
     expect(inputs.days_since_advisory).toBeNull();
   });
@@ -142,8 +140,8 @@ describe("buildEffortInputs", () => {
   it("infers a patch bump from a caret range to a nearby fixed_version", () => {
     const inputs = buildEffortInputs(
       makeContext({
-        dependency: makeDependency({ version_spec: "^1.2.3" }),
-        advisory: makeAdvisory({ fixed_version: "1.2.4" }),
+        dependency: makeDependency({ versionSpec: "^1.2.3" }),
+        advisory: makeAdvisory({ fixedVersion: "1.2.4" }),
       }),
     );
     expect(inputs.semver_bump).toBe("patch");
@@ -152,8 +150,8 @@ describe("buildEffortInputs", () => {
   it("infers a minor bump", () => {
     const inputs = buildEffortInputs(
       makeContext({
-        dependency: makeDependency({ version_spec: "^1.2.3" }),
-        advisory: makeAdvisory({ fixed_version: "1.3.0" }),
+        dependency: makeDependency({ versionSpec: "^1.2.3" }),
+        advisory: makeAdvisory({ fixedVersion: "1.3.0" }),
       }),
     );
     expect(inputs.semver_bump).toBe("minor");
@@ -162,8 +160,8 @@ describe("buildEffortInputs", () => {
   it("infers a major bump", () => {
     const inputs = buildEffortInputs(
       makeContext({
-        dependency: makeDependency({ version_spec: "^1.2.3" }),
-        advisory: makeAdvisory({ fixed_version: "2.0.0" }),
+        dependency: makeDependency({ versionSpec: "^1.2.3" }),
+        advisory: makeAdvisory({ fixedVersion: "2.0.0" }),
       }),
     );
     expect(inputs.semver_bump).toBe("major");
@@ -172,8 +170,8 @@ describe("buildEffortInputs", () => {
   it("falls back to dependency.latest_version when the advisory has no fixed_version", () => {
     const inputs = buildEffortInputs(
       makeContext({
-        dependency: makeDependency({ version_spec: "^1.2.3", latest_version: "1.3.0" }),
-        advisory: makeAdvisory({ fixed_version: null }),
+        dependency: makeDependency({ versionSpec: "^1.2.3", latestVersion: "1.3.0" }),
+        advisory: makeAdvisory({ fixedVersion: null }),
       }),
     );
     expect(inputs.semver_bump).toBe("minor");
@@ -182,8 +180,8 @@ describe("buildEffortInputs", () => {
   it("returns unknown when neither fixed_version nor latest_version is available", () => {
     const inputs = buildEffortInputs(
       makeContext({
-        dependency: makeDependency({ latest_version: null }),
-        advisory: makeAdvisory({ fixed_version: null }),
+        dependency: makeDependency({ latestVersion: null }),
+        advisory: makeAdvisory({ fixedVersion: null }),
       }),
     );
     expect(inputs.semver_bump).toBe("unknown");
@@ -191,14 +189,14 @@ describe("buildEffortInputs", () => {
 
   it("returns unknown for a wildcard range rather than fabricating a major bump", () => {
     const inputs = buildEffortInputs(
-      makeContext({ dependency: makeDependency({ version_spec: "*" }) }),
+      makeContext({ dependency: makeDependency({ versionSpec: "*" }) }),
     );
     expect(inputs.semver_bump).toBe("unknown");
   });
 
   it("returns unknown for an empty range string", () => {
     const inputs = buildEffortInputs(
-      makeContext({ dependency: makeDependency({ version_spec: "" }) }),
+      makeContext({ dependency: makeDependency({ versionSpec: "" }) }),
     );
     expect(inputs.semver_bump).toBe("unknown");
   });
@@ -207,12 +205,10 @@ describe("buildEffortInputs", () => {
     "returns unknown rather than throwing for the non-range spec %s",
     (versionSpec) => {
       expect(() =>
-        buildEffortInputs(
-          makeContext({ dependency: makeDependency({ version_spec: versionSpec }) }),
-        ),
+        buildEffortInputs(makeContext({ dependency: makeDependency({ versionSpec }) })),
       ).not.toThrow();
       const inputs = buildEffortInputs(
-        makeContext({ dependency: makeDependency({ version_spec: versionSpec }) }),
+        makeContext({ dependency: makeDependency({ versionSpec }) }),
       );
       expect(inputs.semver_bump).toBe("unknown");
     },
@@ -221,8 +217,8 @@ describe("buildEffortInputs", () => {
   it("returns unknown when the target version is not coercible to semver", () => {
     const inputs = buildEffortInputs(
       makeContext({
-        dependency: makeDependency({ version_spec: "^1.2.3" }),
-        advisory: makeAdvisory({ fixed_version: "not-a-version" }),
+        dependency: makeDependency({ versionSpec: "^1.2.3" }),
+        advisory: makeAdvisory({ fixedVersion: "not-a-version" }),
       }),
     );
     expect(inputs.semver_bump).toBe("unknown");
@@ -242,7 +238,7 @@ describe("buildEffortInputs", () => {
 describe("buildEcosystemValueInputs", () => {
   it("maps repo_stars and open_issues_count directly, and downstream_dependents as null", () => {
     const inputs = buildEcosystemValueInputs(
-      makeContext({ repo: makeRepo({ stars: 4200, open_issues_count: 17 }) }),
+      makeContext({ repo: makeRepo({ stars: 4200, openIssuesCount: 17 }) }),
     );
     expect(inputs.repo_stars).toBe(4200);
     expect(inputs.open_issues_count).toBe(17);
@@ -257,10 +253,10 @@ describe("buildEcosystemValueInputs", () => {
 describe("deriveConfidenceFlags", () => {
   it("sets no_lock_file from dependency.resolved_version, not lock_file_present (ADR 0007 §3)", () => {
     const withResolved = deriveConfidenceFlags(
-      makeContext({ dependency: makeDependency({ resolved_version: "1.2.3" }) }),
+      makeContext({ dependency: makeDependency({ resolvedVersion: "1.2.3" }) }),
     );
     const withoutResolved = deriveConfidenceFlags(
-      makeContext({ dependency: makeDependency({ resolved_version: null }) }),
+      makeContext({ dependency: makeDependency({ resolvedVersion: null }) }),
     );
     expect(withResolved.no_lock_file).toBeUndefined();
     expect(withoutResolved.no_lock_file).toBe(true);
@@ -268,21 +264,21 @@ describe("deriveConfidenceFlags", () => {
 
   it("sets cvss_score_missing when the advisory has no CVSS score", () => {
     const flags = deriveConfidenceFlags(
-      makeContext({ advisory: makeAdvisory({ cvss_score: null }) }),
+      makeContext({ advisory: makeAdvisory({ cvssScore: null }) }),
     );
     expect(flags.cvss_score_missing).toBe(true);
   });
 
   it("sets fixed_version_unknown when the advisory has no fixed version", () => {
     const flags = deriveConfidenceFlags(
-      makeContext({ advisory: makeAdvisory({ fixed_version: null }) }),
+      makeContext({ advisory: makeAdvisory({ fixedVersion: null }) }),
     );
     expect(flags.fixed_version_unknown).toBe(true);
   });
 
   it("sets registry_metadata_incomplete when latest_version is missing", () => {
     const flags = deriveConfidenceFlags(
-      makeContext({ dependency: makeDependency({ latest_version: null }) }),
+      makeContext({ dependency: makeDependency({ latestVersion: null }) }),
     );
     expect(flags.registry_metadata_incomplete).toBe(true);
   });
@@ -290,8 +286,8 @@ describe("deriveConfidenceFlags", () => {
   it("always sets downstream_dependents_unavailable and breaking_change_signals_unavailable (ADR 0007 §5)", () => {
     const flags = deriveConfidenceFlags(
       makeContext({
-        dependency: makeDependency({ resolved_version: "1.2.3", latest_version: "1.4.0" }),
-        advisory: makeAdvisory({ cvss_score: 9.0, fixed_version: "1.2.4" }),
+        dependency: makeDependency({ resolvedVersion: "1.2.3", latestVersion: "1.4.0" }),
+        advisory: makeAdvisory({ cvssScore: 9.0, fixedVersion: "1.2.4" }),
       }),
     );
     expect(flags.downstream_dependents_unavailable).toBe(true);
@@ -301,8 +297,8 @@ describe("deriveConfidenceFlags", () => {
   it("produces exactly the two structural flags for an otherwise-complete context, never zero", () => {
     const flags = deriveConfidenceFlags(
       makeContext({
-        dependency: makeDependency({ resolved_version: "1.2.3", latest_version: "1.4.0" }),
-        advisory: makeAdvisory({ cvss_score: 9.0, fixed_version: "1.2.4" }),
+        dependency: makeDependency({ resolvedVersion: "1.2.3", latestVersion: "1.4.0" }),
+        advisory: makeAdvisory({ cvssScore: 9.0, fixedVersion: "1.2.4" }),
       }),
     );
     const flagCount = Object.values(flags).filter((v) => v === true).length;
@@ -330,8 +326,8 @@ describe("deriveConfidence", () => {
   it("confirms every Phase 2 mission is low confidence, given the two always-on flags (ADR 0007 §5)", () => {
     const flags = deriveConfidenceFlags(
       makeContext({
-        dependency: makeDependency({ resolved_version: "1.2.3", latest_version: "1.4.0" }),
-        advisory: makeAdvisory({ cvss_score: 9.0, fixed_version: "1.2.4" }),
+        dependency: makeDependency({ resolvedVersion: "1.2.3", latestVersion: "1.4.0" }),
+        advisory: makeAdvisory({ cvssScore: 9.0, fixedVersion: "1.2.4" }),
       }),
     );
     expect(deriveConfidence(flags)).toBe("low");
@@ -383,7 +379,7 @@ describe("computeMissionScore", () => {
   });
 
   it("carries the exact inputs used through to the result, for auditability", () => {
-    const ctx = makeContext({ advisory: makeAdvisory({ cvss_score: 6.5, severity: "medium" }) });
+    const ctx = makeContext({ advisory: makeAdvisory({ cvssScore: 6.5, severity: "medium" }) });
     const result = computeMissionScore(ctx);
     expect(result.impact_inputs.cvss_score).toBe(6.5);
     expect(result.impact_inputs.severity).toBe("medium");

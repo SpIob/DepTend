@@ -12,6 +12,11 @@ on:
         description: "Specific repo UUID to ingest (leave blank for all pending)"
         required: false
         type: string
+      triggered_by:
+        description: "Who/what triggered this run (manual UI click vs. API-submitted repo)"
+        required: false
+        type: string
+        default: "manual"
 
 jobs:
   ingest:
@@ -57,3 +62,14 @@ jobs:
           echo "::error::Ingestion run failed — see the 'Run ingestion' step above for details."
           echo "## ❌ Ingestion failed" >> "$GITHUB_STEP_SUMMARY"
           echo "Check the **Run ingestion** step log for the error." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Run ingestion
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          if [ -n "${{ inputs.repo_id }}" ]; then
+            node scripts/ingest.js --repo-id "${{ inputs.repo_id }}" --triggered-by "${{ inputs.triggered_by }}"
+          else
+            node scripts/ingest.js --triggered-by cron
+          fi

@@ -11,11 +11,12 @@
  * title/description/action_hint are refreshed, but status and any
  * claim/resolution fields are never touched (ADR 0008, §2–3).
  *
- * db/types.ts and schema.ts are two independent representations of the
- * same rows (ADR 0008, §1) — this file is the boundary that converts
- * between them; nothing above the read query touches schema.ts.
+ * Reads schema.ts rows directly and passes them straight into
+ * MissionScoringContext — as of ADR 0011, schema.ts is the sole row-type
+ * source, so no read-boundary conversion function is needed here anymore.
  *
  * ADR: docs/adr/0008-mission-db-writer.md
+ *      docs/adr/0011-schema-as-single-type-source.md
  */
 
 import { and, eq, sql } from "drizzle-orm";
@@ -27,16 +28,7 @@ import {
   missions,
   missionScores,
   repos,
-  type Advisory as SchemaAdvisory,
-  type Dependency as SchemaDependency,
-  type Repo as SchemaRepo,
 } from "../db/schema.js";
-import type {
-  Advisory as CoreAdvisory,
-  Dependency as CoreDependency,
-  OsvVersionRange,
-  Repo as CoreRepo,
-} from "../db/types.js";
 import {
   computeMissionScore,
   type MissionScoreComputation,
@@ -63,72 +55,6 @@ type AnyNeonTx = NeonTransaction<any, any>;
 type DbOrTx = AnyNeonDb | AnyNeonTx;
 
 // ---------------------------------------------------------------------------
-// schema.ts -> db/types.ts row conversion (ADR 0008, §1)
-// ---------------------------------------------------------------------------
-
-function toCoreRepo(row: SchemaRepo): CoreRepo {
-  return {
-    id: row.id,
-    github_url: row.githubUrl,
-    owner: row.owner,
-    name: row.name,
-    default_branch: row.defaultBranch,
-    description: row.description,
-    stars: row.stars,
-    open_issues_count: row.openIssuesCount,
-    topics: row.topics,
-    homepage_url: row.homepageUrl,
-    ingestion_status: row.ingestionStatus,
-    last_ingested_at: row.lastIngestedAt,
-    ingestion_error: row.ingestionError,
-    submitted_by: row.submittedBy,
-    created_at: row.createdAt,
-    updated_at: row.updatedAt,
-  };
-}
-
-function toCoreDependency(row: SchemaDependency): CoreDependency {
-  return {
-    id: row.id,
-    repo_id: row.repoId,
-    ecosystem: row.ecosystem,
-    package_name: row.packageName,
-    version_spec: row.versionSpec,
-    resolved_version: row.resolvedVersion,
-    dep_type: row.depType,
-    latest_version: row.latestVersion,
-    is_deprecated: row.isDeprecated,
-    deprecation_note: row.deprecationNote,
-    created_at: row.createdAt,
-    updated_at: row.updatedAt,
-  };
-}
-
-function toCoreAdvisory(row: SchemaAdvisory): CoreAdvisory {
-  return {
-    id: row.id,
-    osv_id: row.osvId,
-    source: row.source,
-    ecosystem: row.ecosystem,
-    package_name: row.packageName,
-    severity: row.severity,
-    // numeric column -> Drizzle infers string; db/types.ts wants number (ADR 0007/0008)
-    cvss_score: row.cvssScore === null ? null : Number(row.cvssScore),
-    summary: row.summary,
-    details: row.details,
-    // jsonb columns have no $type set on schema.ts -> inferred as unknown.
-    // Safe to narrow here: this data was written by our own OsvFetcher.
-    affected_versions: row.affectedVersions as OsvVersionRange[],
-    fixed_version: row.fixedVersion,
-    published_at: row.publishedAt,
-    modified_at: row.modifiedAt,
-    raw_data: row.rawData as Record<string, unknown>,
-    created_at: row.createdAt,
-    updated_at: row.updatedAt,
-  };
-}
-
-// ---------------------------------------------------------------------------
 // MissionWriter
 // ---------------------------------------------------------------------------
 
@@ -146,7 +72,6 @@ export class MissionWriter {
     if (repoRow === undefined) {
       throw new Error(`generateMissionsForRepo: no repo found for id ${repoId}`);
     }
-    const repo = toCoreRepo(repoRow);
 
     const candidateRows = await this.db
       .select({ dependency: dependencies, advisory: advisories })
@@ -161,9 +86,9 @@ export class MissionWriter {
     await this.db.transaction(async (tx) => {
       for (const row of candidateRows) {
         const ctx: MissionScoringContext = {
-          dependency: toCoreDependency(row.dependency),
-          advisory: toCoreAdvisory(row.advisory),
-          repo,
+          dependency: row.dependency,
+          advisory: row.advisory,
+          repo: repoRow,
         };
 
         const score = computeMissionScore(ctx);
@@ -272,9 +197,9 @@ export class MissionWriter {
       .insert(missionScores)
       .values({
         missionId,
-        impactScore: score.impact_score.toFixed(1),
-        ecosystemValueScore: score.ecosystem_value_score.toFixed(1),
-        compositeScore: score.composite_score.toFixed(1),
+        impactScore: score.impact_score,
+        ecosystemValueScore: score.ecosystem_value_score,
+        compositeScore: score.composite_score,
         effortLabel: score.effort_label,
         impactInputs: score.impact_inputs,
         ecosystemValueInputs: score.ecosystem_value_inputs,

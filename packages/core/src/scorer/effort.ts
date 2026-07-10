@@ -21,7 +21,8 @@
  * ADR: docs/adr/0006-scoring-algorithm.md
  */
 
-import type { EffortInputs, EffortLabel } from "../db/types.js";
+import type { EffortLabel } from "../db/schema.js";
+import type { EffortInputs } from "../db/json-types.js";
 import type { EffortScorer, EffortScoreResult } from "./interface.js";
 
 export class DefaultEffortScorer implements EffortScorer {

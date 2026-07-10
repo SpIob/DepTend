@@ -174,7 +174,7 @@ function makeAdvisoryRow(overrides: Record<string, unknown> = {}): Record<string
     ecosystem: "npm",
     packageName: "left-pad",
     severity: "high",
-    cvssScore: "7.5",
+    cvssScore: 7.5,
     summary: "Example advisory",
     details: null,
     affectedVersions: [],

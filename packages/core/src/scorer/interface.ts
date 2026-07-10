@@ -12,14 +12,13 @@
  * ADR: docs/adr/0006-scoring-algorithm.md
  */
 
+import type { EffortLabel, ScoreConfidence } from "../db/schema.js";
 import type {
   EffortInputs,
-  EffortLabel,
   EcosystemValueInputs,
   ImpactInputs,
-  ScoreConfidence,
   ConfidenceFlags,
-} from "../db/types.js";
+} from "../db/json-types.js";
 
 export interface ImpactScoreResult {
   score: number; // 0.0 – 10.0

@@ -9,22 +9,18 @@
  * Phase 2 generates vulnerability_fix missions only — see ADR 0007 for why
  * dep_update / maintenance / license_issue are deferred.
  *
- * ADR: docs/adr/0007-mission-score-wiring.md (mapping, confidence, scope)
+ * ADR: docs/adr/0007-mission-score-writing.md (mapping, confidence, scope)
  *      docs/adr/0006-scoring-algorithm.md (formulas)
  */
 
 import semver from "semver";
+import type { Dependency, Advisory, Repo, EffortLabel, ScoreConfidence } from "../db/schema.js";
 import type {
   ConfidenceFlags,
-  Dependency,
-  Advisory,
-  Repo,
   EffortInputs,
   EcosystemValueInputs,
   ImpactInputs,
-  EffortLabel,
-  ScoreConfidence,
-} from "../db/types.js";
+} from "../db/json-types.js";
 import { DefaultImpactScorer } from "./impact.js";
 import { DefaultEffortScorer } from "./effort.js";
 import { DefaultEcosystemValueScorer } from "./ecosystem-value.js";
@@ -137,20 +133,20 @@ function daysSince(date: Date | null): number | null {
 
 export function buildImpactInputs(ctx: MissionScoringContext): ImpactInputs {
   return {
-    cvss_score: ctx.advisory.cvss_score,
+    cvss_score: ctx.advisory.cvssScore,
     severity: ctx.advisory.severity,
     // Phase 1/2 only ingests direct dependencies — see ADR 0007, §2.
     is_transitive: false,
-    dep_type: ctx.dependency.dep_type,
-    days_since_advisory: daysSince(ctx.advisory.published_at),
+    dep_type: ctx.dependency.depType,
+    days_since_advisory: daysSince(ctx.advisory.publishedAt),
   };
 }
 
 export function buildEffortInputs(ctx: MissionScoringContext): EffortInputs {
-  const targetVersion = ctx.advisory.fixed_version ?? ctx.dependency.latest_version;
+  const targetVersion = ctx.advisory.fixedVersion ?? ctx.dependency.latestVersion;
 
   return {
-    semver_bump: inferSemverBump(ctx.dependency.version_spec, targetVersion),
+    semver_bump: inferSemverBump(ctx.dependency.versionSpec, targetVersion),
     // No data source ingested yet — see ADR 0007, §5.
     has_migration_guide: false,
     breaking_change_signals: [],
@@ -160,7 +156,7 @@ export function buildEffortInputs(ctx: MissionScoringContext): EffortInputs {
 export function buildEcosystemValueInputs(ctx: MissionScoringContext): EcosystemValueInputs {
   return {
     repo_stars: ctx.repo.stars,
-    open_issues_count: ctx.repo.open_issues_count,
+    open_issues_count: ctx.repo.openIssuesCount,
     // No data source ingested yet — see ADR 0006.
     downstream_dependents: null,
   };
@@ -173,16 +169,16 @@ export function buildEcosystemValueInputs(ctx: MissionScoringContext): Ecosystem
 export function deriveConfidenceFlags(ctx: MissionScoringContext): ConfidenceFlags {
   const flags: ConfidenceFlags = {};
 
-  if (ctx.dependency.resolved_version === null) {
+  if (ctx.dependency.resolvedVersion === null) {
     flags.no_lock_file = true;
   }
-  if (ctx.advisory.cvss_score === null) {
+  if (ctx.advisory.cvssScore === null) {
     flags.cvss_score_missing = true;
   }
-  if (ctx.advisory.fixed_version === null) {
+  if (ctx.advisory.fixedVersion === null) {
     flags.fixed_version_unknown = true;
   }
-  if (ctx.dependency.latest_version === null) {
+  if (ctx.dependency.latestVersion === null) {
     flags.registry_metadata_incomplete = true;
   }
 

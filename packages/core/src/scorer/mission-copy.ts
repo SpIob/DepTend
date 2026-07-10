@@ -28,23 +28,23 @@ function capitalize(value: string): string {
 function buildTitle(ctx: MissionScoringContext): string {
   const { dependency, advisory } = ctx;
 
-  if (advisory.fixed_version !== null) {
-    return `Update ${dependency.package_name} to fix a ${advisory.severity} vulnerability`;
+  if (advisory.fixedVersion !== null) {
+    return `Update ${dependency.packageName} to fix a ${advisory.severity} vulnerability`;
   }
-  return `${capitalize(advisory.severity)} vulnerability in ${dependency.package_name} has no fix yet`;
+  return `${capitalize(advisory.severity)} vulnerability in ${dependency.packageName} has no fix yet`;
 }
 
 function buildDescription(ctx: MissionScoringContext): string {
   const { dependency, advisory } = ctx;
 
-  const cvssPart = advisory.cvss_score !== null ? ` (CVSS ${advisory.cvss_score.toFixed(1)})` : "";
+  const cvssPart = advisory.cvssScore !== null ? ` (CVSS ${advisory.cvssScore.toFixed(1)})` : "";
 
   return [
     advisory.summary,
     "",
-    `Affects ${dependency.package_name} (declared as "${dependency.version_spec}"), used as a ` +
-      `${dependency.dep_type} dependency of this repo. Severity: ${advisory.severity}${cvssPart}.`,
-    `Source: ${advisory.osv_id} (${advisory.source.toUpperCase()}).`,
+    `Affects ${dependency.packageName} (declared as "${dependency.versionSpec}"), used as a ` +
+      `${dependency.depType} dependency of this repo. Severity: ${advisory.severity}${cvssPart}.`,
+    `Source: ${advisory.osvId} (${advisory.source.toUpperCase()}).`,
   ].join("\n");
 }
 
@@ -54,14 +54,14 @@ function buildActionHint(
 ): string | null {
   const { dependency, advisory } = ctx;
 
-  if (advisory.fixed_version === null) {
-    return `No fixed version has been published yet for ${advisory.osv_id}. Track upstream for a fix.`;
+  if (advisory.fixedVersion === null) {
+    return `No fixed version has been published yet for ${advisory.osvId}. Track upstream for a fix.`;
   }
 
   const bump = score.effort_inputs.semver_bump;
   const bumpPart = bump === "unknown" ? "version bump size unknown" : `${bump} version bump`;
 
-  return `Upgrade ${dependency.package_name} to ${advisory.fixed_version} or later (${bumpPart}).`;
+  return `Upgrade ${dependency.packageName} to ${advisory.fixedVersion} or later (${bumpPart}).`;
 }
 
 export function generateMissionCopy(

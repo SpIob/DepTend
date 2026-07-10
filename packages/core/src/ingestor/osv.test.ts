@@ -149,7 +149,7 @@ describe("OsvFetcher", () => {
       expect(advisory?.ecosystem).toBe("npm");
       expect(advisory?.packageName).toBe("lodash");
       expect(advisory?.severity).toBe("high");
-      expect(advisory?.cvssScore).toBe("7.5");
+      expect(advisory?.cvssScore).toBe(7.5);
       expect(advisory?.summary).toBe("Test vulnerability");
       expect(advisory?.details).toBe("Detailed description here.");
       expect(advisory?.fixedVersion).toBe("4.17.21");

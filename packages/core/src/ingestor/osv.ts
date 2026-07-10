@@ -39,8 +39,8 @@
  *      docs/adr/0010-osv-fetcher-detail-fetch-fix.md (batch/detail split)
  */
 
-import type { NewAdvisory } from "../db/schema.js";
-import type { OsvVersionRange, Severity } from "../db/types.js";
+import type { NewAdvisory, Severity } from "../db/schema.js";
+import type { OsvVersionRange } from "../db/json-types.js";
 import type { ParsedDependency } from "../ingestor/interface.js";
 
 // ---------------------------------------------------------------------------
@@ -403,7 +403,7 @@ export class OsvFetcher {
       ecosystem: "npm",
       packageName,
       severity,
-      cvssScore: cvssScore !== null ? String(cvssScore) : null,
+      cvssScore,
       summary,
       details,
       affectedVersions,

@@ -11,7 +11,7 @@
 
 import { describe, expect, it } from "vitest";
 import { DefaultEcosystemValueScorer } from "./ecosystem-value.js";
-import type { EcosystemValueInputs } from "../db/types.js";
+import type { EcosystemValueInputs } from "../db/json-types.js";
 
 // ---------------------------------------------------------------------------
 // Helpers

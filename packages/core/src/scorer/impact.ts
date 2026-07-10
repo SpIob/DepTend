@@ -14,7 +14,8 @@
  * ADR: docs/adr/0006-scoring-algorithm.md
  */
 
-import type { DepType, ImpactInputs, Severity } from "../db/types.js";
+import type { DepType, Severity } from "../db/schema.js";
+import type { ImpactInputs } from "../db/json-types.js";
 import type { ImpactScorer, ImpactScoreResult } from "./interface.js";
 
 // ---------------------------------------------------------------------------

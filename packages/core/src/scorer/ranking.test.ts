@@ -6,7 +6,7 @@
 
 import { describe, expect, it } from "vitest";
 import { rankMissions, type RankableMission } from "./ranking.js";
-import type { EffortLabel } from "../db/types.js";
+import type { EffortLabel } from "../db/schema.js";
 
 function makeMission(
   composite_score: number,

@@ -14,7 +14,7 @@
     "lint": "eslint . --max-warnings 0",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "typecheck": "pnpm -r typecheck",
+    "typecheck": "pnpm --filter @deptend/core build && pnpm -r typecheck",
     "test": "pnpm -r test",
     "prepare": "husky"
   },
@@ -35,7 +35,7 @@
   },
   "lint-staged": {
     "*.{ts,tsx,js,mjs,cjs}": [
-      "eslint --max-warnings 0 --fix",
+      "eslint --max-warnings 0 --no-warn-ignored --fix",
       "prettier --write"
     ],
     "*.{json,md,yaml,yml,css}": [

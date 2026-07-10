@@ -6,7 +6,14 @@ import importPlugin from "eslint-plugin-import";
 export default tseslint.config(
   // Global ignores
   {
-    ignores: ["**/node_modules/**", "**/.next/**", "**/dist/**", "**/build/**", "**/*.js.map"],
+    ignores: [
+      "**/node_modules/**",
+      "**/.next/**",
+      "**/dist/**",
+      "**/build/**",
+      "**/*.js.map",
+      "**/next-env.d.ts",
+    ],
   },
 
   // Plain JS files (scripts/) — basic rules only, no type info needed
@@ -32,10 +39,10 @@ export default tseslint.config(
     languageOptions: {
       parserOptions: {
         project: [
-          "./tsconfig.base.json",
+          "./tsconfig.json",
           "./app/tsconfig.json",
           "./cli/tsconfig.json",
-          "./packages/core/tsconfig.json",
+          "./packages/core/tsconfig.eslint.json",
         ],
       },
     },

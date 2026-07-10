@@ -443,8 +443,8 @@ function parseGithubUrl(url) {
 function parseArgs(argv) {
   const triggeredBy = argValue(argv, "--triggered-by") ?? "cron";
 
-  if (!["cron", "manual"].includes(triggeredBy)) {
-    fatal(`--triggered-by must be "cron" or "manual", got "${triggeredBy}"`);
+  if (!["cron", "manual", "submit"].includes(triggeredBy)) {
+    fatal(`--triggered-by must be "cron", "manual", or "submit", got "${triggeredBy}"`);
   }
 
   const repoId = argValue(argv, "--repo-id") ?? null;

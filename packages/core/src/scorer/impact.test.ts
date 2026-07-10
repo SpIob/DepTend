@@ -9,7 +9,8 @@
 
 import { describe, expect, it } from "vitest";
 import { DefaultImpactScorer } from "./impact.js";
-import type { DepType, ImpactInputs, Severity } from "../db/types.js";
+import type { DepType, Severity } from "../db/schema.js";
+import type { ImpactInputs } from "../db/json-types.js";
 
 // ---------------------------------------------------------------------------
 // Helpers

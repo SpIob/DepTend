@@ -8,7 +8,8 @@
 
 import { describe, expect, it } from "vitest";
 import { DefaultEffortScorer } from "./effort.js";
-import type { EffortInputs, EffortLabel } from "../db/types.js";
+import type { EffortLabel } from "../db/schema.js";
+import type { EffortInputs } from "../db/json-types.js";
 
 // ---------------------------------------------------------------------------
 // Helpers

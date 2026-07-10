@@ -22,6 +22,13 @@ import {
   unique,
   uuid,
 } from "drizzle-orm/pg-core";
+import type {
+  ConfidenceFlags,
+  EcosystemValueInputs,
+  EffortInputs,
+  ImpactInputs,
+  OsvVersionRange,
+} from "./json-types.js";
 
 // ---------------------------------------------------------------------------
 // Enums
@@ -153,17 +160,23 @@ export const advisories = pgTable(
     packageName: text("package_name").notNull(),
 
     severity: severityEnum("severity").notNull().default("unknown"),
-    cvssScore: numeric("cvss_score", { precision: 4, scale: 1 }),
+    cvssScore: numeric("cvss_score", { precision: 4, scale: 1, mode: "number" }),
 
     summary: text("summary").notNull(),
     details: text("details"),
 
-    affectedVersions: jsonb("affected_versions").notNull().default([]),
+    affectedVersions: jsonb("affected_versions").$type<OsvVersionRange[]>().notNull().default([]),
     fixedVersion: text("fixed_version"),
 
     publishedAt: timestamp("published_at", { withTimezone: true }),
     modifiedAt: timestamp("modified_at", { withTimezone: true }),
 
+    // Verbatim OSV snapshot — deliberately left as an untyped blob rather
+    // than `$type<Record<string, unknown>>()`. It's genuinely unstructured
+    // (whatever OSV returned that day) and a concrete interface like
+    // OsvVulnerability isn't structurally assignable to an index-signature
+    // type without an escape hatch, which would just push a workaround into
+    // every write site instead of removing one. See ADR 0011.
     rawData: jsonb("raw_data").notNull().default({}),
 
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -259,19 +272,40 @@ export const missionScores = pgTable(
       .unique()
       .references(() => missions.id, { onDelete: "cascade" }),
 
-    impactScore: numeric("impact_score", { precision: 4, scale: 1 }).notNull(),
-    ecosystemValueScore: numeric("ecosystem_value_score", { precision: 4, scale: 1 }).notNull(),
-    compositeScore: numeric("composite_score", { precision: 4, scale: 1 }).notNull(),
+    impactScore: numeric("impact_score", { precision: 4, scale: 1, mode: "number" }).notNull(),
+    ecosystemValueScore: numeric("ecosystem_value_score", {
+      precision: 4,
+      scale: 1,
+      mode: "number",
+    }).notNull(),
+    compositeScore: numeric("composite_score", {
+      precision: 4,
+      scale: 1,
+      mode: "number",
+    }).notNull(),
     effortLabel: effortLabelEnum("effort_label").notNull(),
 
     // Raw scoring inputs stored for full auditability
-    impactInputs: jsonb("impact_inputs").notNull().default({}),
-    ecosystemValueInputs: jsonb("ecosystem_value_inputs").notNull().default({}),
-    effortInputs: jsonb("effort_inputs").notNull().default({}),
+    impactInputs: jsonb("impact_inputs").$type<ImpactInputs>().notNull().default({
+      cvss_score: null,
+      severity: "unknown",
+      is_transitive: false,
+      dep_type: "production",
+      days_since_advisory: null,
+    }),
+    ecosystemValueInputs: jsonb("ecosystem_value_inputs")
+      .$type<EcosystemValueInputs>()
+      .notNull()
+      .default({ repo_stars: 0, open_issues_count: 0, downstream_dependents: null }),
+    effortInputs: jsonb("effort_inputs").$type<EffortInputs>().notNull().default({
+      semver_bump: "unknown",
+      has_migration_guide: false,
+      breaking_change_signals: [],
+    }),
 
     confidence: scoreConfidenceEnum("confidence").notNull(),
     confidenceNotes: text("confidence_notes").array(),
-    confidenceFlags: jsonb("confidence_flags").notNull().default({}),
+    confidenceFlags: jsonb("confidence_flags").$type<ConfidenceFlags>().notNull().default({}),
 
     scoringVersion: text("scoring_version").notNull().default("0.1.0"),
 
@@ -321,6 +355,22 @@ export const ingestionRuns = pgTable(
     index("idx_ingestion_runs_started_at").on(table.startedAt),
   ],
 );
+
+// ---------------------------------------------------------------------------
+// Enum value types
+// ---------------------------------------------------------------------------
+// Derived from the pgEnum objects above so enum unions never need a
+// hand-duplicated equivalent elsewhere (ADR 0011).
+
+export type IngestionStatus = (typeof ingestionStatusEnum.enumValues)[number];
+export type DepType = (typeof depTypeEnum.enumValues)[number];
+export type Ecosystem = (typeof ecosystemEnum.enumValues)[number];
+export type AdvisorySource = (typeof advisorySourceEnum.enumValues)[number];
+export type Severity = (typeof severityEnum.enumValues)[number];
+export type MissionType = (typeof missionTypeEnum.enumValues)[number];
+export type MissionStatus = (typeof missionStatusEnum.enumValues)[number];
+export type EffortLabel = (typeof effortLabelEnum.enumValues)[number];
+export type ScoreConfidence = (typeof scoreConfidenceEnum.enumValues)[number];
 
 // ---------------------------------------------------------------------------
 // Inferred types

@@ -16,7 +16,7 @@
  * ADR: docs/adr/0006-scoring-algorithm.md
  */
 
-import type { EcosystemValueInputs } from "../db/types.js";
+import type { EcosystemValueInputs } from "../db/json-types.js";
 import type { EcosystemValueScorer, EcosystemValueScoreResult } from "./interface.js";
 
 // ---------------------------------------------------------------------------

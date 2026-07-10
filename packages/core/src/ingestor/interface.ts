@@ -8,7 +8,7 @@
  * ADR: docs/adr/0003-npm-ecosystem-first.md
  */
 
-import type { Ecosystem } from "../db/types.js";
+import type { Ecosystem } from "../db/schema.js";
 
 export interface ParsedDependency {
   package_name: string;

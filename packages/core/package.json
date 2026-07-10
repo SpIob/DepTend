@@ -10,6 +10,18 @@
     ".": {
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
+    },
+    "./db/schema.js": {
+      "import": "./dist/db/schema.js",
+      "types": "./dist/db/schema.d.ts"
+    },
+    "./db/queries.js": {
+      "import": "./dist/db/queries.js",
+      "types": "./dist/db/queries.d.ts"
+    },
+    "./db/repos.js": {
+      "import": "./dist/db/repos.js",
+      "types": "./dist/db/repos.d.ts"
     }
   },
   "scripts": {

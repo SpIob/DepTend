@@ -194,7 +194,7 @@ function makeOsvResult(advisoryCount = 1): OsvFetchResult {
       ecosystem: "npm",
       packageName: `pkg-0`,
       severity: "high",
-      cvssScore: "7.5",
+      cvssScore: 7.5,
       summary: `Test advisory ${String(i)}`,
       details: null,
       affectedVersions: [],
