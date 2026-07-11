@@ -16,7 +16,8 @@
     "format:check": "prettier --check .",
     "typecheck": "pnpm --filter @deptend/core build && pnpm -r typecheck",
     "test": "pnpm -r test",
-    "prepare": "husky"
+    "prepare": "husky",
+    "postinstall": "pnpm --filter @deptend/core build"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
