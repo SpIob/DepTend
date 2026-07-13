@@ -1,6 +1,6 @@
 # ADR 0008 — Mission DB Writer: Read Query, Upsert Strategy, Type Bridging
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-07-06
 **Phase:** 2 — Scoring Engine
 

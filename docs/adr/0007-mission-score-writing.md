@@ -1,6 +1,6 @@
 # ADR 0007 — Mission Score Wiring: Input Mapping, Confidence Derivation, Ranking
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-07-05
 **Phase:** 2 — Scoring Engine
 

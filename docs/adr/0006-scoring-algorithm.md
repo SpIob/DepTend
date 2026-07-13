@@ -1,6 +1,6 @@
 # ADR 0006 — Scoring Algorithm: Impact, Effort, Ecosystem Value
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-07-03
 **Phase:** 2 — Scoring Engine
 
