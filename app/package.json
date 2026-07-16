@@ -3,8 +3,10 @@
   "version": "0.0.1",
   "private": true,
   "scripts": {
+    "predev": "pnpm --filter @deptend/core build",
     "dev": "next dev --turbopack",
-    "build": "pnpm --filter @deptend/core build && next build",
+    "prebuild": "pnpm --filter @deptend/core build",
+    "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit"
   },

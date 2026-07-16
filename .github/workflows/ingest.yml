@@ -51,7 +51,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           if [ -n "${{ inputs.repo_id }}" ]; then
-            node scripts/ingest.js --repo-id "${{ inputs.repo_id }}" --triggered-by manual
+            node scripts/ingest.js --repo-id "${{ inputs.repo_id }}" --triggered-by "${{ inputs.triggered_by }}"
           else
             node scripts/ingest.js --triggered-by cron
           fi
@@ -62,14 +62,3 @@ jobs:
           echo "::error::Ingestion run failed — see the 'Run ingestion' step above for details."
           echo "## ❌ Ingestion failed" >> "$GITHUB_STEP_SUMMARY"
           echo "Check the **Run ingestion** step log for the error." >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Run ingestion
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          GITHUB_TOKEN: ${{ github.token }}
-        run: |
-          if [ -n "${{ inputs.repo_id }}" ]; then
-            node scripts/ingest.js --repo-id "${{ inputs.repo_id }}" --triggered-by "${{ inputs.triggered_by }}"
-          else
-            node scripts/ingest.js --triggered-by cron
-          fi
