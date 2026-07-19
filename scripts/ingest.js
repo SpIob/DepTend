@@ -44,13 +44,7 @@ import { OsvFetcher } from "../packages/core/dist/ingestor/osv.js";
 import { NpmRegistryFetcher } from "../packages/core/dist/ingestor/registry.js";
 import { IngestionWriter } from "../packages/core/dist/ingestor/writer.js";
 import { MissionWriter } from "../packages/core/dist/scorer/writer.js";
-
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-const GITHUB_API_BASE = "https://api.github.com";
-const USER_AGENT = "deptend.dev/0.1.0 (https://github.com/deptend/deptend.dev)";
+import { fetchGitHubRepoMeta } from "../packages/core/dist/ingestor/github-meta.js";
 
 // ---------------------------------------------------------------------------
 // Entry point
@@ -373,48 +367,6 @@ async function resolveByUrl(db, url) {
   // Return a minimal stub that ingestRepo can use to kick off the pipeline.
   // repoInput will be fully populated from the GitHub API response.
   return [{ githubUrl: normalised, submittedBy: null }];
-}
-
-// ---------------------------------------------------------------------------
-// GitHub API helpers
-// ---------------------------------------------------------------------------
-
-/** Fetch repository metadata from the GitHub REST API. */
-async function fetchGitHubRepoMeta(owner, name, token) {
-  const url = `${GITHUB_API_BASE}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`;
-  const headers = { "User-Agent": USER_AGENT, Accept: "application/vnd.github+json" };
-  if (token) headers["Authorization"] = `Bearer ${token}`;
-
-  let response;
-  try {
-    response = await fetch(url, { headers });
-  } catch (err) {
-    throw new Error(`Network error calling GitHub API for ${owner}/${name}: ${String(err)}`);
-  }
-
-  if (response.status === 404) {
-    throw new Error(
-      `GitHub repo not found: ${owner}/${name}. ` +
-        `It may be private, deleted, or the URL may be incorrect.`,
-    );
-  }
-
-  if (response.status === 403 || response.status === 429) {
-    const remaining = response.headers.get("x-ratelimit-remaining");
-    const reset = response.headers.get("x-ratelimit-reset");
-    const resetTime = reset ? new Date(Number(reset) * 1000).toISOString() : "unknown";
-    throw new Error(
-      `GitHub API rate limit hit (HTTP ${response.status}). ` +
-        `Remaining: ${remaining ?? "unknown"}. Resets at: ${resetTime}. ` +
-        `Set GITHUB_TOKEN to raise the limit to 5,000 req/hr.`,
-    );
-  }
-
-  if (!response.ok) {
-    throw new Error(`GitHub API returned HTTP ${response.status} for ${owner}/${name}`);
-  }
-
-  return response.json();
 }
 
 // ---------------------------------------------------------------------------

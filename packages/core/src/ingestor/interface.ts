@@ -30,8 +30,10 @@ export interface EcosystemIngestor {
 
   /**
    * Parse dependencies from a repo's manifest files.
-   * @param repoPath - local filesystem path to the cloned repo, OR
-   *                   a GitHub raw content base URL for remote fetching
+   * @param repoPath - meaning is implementation-specific: NpmIngestor
+   *   expects a GitHub raw content base URL for remote fetching;
+   *   LocalNpmIngestor expects a local filesystem path to a cloned repo.
+   *   Each concrete ingestor documents which it accepts.
    */
   parseDependencies(repoPath: string): Promise<IngestorResult>;
 }

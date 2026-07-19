@@ -81,7 +81,17 @@ export async function getOpenMissionsWithScores(db: ReadonlyDb): Promise<Mission
   const ranked = rankMissions(
     withScores.map((mission): RankableMission & { mission: MissionWithScore } => ({
       mission,
-      created_at: mission.createdAt,
+      // Not mission.createdAt — see ADR 0018. Missions from the same
+      // ingestion run share one transaction-scoped Postgres now(), so
+      // createdAt doesn't actually discriminate between them.
+      tie_break: {
+        published_at: mission.advisory?.publishedAt ?? null,
+        // mission.advisory is nullable (future non-advisory mission types
+        // per Phase 2 scope) — fall back to the mission's own id, which is
+        // always present and unique, same role osv_id plays when there is
+        // an advisory.
+        osv_id: mission.advisory?.osvId ?? mission.id,
+      },
       score: {
         composite_score: mission.score.compositeScore,
         effort_label: mission.score.effortLabel,

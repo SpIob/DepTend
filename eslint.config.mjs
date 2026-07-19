@@ -41,7 +41,7 @@ export default tseslint.config(
         project: [
           "./tsconfig.json",
           "./app/tsconfig.json",
-          "./cli/tsconfig.json",
+          "./cli/tsconfig.eslint.json",
           "./packages/core/tsconfig.eslint.json",
         ],
       },
@@ -57,6 +57,12 @@ export default tseslint.config(
       "no-console": ["warn", { allow: ["warn", "error"] }],
       "import/no-duplicates": "error",
       "import/no-cycle": "error",
+    },
+  },
+  {
+    files: ["cli/src/**/*.ts"],
+    rules: {
+      "no-console": "off",
     },
   },
 );

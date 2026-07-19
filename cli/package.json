@@ -8,15 +8,17 @@
     "deptend": "./dist/index.js"
   },
   "scripts": {
+    "prebuild": "pnpm --filter @deptend/core build",
     "build": "tsc --project tsconfig.json",
     "typecheck": "tsc --noEmit",
-    "test": "echo \"No tests in cli yet (Phase 4)\" && exit 0"
+    "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
     "@deptend/core": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
-    "typescript": "^5.5.0"
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0"
   }
 }

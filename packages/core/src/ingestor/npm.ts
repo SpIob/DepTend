@@ -1,7 +1,8 @@
 /**
  * NpmIngestor
  *
- * Implements EcosystemIngestor for the npm ecosystem (Phase 1).
+ * Implements EcosystemIngestor for the npm ecosystem (Phase 1) via HTTP
+ * fetch against GitHub's raw content API.
  *
  * Fetching strategy:
  *   repoPath is a GitHub raw content base URL of the form:
@@ -10,6 +11,11 @@
  *   The ingestor appends /package.json to fetch the manifest, and
  *   checks for the presence of a lock file (without parsing it —
  *   lock file parsing is deferred to a later phase).
+ *
+ * Fetching (this file) and parsing (npm-parse.ts's parsePackageJsonContent)
+ * are deliberately separate — LocalNpmIngestor (Phase 4) reads the same
+ * package.json shape from a local filesystem path instead, and shares the
+ * exact same parsing logic rather than duplicating it.
  *
  * What this does NOT do (out of scope for Phase 1):
  *   - Parse or resolve lock files
@@ -20,27 +26,8 @@
  * ADR: docs/adr/0003-npm-ecosystem-first.md
  */
 
-import type { EcosystemIngestor, IngestorResult, ParsedDependency } from "./interface.js";
-
-// ---------------------------------------------------------------------------
-// Types for raw package.json shape
-// ---------------------------------------------------------------------------
-
-/** Minimal shape we care about from a package.json */
-interface PackageJson {
-  dependencies?: Record<string, string>;
-  devDependencies?: Record<string, string>;
-  peerDependencies?: Record<string, string>;
-  optionalDependencies?: Record<string, string>;
-  [key: string]: unknown;
-}
-
-/** Known lock file names — presence detected but not parsed in Phase 1 */
-const LOCK_FILE_NAMES = ["package-lock.json", "pnpm-lock.yaml", "yarn.lock"] as const;
-
-// ---------------------------------------------------------------------------
-// NpmIngestor
-// ---------------------------------------------------------------------------
+import type { EcosystemIngestor, IngestorResult } from "./interface.js";
+import { LOCK_FILE_NAMES, parsePackageJsonContent } from "./npm-parse.js";
 
 export class NpmIngestor implements EcosystemIngestor {
   readonly ecosystem = "npm" as const;
@@ -52,94 +39,19 @@ export class NpmIngestor implements EcosystemIngestor {
    *   https://raw.githubusercontent.com/owner/name/main
    */
   async parseDependencies(repoPath: string): Promise<IngestorResult> {
-    const warnings: string[] = [];
-
     // Normalise: strip any trailing slash so URL joins are consistent
     const base = repoPath.replace(/\/$/, "");
+    const url = `${base}/package.json`;
 
-    // ------------------------------------------------------------------
-    // 1. Fetch package.json
-    // ------------------------------------------------------------------
-    const packageJson = await this.fetchPackageJson(base, warnings);
+    const raw = await this.fetchPackageJsonRaw(url);
 
-    if (packageJson === null) {
-      // No package.json at all — nothing to ingest for this repo
-      return {
-        ecosystem: "npm",
-        dependencies: [],
-        lock_file_present: false,
-        warnings,
-      };
-    }
+    // Skip the lock-file HEAD requests entirely when there's no package.json
+    // to resolve confidence against — parsePackageJsonContent would ignore
+    // lockFilePresent in that case anyway, so there's no point making the
+    // extra network calls.
+    const lockFilePresent = raw === null ? false : await this.detectLockFile(base);
 
-    // ------------------------------------------------------------------
-    // 2. Detect lock file presence (no parsing)
-    // ------------------------------------------------------------------
-    const lockFilePresent = await this.detectLockFile(base);
-
-    if (!lockFilePresent) {
-      warnings.push(
-        "No lock file detected (package-lock.json, pnpm-lock.yaml, yarn.lock). " +
-          "Dependency versions are unresolved; confidence scores will be lower.",
-      );
-    }
-
-    // ------------------------------------------------------------------
-    // 3. Parse dependency sections
-    // ------------------------------------------------------------------
-    const dependencies: ParsedDependency[] = [];
-
-    const sections: {
-      field: keyof PackageJson;
-      dep_type: ParsedDependency["dep_type"];
-    }[] = [
-      { field: "dependencies", dep_type: "production" },
-      { field: "devDependencies", dep_type: "development" },
-      { field: "peerDependencies", dep_type: "peer" },
-      { field: "optionalDependencies", dep_type: "optional" },
-    ];
-
-    for (const { field, dep_type } of sections) {
-      const section = packageJson[field];
-
-      if (section === undefined) continue;
-
-      if (!isStringRecord(section)) {
-        warnings.push(`"${String(field)}" in package.json is not a valid object — skipped.`);
-        continue;
-      }
-
-      for (const [package_name, version_spec] of Object.entries(section)) {
-        if (!isValidPackageName(package_name)) {
-          warnings.push(`Skipping invalid package name "${package_name}" in "${String(field)}".`);
-          continue;
-        }
-
-        if (typeof version_spec !== "string" || version_spec.trim() === "") {
-          warnings.push(
-            `Skipping "${package_name}" in "${String(field)}": version spec is missing or empty.`,
-          );
-          continue;
-        }
-
-        dependencies.push({
-          package_name,
-          version_spec: version_spec.trim(),
-          dep_type,
-        });
-      }
-    }
-
-    if (dependencies.length === 0) {
-      warnings.push("package.json contains no dependency entries.");
-    }
-
-    return {
-      ecosystem: "npm",
-      dependencies,
-      lock_file_present: lockFilePresent,
-      warnings,
-    };
+    return parsePackageJsonContent(raw, lockFilePresent, url);
   }
 
   // ---------------------------------------------------------------------------
@@ -147,12 +59,13 @@ export class NpmIngestor implements EcosystemIngestor {
   // ---------------------------------------------------------------------------
 
   /**
-   * Fetch and parse package.json from the raw GitHub URL.
-   * Returns null if the file is missing (404) or unparseable.
-   * Throws on unexpected network errors.
+   * Fetch the raw text of package.json from the raw GitHub URL.
+   * Returns null if the file is missing (404).
+   * Throws on network errors, unexpected HTTP statuses, or an unreadable
+   * response body — parsing/validating the content itself is
+   * parsePackageJsonContent's job, not this method's.
    */
-  private async fetchPackageJson(base: string, warnings: string[]): Promise<PackageJson | null> {
-    const url = `${base}/package.json`;
+  private async fetchPackageJsonRaw(url: string): Promise<string | null> {
     let response: Response;
 
     try {
@@ -162,7 +75,6 @@ export class NpmIngestor implements EcosystemIngestor {
     }
 
     if (response.status === 404) {
-      warnings.push(`No package.json found at ${url}. Repository skipped.`);
       return null;
     }
 
@@ -172,33 +84,17 @@ export class NpmIngestor implements EcosystemIngestor {
       );
     }
 
-    let raw: string;
     try {
-      raw = await response.text();
+      return await response.text();
     } catch (err) {
       throw new Error(`Failed to read response body from ${url}: ${String(err)}`);
     }
-
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(raw);
-    } catch {
-      warnings.push(`package.json at ${url} is not valid JSON — skipping repository.`);
-      return null;
-    }
-
-    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-      warnings.push(`package.json at ${url} is not a JSON object — skipping repository.`);
-      return null;
-    }
-
-    return parsed as PackageJson;
   }
 
   /**
    * HEAD-request each known lock file name. Returns true if any is present.
    * Intentionally silent — absence is not an error, just recorded as a warning
-   * by the caller.
+   * by parsePackageJsonContent.
    */
   private async detectLockFile(base: string): Promise<boolean> {
     const checks = LOCK_FILE_NAMES.map(async (name) => {
@@ -213,42 +109,4 @@ export class NpmIngestor implements EcosystemIngestor {
     const results = await Promise.all(checks);
     return results.some(Boolean);
   }
-}
-
-// ---------------------------------------------------------------------------
-// Guards
-// ---------------------------------------------------------------------------
-
-function isStringRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-/**
- * Validates npm package names against the npm registry spec:
- * https://github.com/npm/validate-npm-package-name
- *
- * This is a pragmatic subset — enough to reject obviously bad entries
- * without pulling in a dependency.
- */
-function isValidPackageName(name: string): boolean {
-  if (typeof name !== "string" || name.length === 0 || name.length > 214) {
-    return false;
-  }
-  // Scoped: @scope/name
-  if (name.startsWith("@")) {
-    const slash = name.indexOf("/");
-    if (slash === -1 || slash === 1 || slash === name.length - 1) return false;
-    const scope = name.slice(1, slash);
-    const pkg = name.slice(slash + 1);
-    return isValidNameSegment(scope) && isValidNameSegment(pkg);
-  }
-  return isValidNameSegment(name);
-}
-
-function isValidNameSegment(segment: string): boolean {
-  if (segment.length === 0) return false;
-  // Must not start with a dot or underscore (npm spec)
-  if (segment.startsWith(".") || segment.startsWith("_")) return false;
-  // Allowed: lowercase letters, digits, hyphens, dots, underscores
-  return /^[a-z0-9\-._]+$/.test(segment);
 }

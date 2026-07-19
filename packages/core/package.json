@@ -22,10 +22,42 @@
     "./db/repos.js": {
       "import": "./dist/db/repos.js",
       "types": "./dist/db/repos.d.ts"
+    },
+    "./ingestor/interface.js": {
+      "import": "./dist/ingestor/interface.js",
+      "types": "./dist/ingestor/interface.d.ts"
+    },
+    "./ingestor/local-npm.js": {
+      "import": "./dist/ingestor/local-npm.js",
+      "types": "./dist/ingestor/local-npm.d.ts"
+    },
+    "./ingestor/osv.js": {
+      "import": "./dist/ingestor/osv.js",
+      "types": "./dist/ingestor/osv.d.ts"
+    },
+    "./ingestor/registry.js": {
+      "import": "./dist/ingestor/registry.js",
+      "types": "./dist/ingestor/registry.d.ts"
+    },
+    "./ingestor/github-meta.js": {
+      "import": "./dist/ingestor/github-meta.js",
+      "types": "./dist/ingestor/github-meta.d.ts"
+    },
+    "./scorer/mission-scorer.js": {
+      "import": "./dist/scorer/mission-scorer.js",
+      "types": "./dist/scorer/mission-scorer.d.ts"
+    },
+    "./scorer/mission-copy.js": {
+      "import": "./dist/scorer/mission-copy.js",
+      "types": "./dist/scorer/mission-copy.d.ts"
+    },
+    "./scorer/ranking.js": {
+      "import": "./dist/scorer/ranking.js",
+      "types": "./dist/scorer/ranking.d.ts"
     }
   },
   "scripts": {
-    "build": "tsc --project tsconfig.json",
+    "build": "rm -rf dist && tsc --project tsconfig.json",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests"
   },
