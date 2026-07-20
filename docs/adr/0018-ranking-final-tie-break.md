@@ -1,6 +1,6 @@
 # ADR 0018 — Ranking Final Tie-Break: published_at Instead of created_at
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-07-18
 **Phase:** 4 (found while cross-validating the CLI against the live dashboard)
 

@@ -1,6 +1,6 @@
 # ADR 0017 — Ranking Tie-Break Transitivity Fix
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-07-16
 **Phase:** 3 → 4 transition (found while verifying real production data, before Phase 4 work began)
 

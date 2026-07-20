@@ -1,6 +1,6 @@
 # ADR 0016 — Regression Fixes: `predev`/`prebuild` Hooks Restored, Duplicate Ingestion Step Removed
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-07-14
 **Phase:** 3 → 4 transition (found before Phase 4 work began)
 
