@@ -168,7 +168,7 @@ Requires Node.js ≥20 and [pnpm](https://pnpm.io/installation) ≥9 (this proje
 
 ## Status
 
-Phases 0–4 complete: foundation, data pipeline, scoring engine, MVP dashboard (live), and the CLI companion. Currently entering Phase 5 (public rescue board — filterable cross-repo mission view, mission claiming). See [`docs/adr/`](docs/adr/) for the full decision history and the `PhaseN_Status.md` documents for phase-by-phase detail.
+Phases 0–4 complete: foundation, data pipeline, scoring engine, MVP dashboard (live), and the CLI companion. Currently entering Phase 5 (public rescue board — filterable cross-repo mission view, mission claiming). See [`docs/adr/`](docs/adr/) for the full decision history and the `PhaseN_Status.md` documents for phase-by-phase detail
 
 ## Contributing
 
