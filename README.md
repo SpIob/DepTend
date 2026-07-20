@@ -176,4 +176,4 @@ This is currently a solo-maintained project without a formal contribution proces
 
 ## License
 
-Not yet finalized — treat this repo as all-rights-reserved until a license is added.
+MIT License — see [LICENSE](LICENSE) for details.
