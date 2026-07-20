@@ -65,7 +65,7 @@ composite_score = impact_score × 0.60 + ecosystem_value_score × 0.40
 - **Ecosystem value** — log-scaled repo stars, open issues, and (once available) downstream dependents.
 - **Effort** — semver bump size required to reach the fixed version (patch/minor/major → trivial/low/.../high), refined by migration-guide data once that's ingested.
 
-Missions are ranked by `composite_score`, bucketed into fixed-width tiers so near-equal scores don't produce an inconsistent order ([ADR 0017](docs/adr/0017-ranking-tie-break-transitivity-fix.md)). Within a tier, `effort_label` breaks the tie — an intentional "prefer the quick win" rule, not an accident. Below that, the tied advisory's own `published_at` (newest first) and finally its `osv_id` guarantee a fully deterministic order regardless of input order or ingestion timing ([ADR 0018](docs/adr/0018-ranking-final-tie-break-published-at.md)).
+Missions are ranked by `composite_score`, bucketed into fixed-width tiers so near-equal scores don't produce an inconsistent order ([ADR 0017](docs/adr/0017-ranking-tie-break-transitivity-fix.md)). Within a tier, `effort_label` breaks the tie — an intentional "prefer the quick win" rule, not an accident. Below that, the tied advisory's own `published_at` (newest first) and finally its `osv_id` guarantee a fully deterministic order regardless of input order or ingestion timing ([ADR 0018](docs/adr/0018-ranking-final-tie-break.md)).
 
 Full detail: [`docs/adr/0006-scoring-algorithm.md`](docs/adr/0006-scoring-algorithm.md).
 
