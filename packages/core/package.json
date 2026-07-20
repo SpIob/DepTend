@@ -23,6 +23,10 @@
       "import": "./dist/db/repos.js",
       "types": "./dist/db/repos.d.ts"
     },
+    "./db/missions.js": {
+      "import": "./dist/db/missions.js",
+      "types": "./dist/db/missions.d.ts"
+    },
     "./ingestor/interface.js": {
       "import": "./dist/ingestor/interface.js",
       "types": "./dist/ingestor/interface.d.ts"

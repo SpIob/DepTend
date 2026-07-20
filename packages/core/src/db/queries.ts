@@ -24,11 +24,12 @@
  * ever compiled by one program, sidesteps it entirely.
  */
 
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { drizzle, type NeonHttpDatabase } from "drizzle-orm/neon-http";
 import { neon } from "@neondatabase/serverless";
 import * as schema from "./schema.js";
 import { advisories, dependencies, missions, missionScores, repos } from "./schema.js";
+import type { MissionStatus } from "./schema.js";
 import { rankMissions, type RankableMission } from "../scorer/ranking.js";
 import type { MissionWithScore } from "./query-types.js";
 
@@ -45,16 +46,14 @@ export function createReadonlyDb(databaseUrl: string): ReadonlyDb {
 }
 
 /**
- * All open missions, ranked highest-priority first (rankMissions() —
- * composite score, effort as tie-breaker, same algorithm used everywhere
- * else in this project).
- *
- * "Open" excludes claimed/resolved/dismissed missions — Phase 3 has no
- * claim flow yet (that's Phase 5), so in practice every mission returned
- * here is untouched, but the filter is the correct long-term semantic:
- * this is "what to fix next," not "everything that was ever found."
+ * Shared implementation behind getOpenMissionsWithScores() and
+ * getBoardMissionsWithScores() below — same join, same ranking, only the
+ * status filter differs.
  */
-export async function getOpenMissionsWithScores(db: ReadonlyDb): Promise<MissionWithScore[]> {
+async function getMissionsWithScoresByStatus(
+  db: ReadonlyDb,
+  statuses: readonly MissionStatus[],
+): Promise<MissionWithScore[]> {
   const rows = await db
     .select({
       mission: missions,
@@ -68,7 +67,7 @@ export async function getOpenMissionsWithScores(db: ReadonlyDb): Promise<Mission
     .innerJoin(repos, eq(missions.repoId, repos.id))
     .leftJoin(advisories, eq(missions.advisoryId, advisories.id))
     .leftJoin(dependencies, eq(missions.dependencyId, dependencies.id))
-    .where(eq(missions.status, "open"));
+    .where(inArray(missions.status, statuses));
 
   const withScores: MissionWithScore[] = rows.map((row) => ({
     ...row.mission,
@@ -100,6 +99,30 @@ export async function getOpenMissionsWithScores(db: ReadonlyDb): Promise<Mission
   );
 
   return ranked.map((r) => r.mission);
+}
+
+/**
+ * All open missions, ranked highest-priority first (rankMissions() —
+ * composite score, effort as tie-breaker, same algorithm used everywhere
+ * else in this project).
+ *
+ * "Open" excludes claimed/resolved/dismissed missions — this is "what to
+ * fix next," not "everything that was ever found."
+ */
+export async function getOpenMissionsWithScores(db: ReadonlyDb): Promise<MissionWithScore[]> {
+  return getMissionsWithScoresByStatus(db, ["open"]);
+}
+
+/**
+ * Open + claimed missions, ranked the same way as
+ * getOpenMissionsWithScores() above. This is what the Phase 5 public
+ * rescue board renders: claimed missions stay visible (marked claimed,
+ * not actionable by anyone but their claimant) so the board also answers
+ * "what's already being worked on," not just "what's left." Resolved and
+ * dismissed missions are excluded — no UI surfaces either state yet.
+ */
+export async function getBoardMissionsWithScores(db: ReadonlyDb): Promise<MissionWithScore[]> {
+  return getMissionsWithScoresByStatus(db, ["open", "claimed"]);
 }
 
 /** Count of repos that have completed at least one ingestion run. */

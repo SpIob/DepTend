@@ -1,5 +1,5 @@
-import { getIndexedRepoCount, getOpenMissions, getTotalRepoCount } from "@/lib/queries/missions";
-import { MissionCard } from "@/components/mission-card";
+import { getBoardMissions, getIndexedRepoCount, getTotalRepoCount } from "@/lib/queries/missions";
+import { MissionBoard } from "@/components/mission-board";
 import { AuthStatus } from "@/components/auth-status";
 import { SubmitRepoForm } from "@/components/submit-repo-form";
 
@@ -13,7 +13,7 @@ const MAX_REPOS = Number.parseInt(process.env.NEXT_PUBLIC_MAX_REPOS ?? "3", 10);
 function EmptyState(): React.JSX.Element {
   return (
     <div className="border-border bg-surface rounded-sm border border-dashed p-10 text-center">
-      <p className="text-ink font-medium">No open missions yet.</p>
+      <p className="text-ink font-medium">No missions yet.</p>
       <p className="text-ink-muted mt-1 text-sm">
         Missions appear here once a submitted repo has been ingested and scored.
       </p>
@@ -23,7 +23,7 @@ function EmptyState(): React.JSX.Element {
 
 export default async function MissionListPage(): Promise<React.JSX.Element> {
   const [missions, repoCount, totalRepoCount] = await Promise.all([
-    getOpenMissions(),
+    getBoardMissions(),
     getIndexedRepoCount(),
     getTotalRepoCount(),
   ]);
@@ -48,17 +48,7 @@ export default async function MissionListPage(): Promise<React.JSX.Element> {
         <SubmitRepoForm repoCount={totalRepoCount} maxRepos={MAX_REPOS} />
       </header>
 
-      {missions.length === 0 ? (
-        <EmptyState />
-      ) : (
-        <ul className="flex flex-col gap-4">
-          {missions.map((mission) => (
-            <li key={mission.id}>
-              <MissionCard mission={mission} />
-            </li>
-          ))}
-        </ul>
-      )}
+      {missions.length === 0 ? <EmptyState /> : <MissionBoard missions={missions} />}
     </main>
   );
 }

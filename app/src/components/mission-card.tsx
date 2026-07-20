@@ -1,4 +1,8 @@
-import type { EffortLabel, ScoreConfidence } from "@deptend/core/db/schema.js";
+"use client";
+
+import { useState } from "react";
+import { signIn, useSession } from "next-auth/react";
+import type { EffortLabel, MissionStatus, ScoreConfidence } from "@deptend/core/db/schema.js";
 import type { MissionWithScore } from "@deptend/core";
 import { SeverityMark, severityBorderClass } from "./severity-mark";
 
@@ -25,14 +29,141 @@ function osvUrl(osvId: string): string {
   return `https://osv.dev/vulnerability/${encodeURIComponent(osvId)}`;
 }
 
-export function MissionCard({ mission }: { mission: MissionWithScore }): React.JSX.Element {
+/** What changes on a mission after a successful claim/unclaim call. */
+export interface MissionClaimPatch {
+  status: MissionStatus;
+  claimedBy: string | null;
+  claimedAt: Date | null;
+}
+
+type ClaimRequestState =
+  { kind: "idle" } | { kind: "pending" } | { kind: "error"; message: string };
+
+function extractErrorMessage(data: unknown): string | null {
+  if (typeof data !== "object" || data === null) {
+    return null;
+  }
+  const record = data as Record<string, unknown>;
+  return typeof record.error === "string" ? record.error : null;
+}
+
+/**
+ * Claim/unclaim UI for one mission — a self-contained fetch + request-state
+ * component, same pattern as SubmitRepoForm. Only rendered content changes
+ * based on mission.status and the signed-in user's login; the parent
+ * (MissionBoard) is told about a successful mutation via onStatusChange so
+ * its copy of the mission list stays in sync without a full page reload.
+ */
+function ClaimAction({
+  missionId,
+  status,
+  claimedBy,
+  onStatusChange,
+}: {
+  missionId: string;
+  status: MissionStatus;
+  claimedBy: string | null;
+  onStatusChange: (missionId: string, patch: MissionClaimPatch) => void;
+}): React.JSX.Element | null {
+  const { data: session } = useSession();
+  const [request, setRequest] = useState<ClaimRequestState>({ kind: "idle" });
+  const login = session?.user?.login;
+
+  async function callAction(action: "claim" | "unclaim", patch: MissionClaimPatch): Promise<void> {
+    setRequest({ kind: "pending" });
+    try {
+      const response = await fetch(`/api/missions/${missionId}/${action}`, { method: "POST" });
+      const data: unknown = await response.json();
+      if (!response.ok) {
+        setRequest({
+          kind: "error",
+          message: extractErrorMessage(data) ?? "Something went wrong.",
+        });
+        return;
+      }
+      setRequest({ kind: "idle" });
+      onStatusChange(missionId, patch);
+    } catch {
+      setRequest({ kind: "error", message: "Network error — try again." });
+    }
+  }
+
+  const pending = request.kind === "pending";
+  const errorMessage = request.kind === "error" ? request.message : null;
+
+  if (status === "claimed" && claimedBy === login) {
+    return (
+      <div className="flex flex-col gap-1">
+        <button
+          type="button"
+          disabled={pending}
+          onClick={() =>
+            void callAction("unclaim", { status: "open", claimedBy: null, claimedAt: null })
+          }
+          className="border-border text-ink-muted hover:text-ink hover:border-ink-muted w-fit rounded-sm border px-2.5 py-1 font-mono text-xs disabled:opacity-50"
+        >
+          {pending ? "Releasing…" : "Unclaim"}
+        </button>
+        {errorMessage !== null && <p className="text-severity-critical text-xs">{errorMessage}</p>}
+      </div>
+    );
+  }
+
+  if (status === "claimed") {
+    return (
+      <p className="text-ink-muted font-mono text-xs">
+        Claimed by <span className="text-ink font-medium">@{claimedBy}</span>
+      </p>
+    );
+  }
+
+  // status === "open" from here down.
+  if (login === undefined) {
+    return (
+      <p className="text-ink-muted text-xs">
+        <button
+          type="button"
+          onClick={() => void signIn("github")}
+          className="text-accent hover:text-ink underline decoration-dotted underline-offset-2"
+        >
+          Sign in with GitHub
+        </button>{" "}
+        to claim this mission.
+      </p>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-1">
+      <button
+        type="button"
+        disabled={pending}
+        onClick={() =>
+          void callAction("claim", { status: "claimed", claimedBy: login, claimedAt: new Date() })
+        }
+        className="bg-accent w-fit rounded-sm px-2.5 py-1 font-mono text-xs font-medium text-white hover:opacity-90 disabled:opacity-50"
+      >
+        {pending ? "Claiming…" : "Claim this mission"}
+      </button>
+      {errorMessage !== null && <p className="text-severity-critical text-xs">{errorMessage}</p>}
+    </div>
+  );
+}
+
+export function MissionCard({
+  mission,
+  onStatusChange,
+}: {
+  mission: MissionWithScore;
+  onStatusChange: (missionId: string, patch: MissionClaimPatch) => void;
+}): React.JSX.Element {
   const { score, advisory, dependency, repo } = mission;
   const severity = advisory?.severity ?? "unknown";
   const isLowConfidence = score.confidence === "low";
 
   return (
     <article
-      className={`border-border bg-surface border border-l-4 ${severityBorderClass(severity)} rounded-sm`}
+      className={`border-border bg-surface border border-l-4 ${severityBorderClass(severity)} rounded-sm ${mission.status === "claimed" ? "opacity-75" : ""}`}
     >
       <div className="flex flex-col gap-3 p-5">
         <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
@@ -77,6 +208,13 @@ export function MissionCard({ mission }: { mission: MissionWithScore }): React.J
             {repo.owner}/{repo.name}
           </a>
         </div>
+
+        <ClaimAction
+          missionId={mission.id}
+          status={mission.status}
+          claimedBy={mission.claimedBy}
+          onStatusChange={onStatusChange}
+        />
 
         <details className="group -mx-5 -mb-5 mt-1">
           <summary className="text-ink-muted hover:text-ink hover:bg-bg border-border/60 flex items-center gap-1.5 border-t px-5 py-3 font-mono text-xs font-medium">
