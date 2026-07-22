@@ -10,7 +10,9 @@ import {
   getBoardMissionsWithScores,
   getIndexedRepoCount as coreGetIndexedRepoCount,
   getOpenMissionsWithScores,
+  getSkippedRepos as coreGetSkippedRepos,
   getTotalRepoCount as coreGetTotalRepoCount,
+  type SkippedRepo,
 } from "@deptend/core/db/queries.js";
 import type { MissionWithScore } from "@deptend/core";
 import { getDb } from "../db";
@@ -30,4 +32,8 @@ export async function getIndexedRepoCount(): Promise<number> {
 
 export async function getTotalRepoCount(): Promise<number> {
   return coreGetTotalRepoCount(getDb());
+}
+
+export async function getSkippedRepos(): Promise<SkippedRepo[]> {
+  return coreGetSkippedRepos(getDb());
 }

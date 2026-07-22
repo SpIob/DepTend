@@ -194,7 +194,7 @@ function makeAdvisoryRow(overrides: Record<string, unknown> = {}): Record<string
 
 describe("MissionWriter.generateMissionsForRepo", () => {
   it("throws when the repo does not exist", async () => {
-    const { db } = makeMockDb({ repoRow: undefined, candidateRows: [] });
+    const { db } = makeMockDb({ candidateRows: [] });
     const writer = new MissionWriter(db);
     await expect(writer.generateMissionsForRepo("missing-repo")).rejects.toThrow(/no repo found/);
   });

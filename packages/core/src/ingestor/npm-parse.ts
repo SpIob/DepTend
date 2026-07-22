@@ -54,7 +54,13 @@ export function parsePackageJsonContent(
 
   if (raw === null) {
     warnings.push(`No package.json found at ${source}. Repository skipped.`);
-    return { ecosystem: "npm", dependencies: [], lock_file_present: false, warnings };
+    return {
+      ecosystem: "npm",
+      dependencies: [],
+      lock_file_present: false,
+      package_json_resolved: false,
+      warnings,
+    };
   }
 
   let parsed: unknown;
@@ -62,12 +68,24 @@ export function parsePackageJsonContent(
     parsed = JSON.parse(raw);
   } catch {
     warnings.push(`package.json at ${source} is not valid JSON — skipping repository.`);
-    return { ecosystem: "npm", dependencies: [], lock_file_present: false, warnings };
+    return {
+      ecosystem: "npm",
+      dependencies: [],
+      lock_file_present: false,
+      package_json_resolved: false,
+      warnings,
+    };
   }
 
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
     warnings.push(`package.json at ${source} is not a JSON object — skipping repository.`);
-    return { ecosystem: "npm", dependencies: [], lock_file_present: false, warnings };
+    return {
+      ecosystem: "npm",
+      dependencies: [],
+      lock_file_present: false,
+      package_json_resolved: false,
+      warnings,
+    };
   }
 
   const packageJson = parsed as PackageJson;
@@ -130,6 +148,7 @@ export function parsePackageJsonContent(
     ecosystem: "npm",
     dependencies,
     lock_file_present: lockFilePresent,
+    package_json_resolved: true,
     warnings,
   };
 }

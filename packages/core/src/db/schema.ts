@@ -39,6 +39,12 @@ export const ingestionStatusEnum = pgEnum("ingestion_status", [
   "running",
   "complete",
   "failed",
+  // Pipeline ran to completion (not an error — not retried by
+  // resolvePending(), which only re-picks 'pending'/'failed') but found no
+  // analyzable package.json to ingest. Distinct from 'complete' (a repo
+  // that was actually analyzed) and 'failed' (a genuine error worth
+  // retrying).
+  "skipped",
 ]);
 
 export const depTypeEnum = pgEnum("dep_type", ["production", "development", "peer", "optional"]);

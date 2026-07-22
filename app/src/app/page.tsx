@@ -1,4 +1,9 @@
-import { getBoardMissions, getIndexedRepoCount, getTotalRepoCount } from "@/lib/queries/missions";
+import {
+  getBoardMissions,
+  getIndexedRepoCount,
+  getSkippedRepos,
+  getTotalRepoCount,
+} from "@/lib/queries/missions";
 import { MissionBoard } from "@/components/mission-board";
 import { AuthStatus } from "@/components/auth-status";
 import { SubmitRepoForm } from "@/components/submit-repo-form";
@@ -8,7 +13,7 @@ import { SubmitRepoForm } from "@/components/submit-repo-form";
 // show stale results. Also means `next build` never needs a DB connection.
 export const dynamic = "force-dynamic";
 
-const MAX_REPOS = Number.parseInt(process.env.NEXT_PUBLIC_MAX_REPOS ?? "3", 10);
+const MAX_REPOS = Number.parseInt(process.env.NEXT_PUBLIC_MAX_REPOS ?? "10", 10);
 
 function EmptyState(): React.JSX.Element {
   return (
@@ -22,10 +27,11 @@ function EmptyState(): React.JSX.Element {
 }
 
 export default async function MissionListPage(): Promise<React.JSX.Element> {
-  const [missions, repoCount, totalRepoCount] = await Promise.all([
+  const [missions, repoCount, totalRepoCount, skippedRepos] = await Promise.all([
     getBoardMissions(),
     getIndexedRepoCount(),
     getTotalRepoCount(),
+    getSkippedRepos(),
   ]);
 
   return (
@@ -36,6 +42,26 @@ export default async function MissionListPage(): Promise<React.JSX.Element> {
           <div className="flex items-center gap-4">
             <span className="text-ink-muted font-mono text-xs">
               {repoCount} {repoCount === 1 ? "repo" : "repos"} indexed
+              {skippedRepos.length > 0 && (
+                <>
+                  {" · "}
+                  <details className="inline">
+                    <summary className="hover:text-ink inline cursor-pointer underline decoration-dotted underline-offset-2">
+                      {skippedRepos.length} skipped
+                    </summary>
+                    <ul className="text-ink-muted mt-2 flex flex-col gap-1 text-left font-mono text-xs">
+                      {skippedRepos.map((repo) => (
+                        <li key={`${repo.owner}/${repo.name}`}>
+                          <span className="text-ink">
+                            {repo.owner}/{repo.name}
+                          </span>{" "}
+                          — {repo.reason ?? "no package.json found"}
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                </>
+              )}
             </span>
             <AuthStatus />
           </div>

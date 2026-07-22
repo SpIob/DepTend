@@ -45,7 +45,7 @@ type WriterDb = ConstructorParameters<typeof IngestionWriter>[0];
 interface Chain {
   values: () => Chain;
   onConflictDoUpdate: () => Chain;
-  set: () => Chain;
+  set: (values: Record<string, unknown>) => Chain;
   where: () => Promise<unknown[]>;
   from: () => Chain;
   returning: () => Promise<unknown[]>;
@@ -56,6 +56,8 @@ interface MockDbCalls {
   updates: string[];
   selects: string[];
   transactionCalled: boolean;
+  /** Every value object passed to .set(), in call order, across all update() calls. */
+  setCalls: Record<string, unknown>[];
 }
 
 interface MockDb {
@@ -92,6 +94,7 @@ function makeMockDb(overrides: {
     updates: [],
     selects: [],
     transactionCalled: false,
+    setCalls: [],
   };
 
   // Counter to distinguish successive .returning() calls
@@ -101,7 +104,10 @@ function makeMockDb(overrides: {
     const chain: Chain = {
       values: (): Chain => chain,
       onConflictDoUpdate: (): Chain => chain,
-      set: (): Chain => chain,
+      set: (values: Record<string, unknown>): Chain => {
+        calls.setCalls.push(values);
+        return chain;
+      },
       where: (): Promise<unknown[]> => Promise.resolve([]),
       from: (): Chain => chain,
       returning: (): Promise<unknown[]> => {
@@ -169,7 +175,11 @@ const REPO_INPUT: WriteIngestionInput["repo"] = {
   submittedBy: null,
 };
 
-function makeIngestorResult(depCount = 2, warnings: string[] = []): IngestorResult {
+function makeIngestorResult(
+  depCount = 2,
+  warnings: string[] = [],
+  packageJsonResolved = true,
+): IngestorResult {
   return {
     ecosystem: "npm",
     dependencies: Array.from({ length: depCount }, (_, i) => ({
@@ -178,6 +188,7 @@ function makeIngestorResult(depCount = 2, warnings: string[] = []): IngestorResu
       dep_type: "production" as const,
     })),
     lock_file_present: false,
+    package_json_resolved: packageJsonResolved,
     warnings,
   };
 }
@@ -272,10 +283,21 @@ describe("IngestionWriter", () => {
 
       expect(result.repoId).toBe("repo-uuid-1");
       expect(result.runId).toBe("run-uuid-1");
+      expect(result.status).toBe("complete");
       expect(result.dependenciesWritten).toBe(2);
       expect(result.advisoriesWritten).toBe(1);
       expect(result.dependencyAdvisoriesWritten).toBe(1);
       expect(result.allWarnings).toHaveLength(0);
+    });
+
+    it("marks the repo complete with no ingestionError", async () => {
+      await writer.write(makeInput());
+
+      // Second update() call is the repos row (first is closeRun on ingestion_runs)
+      expect(db._calls.setCalls[1]).toMatchObject({
+        ingestionStatus: "complete",
+        ingestionError: null,
+      });
     });
 
     it("merges warnings from all three upstream results", async () => {
@@ -334,6 +356,7 @@ describe("IngestionWriter", () => {
 
       const result = await writer.write(input);
 
+      expect(result.status).toBe("complete");
       expect(result.dependenciesWritten).toBe(0);
       expect(result.advisoriesWritten).toBe(0);
       expect(result.dependencyAdvisoriesWritten).toBe(0);
@@ -357,6 +380,92 @@ describe("IngestionWriter", () => {
 
       expect(result.advisoriesWritten).toBe(0);
       expect(result.dependencyAdvisoriesWritten).toBe(0);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  describe("write — skipped (no package.json found)", () => {
+    beforeEach(() => {
+      db = makeMockDb({
+        repoRow: { id: "repo-uuid-1" },
+        runRow: { id: "run-uuid-1" },
+        depRows: [],
+        advisoryRows: [],
+      });
+      writer = new IngestionWriter(db as unknown as WriterDb);
+    });
+
+    it("returns status: skipped when package_json_resolved is false", async () => {
+      const input = makeInput({
+        ingestorResult: makeIngestorResult(
+          0,
+          [
+            "No package.json found at https://raw.githubusercontent.com/o/r/main/package.json. Repository skipped.",
+          ],
+          false,
+        ),
+        osvResult: makeOsvResult(0),
+        registryResult: makeRegistryResult([]),
+      });
+
+      const result = await writer.write(input);
+
+      expect(result.status).toBe("skipped");
+      expect(result.dependenciesWritten).toBe(0);
+    });
+
+    it("marks the repo skipped and records the specific reason in ingestionError", async () => {
+      const input = makeInput({
+        ingestorResult: makeIngestorResult(
+          0,
+          [
+            "No package.json found at https://raw.githubusercontent.com/o/r/main/package.json. Repository skipped.",
+          ],
+          false,
+        ),
+        osvResult: makeOsvResult(0),
+        registryResult: makeRegistryResult([]),
+      });
+
+      await writer.write(input);
+
+      // Second update() call is the repos row (first is closeRun on ingestion_runs)
+      expect(db._calls.setCalls[1]).toMatchObject({
+        ingestionStatus: "skipped",
+        ingestionError:
+          "No package.json found at https://raw.githubusercontent.com/o/r/main/package.json. Repository skipped.",
+      });
+    });
+
+    it("closes the ingestion_runs row with status 'skipped', not 'complete' or 'failed'", async () => {
+      const input = makeInput({
+        ingestorResult: makeIngestorResult(
+          0,
+          ["No package.json found. Repository skipped."],
+          false,
+        ),
+        osvResult: makeOsvResult(0),
+        registryResult: makeRegistryResult([]),
+      });
+
+      await writer.write(input);
+
+      // First update() call is closeRun on ingestion_runs
+      expect(db._calls.setCalls[0]).toMatchObject({ status: "skipped" });
+    });
+
+    it("does not throw — a missing package.json is not a pipeline error", async () => {
+      const input = makeInput({
+        ingestorResult: makeIngestorResult(
+          0,
+          ["No package.json found. Repository skipped."],
+          false,
+        ),
+        osvResult: makeOsvResult(0),
+        registryResult: makeRegistryResult([]),
+      });
+
+      await expect(writer.write(input)).resolves.toBeDefined();
     });
   });
 

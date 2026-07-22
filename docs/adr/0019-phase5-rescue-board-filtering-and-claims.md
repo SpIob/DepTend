@@ -1,6 +1,6 @@
 # ADR 0019 — Phase 5 Rescue Board: Filtering Mechanism, Impact Filter Axis, Claim Reversibility
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-07-20
 **Phase:** 5 (public rescue board)
 

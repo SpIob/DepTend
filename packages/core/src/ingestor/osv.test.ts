@@ -104,7 +104,8 @@ function mockOsvApiForVulns(
     vulns: vulns.map((v): MinimalVuln => {
       const id = v.id as string;
       detailsById[id] = v;
-      return { id, modified: v.modified as string | undefined };
+      const modified = v.modified as string | undefined;
+      return modified !== undefined ? { id, modified } : { id };
     }),
   }));
 

@@ -21,6 +21,16 @@ export interface IngestorResult {
   dependencies: ParsedDependency[];
   /** True if a lock file was available; affects score confidence */
   lock_file_present: boolean;
+  /**
+   * True if a manifest file was actually found and successfully parsed as
+   * a JSON object — even if it turned out to declare zero dependencies.
+   * False when there was no manifest to work with at all (missing,
+   * invalid JSON, or not an object) — the caller uses this to distinguish
+   * "we analyzed this repo and it's genuinely dependency-free" (stays
+   * ingestionStatus: "complete") from "we couldn't identify an npm
+   * project here at all" (ingestionStatus: "skipped").
+   */
+  package_json_resolved: boolean;
   /** Warnings about data quality to surface in the UI */
   warnings: string[];
 }

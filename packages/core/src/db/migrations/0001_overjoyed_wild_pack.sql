@@ -1,0 +1,4 @@
+ALTER TYPE "public"."ingestion_status" ADD VALUE 'skipped';--> statement-breakpoint
+ALTER TABLE "mission_scores" ALTER COLUMN "impact_inputs" SET DEFAULT '{"cvss_score":null,"severity":"unknown","is_transitive":false,"dep_type":"production","days_since_advisory":null}'::jsonb;--> statement-breakpoint
+ALTER TABLE "mission_scores" ALTER COLUMN "ecosystem_value_inputs" SET DEFAULT '{"repo_stars":0,"open_issues_count":0,"downstream_dependents":null}'::jsonb;--> statement-breakpoint
+ALTER TABLE "mission_scores" ALTER COLUMN "effort_inputs" SET DEFAULT '{"semver_bump":"unknown","has_migration_guide":false,"breaking_change_signals":[]}'::jsonb;

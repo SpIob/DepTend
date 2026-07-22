@@ -17,8 +17,13 @@
  *   limit (default: 10) to avoid hammering the registry. The npm registry
  *   enforces a rate limit of ~100 requests/min for unauthenticated clients;
  *   10 concurrent requests with no artificial delay is well within that
- *   budget for any real-world package.json at MVP scale (≤ 3 repos,
- *   each unlikely to exceed 200 unique packages).
+ *   budget for any real-world package.json (unlikely to exceed 200 unique
+ *   packages). This budget is per-repo, not per-run: scripts/ingest.js
+ *   processes repos strictly sequentially (`for (const repo of
+ *   targetRepos) { await ingestRepo(...) }`), so registry fetches never
+ *   overlap across repos regardless of how many are indexed — raising the
+ *   repo cap (10 as of the Phase 5 close-out, see ADR 0020) doesn't change
+ *   this budget's math at all.
  *
  * Phase 1 scope — intentionally out of scope:
  *   - Resolving version specs to concrete versions (requires lock file or

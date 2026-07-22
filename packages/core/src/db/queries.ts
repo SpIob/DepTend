@@ -145,3 +145,25 @@ export async function getTotalRepoCount(db: ReadonlyDb): Promise<number> {
   const rows = await db.select({ id: repos.id }).from(repos);
   return rows.length;
 }
+
+export interface SkippedRepo {
+  owner: string;
+  name: string;
+  /** Why NpmIngestor couldn't find/parse a manifest — see writer.ts. */
+  reason: string | null;
+}
+
+/**
+ * Repos whose most recent ingestion completed without error but found no
+ * analyzable package.json (status: "skipped" — see the ingestion_status
+ * enum's own comment in schema.ts). Still counts against the repo cap via
+ * getTotalRepoCount() above; excluded from getIndexedRepoCount() since
+ * nothing was actually indexed. Small enough a list that the dashboard
+ * can show it in full — no pagination.
+ */
+export async function getSkippedRepos(db: ReadonlyDb): Promise<SkippedRepo[]> {
+  return db
+    .select({ owner: repos.owner, name: repos.name, reason: repos.ingestionError })
+    .from(repos)
+    .where(eq(repos.ingestionStatus, "skipped"));
+}

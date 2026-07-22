@@ -18,7 +18,7 @@ Three constraints are non-negotiable and shape every decision in this project:
 
 ## Two ways to use it
 
-**The hosted dashboard** — visit [deptend.vercel.app](https://deptend.vercel.app), no account needed to browse missions. GitHub sign-in is only required to submit a new repo (capped at 3 indexed repos for the MVP).
+**The hosted dashboard** — visit [deptend.vercel.app](https://deptend.vercel.app), no account needed to browse missions. GitHub sign-in is only required to submit a new repo (capped at 10 indexed repos for the MVP).
 
 **The CLI** — runs the same scoring engine against a local repo path, entirely in-memory, no account or hosted infrastructure required:
 
@@ -176,4 +176,4 @@ This is currently a solo-maintained project without a formal contribution proces
 
 ## License
 
-MIT License — see [LICENSE](LICENSE) for details.
+Not yet finalized — treat this repo as all-rights-reserved until a license is added.

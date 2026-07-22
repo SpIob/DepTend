@@ -68,6 +68,7 @@ export interface WriteIngestionInput {
 export interface WriteIngestionOutput {
   repoId: string;
   runId: string;
+  status: "complete" | "skipped";
   dependenciesWritten: number;
   advisoriesWritten: number;
   dependencyAdvisoriesWritten: number;
@@ -133,21 +134,35 @@ export class IngestionWriter {
       throw err;
     }
 
-    // 6. Close run + mark repo complete
-    await this.closeRun(runId, "complete", dependenciesWritten, advisoriesWritten, null);
+    // 6. Close run + mark repo complete/skipped
+    // "Skipped" (not "complete", not "failed"): the pipeline ran to
+    // completion without error, but ingestorResult.package_json_resolved
+    // being false means there was no manifest to actually analyze — a
+    // repo with a genuinely empty-but-valid package.json still counts as
+    // "complete" (see IngestorResult's own doc comment). Using a status
+    // distinct from "failed" specifically so resolvePending() — which
+    // only re-picks 'pending'/'failed' — never retries a repo that will
+    // never have a package.json to find.
+    const finalStatus: "complete" | "skipped" = input.ingestorResult.package_json_resolved
+      ? "complete"
+      : "skipped";
+
+    await this.closeRun(runId, finalStatus, dependenciesWritten, advisoriesWritten, null);
 
     await this.db
       .update(repos)
       .set({
-        ingestionStatus: "complete",
+        ingestionStatus: finalStatus,
         lastIngestedAt: new Date(),
-        ingestionError: null,
+        ingestionError:
+          finalStatus === "skipped" ? (input.ingestorResult.warnings[0] ?? null) : null,
       })
       .where(eq(repos.id, repoId));
 
     return {
       repoId,
       runId,
+      status: finalStatus,
       dependenciesWritten,
       advisoriesWritten,
       dependencyAdvisoriesWritten,
@@ -221,7 +236,7 @@ export class IngestionWriter {
 
   private async closeRun(
     runId: string,
-    status: "complete" | "failed",
+    status: "complete" | "failed" | "skipped",
     dependenciesFound: number,
     advisoriesFetched: number,
     err: unknown,

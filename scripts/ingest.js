@@ -242,6 +242,7 @@ async function ingestRepo(
     log("info", `[${label}] Done`, {
       repoId: output.repoId,
       runId: output.runId,
+      status: output.status,
       dependenciesWritten: output.dependenciesWritten,
       advisoriesWritten: output.advisoriesWritten,
       dependencyAdvisoriesWritten: output.dependencyAdvisoriesWritten,
