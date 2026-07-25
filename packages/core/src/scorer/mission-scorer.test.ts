@@ -232,6 +232,126 @@ describe("buildEffortInputs", () => {
 });
 
 // ---------------------------------------------------------------------------
+// buildEffortInputs — PEP 440 bump inference for PyPI (ADR 0022, Decision 3)
+//
+// Mirrors the semver block above test-for-test where the concepts line up,
+// plus a few PEP-440-specific cases (epoch, "~=", multi-clause floors) that
+// have no direct semver equivalent.
+// ---------------------------------------------------------------------------
+
+describe("buildEffortInputs — PyPI / PEP 440", () => {
+  function pypiContext(
+    versionSpec: string,
+    fixedVersion: string | null,
+    overrides: Partial<Dependency> = {},
+  ): MissionScoringContext {
+    return makeContext({
+      dependency: makeDependency({ ecosystem: "pypi", versionSpec, ...overrides }),
+      advisory: makeAdvisory({ fixedVersion }),
+    });
+  }
+
+  it("infers a patch bump from a >= floor to a nearby fixed_version", () => {
+    const inputs = buildEffortInputs(pypiContext(">=1.2.3", "1.2.4"));
+    expect(inputs.semver_bump).toBe("patch");
+  });
+
+  it("infers a minor bump", () => {
+    const inputs = buildEffortInputs(pypiContext(">=1.2.3", "1.3.0"));
+    expect(inputs.semver_bump).toBe("minor");
+  });
+
+  it("infers a major bump", () => {
+    const inputs = buildEffortInputs(pypiContext(">=1.2.3", "2.0.0"));
+    expect(inputs.semver_bump).toBe("major");
+  });
+
+  it("infers a floor from the compatible-release operator ~=", () => {
+    const inputs = buildEffortInputs(pypiContext("~=1.4.2", "1.4.9"));
+    expect(inputs.semver_bump).toBe("patch");
+  });
+
+  it("falls back to dependency.latest_version when the advisory has no fixed_version", () => {
+    const inputs = buildEffortInputs(pypiContext(">=1.2.3", null, { latestVersion: "1.3.0" }));
+    expect(inputs.semver_bump).toBe("minor");
+  });
+
+  it("returns unknown when neither fixed_version nor latest_version is available", () => {
+    const inputs = buildEffortInputs(pypiContext(">=1.2.3", null, { latestVersion: null }));
+    expect(inputs.semver_bump).toBe("unknown");
+  });
+
+  it("returns unknown for an unconstrained dependency ('*', set by pypi-parse.ts for a bare PEP 508 name)", () => {
+    const inputs = buildEffortInputs(pypiContext("*", "2.0.0"));
+    expect(inputs.semver_bump).toBe("unknown");
+  });
+
+  it("returns unknown for an empty specifier string", () => {
+    const inputs = buildEffortInputs(pypiContext("", "2.0.0"));
+    expect(inputs.semver_bump).toBe("unknown");
+  });
+
+  it.each(["not-a-version-spec-at-all", "some garbage !!! text"])(
+    "returns unknown rather than throwing for an unparseable spec %s",
+    (versionSpec) => {
+      expect(() => buildEffortInputs(pypiContext(versionSpec, "2.0.0"))).not.toThrow();
+      const inputs = buildEffortInputs(pypiContext(versionSpec, "2.0.0"));
+      expect(inputs.semver_bump).toBe("unknown");
+    },
+  );
+
+  it("returns unknown when the target version is not a valid PEP 440 version", () => {
+    const inputs = buildEffortInputs(pypiContext(">=1.2.3", "not-a-version"));
+    expect(inputs.semver_bump).toBe("unknown");
+  });
+
+  it("treats a wildcard equality clause (==1.4.*) as no usable floor -> unknown", () => {
+    const inputs = buildEffortInputs(pypiContext("==1.4.*", "2.0.0"));
+    expect(inputs.semver_bump).toBe("unknown");
+  });
+
+  it("ignores exclusion clauses (!=) when looking for a floor", () => {
+    // No >=/==/~=/> clause at all — just an exclusion — so there's no
+    // usable floor even though the specifier itself is syntactically valid.
+    const inputs = buildEffortInputs(pypiContext("!=1.5.0", "2.0.0"));
+    expect(inputs.semver_bump).toBe("unknown");
+  });
+
+  it("picks the most restrictive of multiple floor-establishing clauses", () => {
+    // >=1.0 and >=2.0 both establish a floor; 2.0 is more restrictive.
+    // Target 2.0.1 is a patch bump from 2.0, not a major bump from 1.0.
+    const inputs = buildEffortInputs(pypiContext(">=1.0,>=2.0", "2.0.1"));
+    expect(inputs.semver_bump).toBe("patch");
+  });
+
+  it("treats an epoch change as a major bump even when release segments look identical", () => {
+    // PEP 440 epochs are the highest-precedence ordering component — a
+    // change here is a bigger discontinuity than a release-segment
+    // comparison alone would ever reveal.
+    const inputs = buildEffortInputs(pypiContext(">=1.0.0", "2!1.0.0"));
+    expect(inputs.semver_bump).toBe("major");
+  });
+
+  it("treats identical release segments differing only in a post-release suffix as patch", () => {
+    const inputs = buildEffortInputs(pypiContext(">=1.0.0", "1.0.0.post1"));
+    expect(inputs.semver_bump).toBe("patch");
+  });
+
+  it("still uses semver (not PEP 440) for an npm dependency, even with pep440 available", () => {
+    const inputs = buildEffortInputs(
+      makeContext({
+        dependency: makeDependency({ ecosystem: "npm", versionSpec: "^1.2.3" }),
+        advisory: makeAdvisory({ fixedVersion: "2.0.0" }),
+      }),
+    );
+    // A caret range is meaningless PEP 440 syntax — if this accidentally
+    // routed through inferPep440Bump instead, validRange("^1.2.3") would
+    // reject it and this would come back "unknown" instead of "major".
+    expect(inputs.semver_bump).toBe("major");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // buildEcosystemValueInputs
 // ---------------------------------------------------------------------------
 

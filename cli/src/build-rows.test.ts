@@ -52,6 +52,7 @@ describe("buildDependencies", () => {
       { package_name: "vitest", version_spec: "^2.0.0", dep_type: "development" },
     ],
     lock_file_present: true,
+    manifest_resolved: true,
     warnings: [],
   };
 
@@ -95,6 +96,19 @@ describe("buildDependencies", () => {
       },
     );
     expect(deps).toEqual([]);
+  });
+
+  it("writes ecosystem: 'pypi' on every row for a pypi ingestor result (ADR 0022 — mirrors writer.ts's fix)", () => {
+    const pypiResult: IngestorResult = {
+      ...ingestorResult,
+      ecosystem: "pypi",
+      dependencies: [{ package_name: "requests", version_spec: ">=2.25", dep_type: "production" }],
+    };
+
+    const deps = buildDependencies("repo-1", pypiResult, { metadata: new Map(), warnings: [] });
+
+    expect(deps).toHaveLength(1);
+    expect(deps[0]?.ecosystem).toBe("pypi");
   });
 });
 

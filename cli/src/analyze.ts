@@ -11,11 +11,19 @@
  *
  * Phase 4 scope (per project plan): npx-runnable CLI produces the same
  * ranked mission list locally from a repo path; JSON export works.
+ *
+ * Phase 6 (ADR 0022): ecosystem is no longer assumed to be npm — detected
+ * via ordered probing (detectEcosystem, same router scripts/ingest.js uses)
+ * so a repo path is analyzed identically regardless of which pipeline
+ * touches it.
  */
 
 import { LocalNpmIngestor } from "@deptend/core/ingestor/local-npm.js";
+import { LocalPyPIIngestor } from "@deptend/core/ingestor/local-pypi.js";
+import { detectEcosystem } from "@deptend/core/ingestor/detect.js";
 import { OsvFetcher } from "@deptend/core/ingestor/osv.js";
 import { NpmRegistryFetcher } from "@deptend/core/ingestor/registry.js";
+import { PyPIRegistryFetcher } from "@deptend/core/ingestor/pypi-registry.js";
 import { fetchGitHubRepoMeta } from "@deptend/core/ingestor/github-meta.js";
 import {
   computeMissionScore,
@@ -34,9 +42,14 @@ import type { AnalyzeOptions, AnalyzeResult, AnalyzedMission } from "./types.js"
 export async function analyze(options: AnalyzeOptions): Promise<AnalyzeResult> {
   const warnings: string[] = [];
 
-  // 1. Parse package.json from the local repo path
-  const ingestor = new LocalNpmIngestor();
-  const ingestorResult = await ingestor.parseDependencies(options.repoPath);
+  // 1. Detect ecosystem + parse dependencies from the local repo path.
+  // Ordered probing (ADR 0022): npm first, then PyPI — matches
+  // scripts/ingest.js's own probing order, so a repo detects the same way
+  // regardless of which pipeline analyzed it.
+  const ingestorResult = await detectEcosystem(
+    [new LocalNpmIngestor(), new LocalPyPIIngestor()],
+    options.repoPath,
+  );
   warnings.push(...ingestorResult.warnings);
 
   // 2. Fetch GitHub repo metadata (stars/issues — required for ecosystem_value)
@@ -49,11 +62,16 @@ export async function analyze(options: AnalyzeOptions): Promise<AnalyzeResult> {
 
   // 3. Fetch OSV advisories for whatever dependencies were found
   const osvFetcher = new OsvFetcher();
-  const osvResult = await osvFetcher.fetchAdvisories(ingestorResult.dependencies);
+  const osvResult = await osvFetcher.fetchAdvisories(
+    ingestorResult.dependencies,
+    ingestorResult.ecosystem,
+  );
   warnings.push(...osvResult.warnings);
 
-  // 4. Fetch npm registry metadata (latest version, deprecation status)
-  const registryFetcher = new NpmRegistryFetcher();
+  // 4. Fetch registry metadata (latest version, deprecation status) —
+  // matching fetcher for whichever ecosystem actually resolved.
+  const registryFetcher =
+    ingestorResult.ecosystem === "pypi" ? new PyPIRegistryFetcher() : new NpmRegistryFetcher();
   const registryResult = await registryFetcher.fetchMetadata(ingestorResult.dependencies);
   warnings.push(...registryResult.warnings);
 
@@ -131,6 +149,7 @@ export async function analyze(options: AnalyzeOptions): Promise<AnalyzeResult> {
       open_issues_count: repo.openIssuesCount,
     },
     dependencies_scanned: ingestorResult.dependencies.length,
+    ecosystem: ingestorResult.ecosystem,
     lock_file_present: ingestorResult.lock_file_present,
     missions: ranked.map(stripRankingFields),
     warnings,

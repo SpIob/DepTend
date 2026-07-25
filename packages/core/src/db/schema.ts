@@ -49,10 +49,7 @@ export const ingestionStatusEnum = pgEnum("ingestion_status", [
 
 export const depTypeEnum = pgEnum("dep_type", ["production", "development", "peer", "optional"]);
 
-export const ecosystemEnum = pgEnum("ecosystem", [
-  "npm",
-  // 'pypi' added in Phase 6+
-]);
+export const ecosystemEnum = pgEnum("ecosystem", ["npm", "pypi"]);
 
 export const advisorySourceEnum = pgEnum("advisory_source", ["osv", "ghsa"]);
 

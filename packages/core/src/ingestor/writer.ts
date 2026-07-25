@@ -38,6 +38,7 @@ import {
 } from "../db/schema.js";
 import type { OsvFetchResult } from "./osv.js";
 import type { NpmRegistryFetchResult } from "./registry.js";
+import type { PyPIRegistryFetchResult } from "./pypi-registry.js";
 import type { IngestorResult } from "./interface.js";
 
 // ---------------------------------------------------------------------------
@@ -61,7 +62,12 @@ export interface WriteIngestionInput {
   repo: RepoInput;
   ingestorResult: IngestorResult;
   osvResult: OsvFetchResult;
-  registryResult: NpmRegistryFetchResult;
+  // Union, not a shared interface — both fetchers already return
+  // structurally identical {metadata, warnings} shapes, and this file only
+  // ever reads from registryResult, so a union costs nothing here and
+  // avoids touching registry.ts/pypi-registry.ts, both already shipped and
+  // tested (ADR 0022).
+  registryResult: NpmRegistryFetchResult | PyPIRegistryFetchResult;
   triggeredBy: "cron" | "manual" | "submit";
 }
 
@@ -136,14 +142,14 @@ export class IngestionWriter {
 
     // 6. Close run + mark repo complete/skipped
     // "Skipped" (not "complete", not "failed"): the pipeline ran to
-    // completion without error, but ingestorResult.package_json_resolved
-    // being false means there was no manifest to actually analyze — a
-    // repo with a genuinely empty-but-valid package.json still counts as
-    // "complete" (see IngestorResult's own doc comment). Using a status
-    // distinct from "failed" specifically so resolvePending() — which
-    // only re-picks 'pending'/'failed' — never retries a repo that will
-    // never have a package.json to find.
-    const finalStatus: "complete" | "skipped" = input.ingestorResult.package_json_resolved
+    // completion without error, but ingestorResult.manifest_resolved being
+    // false means there was no manifest to actually analyze for this
+    // ecosystem — a repo with a genuinely empty-but-valid manifest still
+    // counts as "complete" (see IngestorResult's own doc comment). Using a
+    // status distinct from "failed" specifically so resolvePending() —
+    // which only re-picks 'pending'/'failed' — never retries a repo that
+    // will never have a manifest to find.
+    const finalStatus: "complete" | "skipped" = input.ingestorResult.manifest_resolved
       ? "complete"
       : "skipped";
 
@@ -298,7 +304,7 @@ export class IngestionWriter {
     tx: DbOrTx,
     repoId: string,
     ingestorResult: IngestorResult,
-    registryResult: NpmRegistryFetchResult,
+    registryResult: NpmRegistryFetchResult | PyPIRegistryFetchResult,
     osvResult: OsvFetchResult,
   ): Promise<{ depCount: number; depAdvisoryCount: number }> {
     if (ingestorResult.dependencies.length === 0) {
@@ -310,7 +316,11 @@ export class IngestionWriter {
       const meta = registryResult.metadata.get(dep.package_name);
       return {
         repoId,
-        ecosystem: "npm",
+        // Every dependency in one ingestion run shares the ingestor's own
+        // ecosystem — exactly one ingestor "wins" per repo under ADR
+        // 0022's ordered-probing detection, so there's no per-dependency
+        // ambiguity to resolve here.
+        ecosystem: ingestorResult.ecosystem,
         packageName: dep.package_name,
         versionSpec: dep.version_spec,
         depType: dep.dep_type,

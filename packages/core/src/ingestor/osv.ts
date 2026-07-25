@@ -27,8 +27,14 @@
  *   - Severity mapped from CVSS v3 score using NIST thresholds where CVSS
  *     is available; falls back to OSV's own severity enum; defaults to
  *     "unknown" when neither is present.
- *   - fixed_version extracted from the SEMVER range's first "fixed" event.
- *     When no fixed version exists (0-day or unfixed), fixed_version is null.
+ *   - fixed_version extracted from the first "fixed" event in a range OSV
+ *     considers authoritative for the queried ecosystem's own versioning
+ *     scheme: SEMVER-type ranges for npm, and — since PyPI isn't
+ *     semver-versioned — ECOSYSTEM-type ranges too when the ecosystem is
+ *     pypi (OSV's schema evaluates ECOSYSTEM-type ranges using each
+ *     ecosystem's native comparator; PEP 440 for PyPI). GIT-type ranges are
+ *     never used for either ecosystem — they're real but not useful for
+ *     the version-based matching this project does (ADR 0022).
  *
  * Phase 1 scope — intentionally out of scope:
  *   - GHSA advisory source (added when GitHub REST API integration lands)
@@ -37,9 +43,11 @@
  *
  * ADR: docs/adr/0003-npm-ecosystem-first.md (ecosystem choice)
  *      docs/adr/0010-osv-fetcher-detail-fetch-fix.md (batch/detail split)
+ *      docs/adr/0022-phase6-pypi-ecosystem.md (ecosystem parametrization,
+ *      ECOSYSTEM-type range handling for PyPI)
  */
 
-import type { NewAdvisory, Severity } from "../db/schema.js";
+import type { NewAdvisory, Severity, Ecosystem } from "../db/schema.js";
 import type { OsvVersionRange } from "../db/json-types.js";
 import type { ParsedDependency } from "../ingestor/interface.js";
 
@@ -55,6 +63,21 @@ const OSV_BATCH_LIMIT = 1000;
 
 /** Default number of in-flight GET /v1/vulns/{id} requests at once. */
 const DEFAULT_DETAIL_CONCURRENCY = 10;
+
+/**
+ * Our internal Ecosystem enum values ("npm", "pypi") vs. OSV's own
+ * ecosystem identifier strings are two different namespaces that happen to
+ * partially overlap — "npm" reads the same in both, but PyPI's OSV
+ * identifier is "PyPI" (exact casing, confirmed against osv-schema's own
+ * validation pattern; getting this wrong wouldn't error, it would just
+ * silently return zero results — the same class of bug ADR 0010 caught).
+ * A Record<Ecosystem, string> here means adding a third ecosystem without
+ * updating this map is a compile error, not a silent gap.
+ */
+const OSV_ECOSYSTEM_NAMES: Record<Ecosystem, string> = {
+  npm: "npm",
+  pypi: "PyPI",
+};
 
 // ---------------------------------------------------------------------------
 // Raw OSV API response types
@@ -164,10 +187,22 @@ export class OsvFetcher {
    * production and dev dependency only needs one query, and the same
    * advisory affecting multiple packages only needs one detail fetch.
    *
-   * @param dependencies - Parsed dependencies from NpmIngestor
+   * @param dependencies - Parsed dependencies from an EcosystemIngestor
+   * @param ecosystem - single value for the whole call, not per-dependency
+   *   — a direct consequence of ADR 0022's ecosystem-detection design
+   *   (exactly one ingestor "wins" per repo, so every dependency in one
+   *   ingestion run already shares the same ecosystem). Defaults to "npm"
+   *   so existing callers (scripts/ingest.js, cli/analyze.ts) keep working
+   *   unchanged until Step 7 wires the ecosystem-detection router through
+   *   them and starts passing the real detected value explicitly — both
+   *   only ever process npm repos today, so the default is accurate, not
+   *   just backward-compatible.
    * @returns OsvFetchResult with advisory insert rows and the package→advisory map
    */
-  async fetchAdvisories(dependencies: ParsedDependency[]): Promise<OsvFetchResult> {
+  async fetchAdvisories(
+    dependencies: ParsedDependency[],
+    ecosystem: Ecosystem = "npm",
+  ): Promise<OsvFetchResult> {
     const warnings: string[] = [];
 
     if (dependencies.length === 0) {
@@ -190,9 +225,10 @@ export class OsvFetcher {
     // ------------------------------------------------------------------
     // Stage 1: batch query — returns only {id, modified} per result
     // ------------------------------------------------------------------
+    const osvEcosystemName = OSV_ECOSYSTEM_NAMES[ecosystem];
     const requestBody: OsvBatchRequest = {
       queries: queried.map((name) => ({
-        package: { name, ecosystem: "npm" },
+        package: { name, ecosystem: osvEcosystemName },
       })),
     };
 
@@ -272,6 +308,7 @@ export class OsvFetcher {
     const { advisories, failedIds } = await this.fetchFullDetails(
       [...uniqueIds],
       firstPackageForId,
+      ecosystem,
       warnings,
     );
 
@@ -304,6 +341,7 @@ export class OsvFetcher {
   private async fetchFullDetails(
     ids: string[],
     firstPackageForId: Map<string, string>,
+    ecosystem: Ecosystem,
     warnings: string[],
   ): Promise<{ advisories: Map<string, NewAdvisory>; failedIds: Set<string> }> {
     const advisories = new Map<string, NewAdvisory>();
@@ -322,7 +360,7 @@ export class OsvFetcher {
           // Guaranteed present: every id here came from firstPackageForId's
           // own key set (built from the same ids in fetchAdvisories).
           const packageName = firstPackageForId.get(id) ?? "";
-          advisories.set(id, this.mapVulnToAdvisory(vuln, packageName, warnings));
+          advisories.set(id, this.mapVulnToAdvisory(vuln, packageName, ecosystem, warnings));
         } catch (err) {
           failedIds.add(id);
           warnings.push(
@@ -375,11 +413,12 @@ export class OsvFetcher {
   private mapVulnToAdvisory(
     vuln: OsvVulnerability,
     packageName: string,
+    ecosystem: Ecosystem,
     warnings: string[],
   ): NewAdvisory {
     const severity = this.extractSeverity(vuln, warnings);
     const cvssScore = this.extractCvssScore(vuln);
-    const affectedVersions = this.extractAffectedRanges(vuln);
+    const affectedVersions = this.extractAffectedRanges(vuln, ecosystem);
     const fixedVersion = this.extractFixedVersion(affectedVersions);
 
     // Determine advisory source: GHSA IDs are prefixed with "GHSA-"
@@ -400,7 +439,10 @@ export class OsvFetcher {
     return {
       osvId: vuln.id,
       source,
-      ecosystem: "npm",
+      // Our own internal enum value ("npm"/"pypi"), not OSV's ecosystem
+      // string ("npm"/"PyPI") — two different namespaces, see
+      // OSV_ECOSYSTEM_NAMES above.
+      ecosystem,
       packageName,
       severity,
       cvssScore,
@@ -483,18 +525,35 @@ export class OsvFetcher {
   }
 
   /**
-   * Extract SEMVER affected ranges from the OSV vulnerability.
-   * Only SEMVER ranges are stored; GIT and ECOSYSTEM ranges are dropped
-   * (they are less useful for the npm version matching in Phase 2).
+   * Extract affected ranges from the OSV vulnerability, filtered to the
+   * range type(s) that are actually usable for the queried ecosystem's own
+   * version scheme. GIT ranges are never used for either ecosystem — real,
+   * but not useful for the version-based matching this project does.
+   *
+   * npm is semver-versioned, so OSV represents its ranges as SEMVER type.
+   * PyPI is PEP-440-versioned, not semver — OSV represents its ranges as
+   * ECOSYSTEM type instead, evaluated against each ecosystem's own native
+   * comparator (confirmed against multiple independent sources describing
+   * osv-schema's Range_Type enum and OSV's own "ecosystem's native
+   * versioning scheme" design; not confirmed by directly fetching a live
+   * PyPI OSV record, since api.osv.dev isn't reachable from this
+   * environment's network egress list — worth a real spot-check against
+   * production data during Step 8's live verification). SEMVER is still
+   * accepted for pypi too, in case a specific record happens to use it —
+   * accepting a broader set for pypi costs nothing; narrowing npm's
+   * existing, already-verified behavior is what would carry real risk.
    */
-  private extractAffectedRanges(vuln: OsvVulnerability): OsvVersionRange[] {
+  private extractAffectedRanges(vuln: OsvVulnerability, ecosystem: Ecosystem): OsvVersionRange[] {
+    const acceptedTypes: OsvRange["type"][] =
+      ecosystem === "pypi" ? ["SEMVER", "ECOSYSTEM"] : ["SEMVER"];
+
     const ranges: OsvVersionRange[] = [];
 
     for (const affected of vuln.affected ?? []) {
       for (const range of affected.ranges ?? []) {
-        if (range.type === "SEMVER") {
+        if (acceptedTypes.includes(range.type)) {
           ranges.push({
-            type: "SEMVER",
+            type: range.type,
             events: range.events,
           });
         }

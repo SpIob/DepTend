@@ -43,7 +43,7 @@ type WriterDb = ConstructorParameters<typeof IngestionWriter>[0];
  *   transaction(callback)                                        [runs callback]
  */
 interface Chain {
-  values: () => Chain;
+  values: (rows: unknown[]) => Chain;
   onConflictDoUpdate: () => Chain;
   set: (values: Record<string, unknown>) => Chain;
   where: () => Promise<unknown[]>;
@@ -58,6 +58,16 @@ interface MockDbCalls {
   transactionCalled: boolean;
   /** Every value object passed to .set(), in call order, across all update() calls. */
   setCalls: Record<string, unknown>[];
+  /**
+   * Every value array passed to .values() on an insert() chain, keyed by
+   * the table name insert() was called with, in call order. Not populated
+   * for update()/select() chains — .values() isn't meaningfully called on
+   * those. Added specifically to verify ADR 0022's ecosystem-hardcoding
+   * fix: without this, nothing in this file could actually inspect what
+   * upsertDependencies() builds for depRows, only the mock's pre-configured
+   * .returning() output (a count, not the real content).
+   */
+  insertedValues: { table: string; rows: unknown[] }[];
 }
 
 interface MockDb {
@@ -95,14 +105,25 @@ function makeMockDb(overrides: {
     selects: [],
     transactionCalled: false,
     setCalls: [],
+    insertedValues: [],
   };
 
   // Counter to distinguish successive .returning() calls
   let returningCallCount = 0;
 
-  function makeChain(): Chain {
+  /**
+   * @param insertTableName - when this chain originated from insert(table),
+   *   the table name, so .values() can record which table its rows were
+   *   meant for. Left undefined for update()/select() chains.
+   */
+  function makeChain(insertTableName?: string): Chain {
     const chain: Chain = {
-      values: (): Chain => chain,
+      values: (rows: unknown[]): Chain => {
+        if (insertTableName !== undefined) {
+          calls.insertedValues.push({ table: insertTableName, rows });
+        }
+        return chain;
+      },
       onConflictDoUpdate: (): Chain => chain,
       set: (values: Record<string, unknown>): Chain => {
         calls.setCalls.push(values);
@@ -129,8 +150,9 @@ function makeMockDb(overrides: {
     _calls: calls,
 
     insert: vi.fn((table: Table): Chain => {
-      calls.inserts.push(getTableName(table));
-      return makeChain();
+      const tableName = getTableName(table);
+      calls.inserts.push(tableName);
+      return makeChain(tableName);
     }),
 
     update: vi.fn((table: Table): Chain => {
@@ -178,17 +200,18 @@ const REPO_INPUT: WriteIngestionInput["repo"] = {
 function makeIngestorResult(
   depCount = 2,
   warnings: string[] = [],
-  packageJsonResolved = true,
+  manifestResolved = true,
+  ecosystem: IngestorResult["ecosystem"] = "npm",
 ): IngestorResult {
   return {
-    ecosystem: "npm",
+    ecosystem,
     dependencies: Array.from({ length: depCount }, (_, i) => ({
       package_name: `pkg-${String(i)}`,
       version_spec: `^${String(i)}.0.0`,
       dep_type: "production" as const,
     })),
     lock_file_present: false,
-    package_json_resolved: packageJsonResolved,
+    manifest_resolved: manifestResolved,
     warnings,
   };
 }
@@ -395,7 +418,7 @@ describe("IngestionWriter", () => {
       writer = new IngestionWriter(db as unknown as WriterDb);
     });
 
-    it("returns status: skipped when package_json_resolved is false", async () => {
+    it("returns status: skipped when manifest_resolved is false", async () => {
       const input = makeInput({
         ingestorResult: makeIngestorResult(
           0,
@@ -519,6 +542,42 @@ describe("IngestionWriter", () => {
       // Should not throw — missing registry metadata is handled gracefully
       const result = await writer.write(input);
       expect(result.dependenciesWritten).toBe(2);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // ADR 0022: upsertDependencies() used to hardcode ecosystem: "npm" on every
+  // dependency row, regardless of what ingestorResult.ecosystem actually
+  // said. These tests exist specifically to guard against that regressing —
+  // without the insertedValues capture added above, nothing here could have
+  // caught it (result.dependenciesWritten is just a count).
+  describe("write — dependency row ecosystem (ADR 0022)", () => {
+    function insertedDependencyRows(
+      mockDb: ReturnType<typeof makeMockDb>,
+    ): { ecosystem: string }[] {
+      return mockDb._calls.insertedValues.find((v) => v.table === "dependencies")?.rows as {
+        ecosystem: string;
+      }[];
+    }
+
+    it("writes ecosystem: 'npm' on every dependency row for an npm ingestor result", async () => {
+      await writer.write(makeInput({ ingestorResult: makeIngestorResult(2, [], true, "npm") }));
+
+      const rows = insertedDependencyRows(db);
+      expect(rows).toHaveLength(2);
+      for (const row of rows) {
+        expect(row.ecosystem).toBe("npm");
+      }
+    });
+
+    it("writes ecosystem: 'pypi' on every dependency row for a pypi ingestor result", async () => {
+      await writer.write(makeInput({ ingestorResult: makeIngestorResult(2, [], true, "pypi") }));
+
+      const rows = insertedDependencyRows(db);
+      expect(rows).toHaveLength(2);
+      for (const row of rows) {
+        expect(row.ecosystem).toBe("pypi");
+      }
     });
   });
 

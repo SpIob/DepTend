@@ -29,6 +29,11 @@
  * Phase 2: also generates/refreshes vulnerability_fix missions and scores
  * for every is_affected dependency, immediately after a repo's ingestion
  * write succeeds (see MissionWriter, packages/core/src/scorer/writer.ts).
+ * Phase 6 (ADR 0022): a repo's ecosystem is no longer assumed to be npm —
+ * detected per-repo via ordered probing (detectEcosystem: npm first, then
+ * PyPI), with no schema field recording the choice — it's re-decided fresh
+ * on every run from what's actually in the repo, not stored as a fact
+ * about the repo itself.
  */
 
 import { Pool } from "@neondatabase/serverless";
@@ -40,8 +45,11 @@ import { eq, or } from "drizzle-orm";
 // intentionally to access ingestor modules not part of the public surface.
 import * as schema from "../packages/core/dist/db/schema.js";
 import { NpmIngestor } from "../packages/core/dist/ingestor/npm.js";
+import { PyPIIngestor } from "../packages/core/dist/ingestor/pypi.js";
+import { detectEcosystem } from "../packages/core/dist/ingestor/detect.js";
 import { OsvFetcher } from "../packages/core/dist/ingestor/osv.js";
 import { NpmRegistryFetcher } from "../packages/core/dist/ingestor/registry.js";
+import { PyPIRegistryFetcher } from "../packages/core/dist/ingestor/pypi-registry.js";
 import { IngestionWriter } from "../packages/core/dist/ingestor/writer.js";
 import { MissionWriter } from "../packages/core/dist/scorer/writer.js";
 import { fetchGitHubRepoMeta } from "../packages/core/dist/ingestor/github-meta.js";
@@ -116,9 +124,16 @@ async function main() {
   // ------------------------------------------------------------------
   // Run the pipeline for each repo
   // ------------------------------------------------------------------
-  const ingestor = new NpmIngestor();
+  // Two of each — the router (below, per-repo) probes npm first, then
+  // PyPI (ADR 0022), and the matching registry fetcher is picked once the
+  // winning ecosystem is known. Both ingestor/fetcher pairs are stateless
+  // and safely reused across every repo in this run, same as the single
+  // npm pair was before.
+  const npmIngestor = new NpmIngestor();
+  const pypiIngestor = new PyPIIngestor();
   const osvFetcher = new OsvFetcher();
-  const registryFetcher = new NpmRegistryFetcher();
+  const npmRegistryFetcher = new NpmRegistryFetcher();
+  const pypiRegistryFetcher = new PyPIRegistryFetcher();
 
   let failCount = 0;
 
@@ -133,9 +148,11 @@ async function main() {
         db,
         writer,
         missionWriter,
-        ingestor,
+        npmIngestor,
+        pypiIngestor,
         osvFetcher,
-        registryFetcher,
+        npmRegistryFetcher,
+        pypiRegistryFetcher,
         githubToken ?? null,
         args.triggeredBy,
       );
@@ -167,9 +184,11 @@ async function ingestRepo(
   db,
   writer,
   missionWriter,
-  ingestor,
+  npmIngestor,
+  pypiIngestor,
   osvFetcher,
-  registryFetcher,
+  npmRegistryFetcher,
+  pypiRegistryFetcher,
   githubToken,
   triggeredBy,
 ) {
@@ -194,23 +213,27 @@ async function ingestRepo(
       submittedBy: repo.submittedBy ?? null,
     };
 
-    // 2. Build the raw content base URL for NpmIngestor
+    // 2. Build the raw content base URL for the ingestors
     const rawBase = `https://raw.githubusercontent.com/${owner}/${name}/${repoInput.defaultBranch}`;
 
-    // 3. Parse package.json
-    log("info", `[${label}] Parsing package.json`);
-    const ingestorResult = await ingestor.parseDependencies(rawBase);
+    // 3. Detect ecosystem + parse dependencies. Ordered probing (ADR
+    // 0022): npm first, then PyPI.
+    log("info", `[${label}] Detecting ecosystem and parsing dependencies`);
+    const ingestorResult = await detectEcosystem([npmIngestor, pypiIngestor], rawBase);
     logWarnings(label, ingestorResult.warnings);
 
     log(
       "info",
-      `[${label}] Found ${ingestorResult.dependencies.length} dependencies` +
+      `[${label}] Ecosystem: ${ingestorResult.ecosystem} — found ${ingestorResult.dependencies.length} dependencies` +
         ` (lock_file_present=${ingestorResult.lock_file_present})`,
     );
 
     // 4. Fetch OSV advisories
     log("info", `[${label}] Querying OSV for advisories`);
-    const osvResult = await osvFetcher.fetchAdvisories(ingestorResult.dependencies);
+    const osvResult = await osvFetcher.fetchAdvisories(
+      ingestorResult.dependencies,
+      ingestorResult.ecosystem,
+    );
     logWarnings(label, osvResult.warnings);
 
     log(
@@ -219,8 +242,11 @@ async function ingestRepo(
         ` across ${osvResult.packageAdvisoryMap.size} package(s)`,
     );
 
-    // 5. Fetch npm registry metadata
-    log("info", `[${label}] Fetching npm registry metadata`);
+    // 5. Fetch registry metadata — matching fetcher for whichever
+    // ecosystem actually resolved.
+    const registryFetcher =
+      ingestorResult.ecosystem === "pypi" ? pypiRegistryFetcher : npmRegistryFetcher;
+    log("info", `[${label}] Fetching ${ingestorResult.ecosystem} registry metadata`);
     const registryResult = await registryFetcher.fetchMetadata(ingestorResult.dependencies);
     logWarnings(label, registryResult.warnings);
 

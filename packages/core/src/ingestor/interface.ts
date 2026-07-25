@@ -22,15 +22,20 @@ export interface IngestorResult {
   /** True if a lock file was available; affects score confidence */
   lock_file_present: boolean;
   /**
-   * True if a manifest file was actually found and successfully parsed as
-   * a JSON object — even if it turned out to declare zero dependencies.
-   * False when there was no manifest to work with at all (missing,
-   * invalid JSON, or not an object) — the caller uses this to distinguish
-   * "we analyzed this repo and it's genuinely dependency-free" (stays
-   * ingestionStatus: "complete") from "we couldn't identify an npm
-   * project here at all" (ingestionStatus: "skipped").
+   * True if a manifest file was actually found and successfully parsed —
+   * even if it turned out to declare zero dependencies. False when there
+   * was no manifest to work with at all for this ecosystem (missing,
+   * unparseable, or — for ecosystems with a fallback source, like PyPI's
+   * requirements.txt — none of the candidate sources resolved). The caller
+   * uses this to distinguish "we analyzed this repo and it's genuinely
+   * dependency-free" (stays ingestionStatus: "complete") from "we couldn't
+   * identify a project for this ecosystem here at all" (ingestionStatus:
+   * "skipped"). Named generically rather than after any one ecosystem's
+   * manifest format — renamed from package_json_resolved in ADR 0022,
+   * Phase 6, when a second ecosystem's manifest shape (pyproject.toml/
+   * requirements.txt, not JSON) made the original name misleading.
    */
-  package_json_resolved: boolean;
+  manifest_resolved: boolean;
   /** Warnings about data quality to surface in the UI */
   warnings: string[];
 }

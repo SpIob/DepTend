@@ -127,6 +127,110 @@ describe("analyze", () => {
     expect(mission?.confidence).toBe("low"); // no lock file + no downstream data, by design
   });
 
+  it("produces a ranked mission list from a local PyPI repo with a real vulnerability (ADR 0022)", async () => {
+    // No package.json anywhere in repoDir — only pyproject.toml — so the
+    // router (npm tried first) falls through to PyPI. Also incidentally
+    // exercises the ECOSYSTEM-range fix from osv.ts (Step 6) end-to-end
+    // through the real CLI path, not just osv.test.ts's isolated mocks.
+    await writeFile(
+      join(repoDir, "pyproject.toml"),
+      `[project]\ndependencies = ["vulnerable-pkg>=1.0.0"]\n`,
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: string | URL | Request) => {
+        const url =
+          typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+
+        if (url.includes("api.github.com/repos/")) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                full_name: "owner/repo",
+                name: "repo",
+                owner: { login: "owner" },
+                default_branch: "main",
+                description: "A test repo",
+                stargazers_count: 100,
+                open_issues_count: 5,
+                topics: [],
+                homepage: null,
+              }),
+              { status: 200 },
+            ),
+          );
+        }
+        if (url.includes("api.osv.dev/v1/querybatch")) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                results: [
+                  { vulns: [{ id: "GHSA-test-pypi-1234", modified: "2026-01-01T00:00:00Z" }] },
+                ],
+              }),
+              { status: 200 },
+            ),
+          );
+        }
+        if (url.includes("api.osv.dev/v1/vulns/")) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                id: "GHSA-test-pypi-1234",
+                modified: "2026-01-01T00:00:00Z",
+                published: "2025-12-01T00:00:00Z",
+                summary: "Test vulnerability in vulnerable-pkg",
+                severity: [{ type: "CVSS_V3", score: "9.8" }],
+                affected: [
+                  {
+                    package: { name: "vulnerable-pkg", ecosystem: "PyPI" },
+                    // ECOSYSTEM type, not SEMVER — the actual real shape
+                    // OSV uses for PyPI (Step 6/ADR 0022). If the router
+                    // somehow left ecosystem defaulted to npm instead of
+                    // detecting pypi, this range would be silently dropped
+                    // and fixed_version would come back null instead of
+                    // "1.0.1" — this test would then fail on that
+                    // assertion, not silently pass.
+                    ranges: [
+                      { type: "ECOSYSTEM", events: [{ introduced: "0" }, { fixed: "1.0.1" }] },
+                    ],
+                  },
+                ],
+              }),
+              { status: 200 },
+            ),
+          );
+        }
+        if (url.includes("pypi.org/pypi/")) {
+          return Promise.resolve(
+            new Response(JSON.stringify({ info: { version: "1.0.1", name: "vulnerable-pkg" } }), {
+              status: 200,
+            }),
+          );
+        }
+        throw new Error(`Unmocked fetch call in analyze.test.ts (pypi): ${url}`);
+      }),
+    );
+
+    const result = await analyze({
+      repoPath: repoDir,
+      githubOwner: "owner",
+      githubName: "repo",
+      githubToken: null,
+    });
+
+    expect(result.ecosystem).toBe("pypi");
+    expect(result.dependencies_scanned).toBe(1);
+    expect(result.lock_file_present).toBe(false);
+
+    expect(result.missions).toHaveLength(1);
+    const mission = result.missions[0];
+    expect(mission?.dependency.package_name).toBe("vulnerable-pkg");
+    expect(mission?.advisory.osv_id).toBe("GHSA-test-pypi-1234");
+    expect(mission?.advisory.severity).toBe("critical");
+    expect(mission?.advisory.fixed_version).toBe("1.0.1");
+  });
+
   it("produces no missions for a repo with no vulnerable dependencies", async () => {
     await writeFile(
       join(repoDir, "package.json"),
@@ -175,8 +279,10 @@ describe("analyze", () => {
     expect(result.dependencies_scanned).toBe(1);
   });
 
-  it("still returns repo metadata and warnings when there's no package.json", async () => {
-    // repoDir intentionally left empty — no package.json
+  it("still returns repo metadata and warnings when there's no manifest for any ecosystem", async () => {
+    // repoDir intentionally left empty — no package.json, no
+    // pyproject.toml, no requirements.txt. The router (npm first, per ADR
+    // 0022) tries both and falls through to fully unresolved.
     vi.stubGlobal(
       "fetch",
       vi.fn((input: string | URL | Request) => {
@@ -212,7 +318,12 @@ describe("analyze", () => {
 
     expect(result.dependencies_scanned).toBe(0);
     expect(result.missions).toEqual([]);
+    // Both ingestors' own warnings should be present — confirms the router
+    // actually tried both rather than stopping after npm's failure alone.
     expect(result.warnings).toContainEqual(expect.stringContaining("No package.json found at"));
+    expect(result.warnings).toContainEqual(
+      expect.stringContaining("No usable pyproject.toml or requirements.txt found"),
+    );
   });
 
   it("breaks a tie between two equally-scored missions by published_at, newest first (ADR 0018)", async () => {

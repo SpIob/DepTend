@@ -58,7 +58,7 @@ export function parsePackageJsonContent(
       ecosystem: "npm",
       dependencies: [],
       lock_file_present: false,
-      package_json_resolved: false,
+      manifest_resolved: false,
       warnings,
     };
   }
@@ -72,7 +72,7 @@ export function parsePackageJsonContent(
       ecosystem: "npm",
       dependencies: [],
       lock_file_present: false,
-      package_json_resolved: false,
+      manifest_resolved: false,
       warnings,
     };
   }
@@ -83,7 +83,7 @@ export function parsePackageJsonContent(
       ecosystem: "npm",
       dependencies: [],
       lock_file_present: false,
-      package_json_resolved: false,
+      manifest_resolved: false,
       warnings,
     };
   }
@@ -148,7 +148,7 @@ export function parsePackageJsonContent(
     ecosystem: "npm",
     dependencies,
     lock_file_present: lockFilePresent,
-    package_json_resolved: true,
+    manifest_resolved: true,
     warnings,
   };
 }

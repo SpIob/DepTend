@@ -35,6 +35,10 @@
       "import": "./dist/ingestor/local-npm.js",
       "types": "./dist/ingestor/local-npm.d.ts"
     },
+    "./ingestor/local-pypi.js": {
+      "import": "./dist/ingestor/local-pypi.js",
+      "types": "./dist/ingestor/local-pypi.d.ts"
+    },
     "./ingestor/osv.js": {
       "import": "./dist/ingestor/osv.js",
       "types": "./dist/ingestor/osv.d.ts"
@@ -42,6 +46,14 @@
     "./ingestor/registry.js": {
       "import": "./dist/ingestor/registry.js",
       "types": "./dist/ingestor/registry.d.ts"
+    },
+    "./ingestor/pypi-registry.js": {
+      "import": "./dist/ingestor/pypi-registry.js",
+      "types": "./dist/ingestor/pypi-registry.d.ts"
+    },
+    "./ingestor/detect.js": {
+      "import": "./dist/ingestor/detect.js",
+      "types": "./dist/ingestor/detect.d.ts"
     },
     "./ingestor/github-meta.js": {
       "import": "./dist/ingestor/github-meta.js",

@@ -202,7 +202,7 @@ describe("NpmIngestor", () => {
       const result = await ingestor.parseDependencies(BASE);
 
       expect(result.dependencies).toHaveLength(0);
-      expect(result.package_json_resolved).toBe(true);
+      expect(result.manifest_resolved).toBe(true);
       expect(result.warnings.some((w) => w.includes("no dependency entries"))).toBe(true);
     });
   });
@@ -221,7 +221,7 @@ describe("NpmIngestor", () => {
 
       expect(result.dependencies).toHaveLength(0);
       expect(result.lock_file_present).toBe(false);
-      expect(result.package_json_resolved).toBe(false);
+      expect(result.manifest_resolved).toBe(false);
       expect(result.warnings.some((w) => w.includes("No package.json"))).toBe(true);
     });
 
@@ -250,7 +250,7 @@ describe("NpmIngestor", () => {
       const result = await ingestor.parseDependencies(BASE);
 
       expect(result.dependencies).toHaveLength(0);
-      expect(result.package_json_resolved).toBe(false);
+      expect(result.manifest_resolved).toBe(false);
       expect(result.warnings.some((w) => w.includes("not valid JSON"))).toBe(true);
     });
 
@@ -267,7 +267,7 @@ describe("NpmIngestor", () => {
 
       const result = await ingestor.parseDependencies(BASE);
       expect(result.dependencies).toHaveLength(0);
-      expect(result.package_json_resolved).toBe(false);
+      expect(result.manifest_resolved).toBe(false);
       expect(result.warnings.some((w) => w.includes("not a JSON object"))).toBe(true);
     });
   });

@@ -37,7 +37,7 @@ function formatHumanSummary(result: AnalyzeResult): string {
 
   lines.push(`${result.repo.owner}/${result.repo.name}`);
   lines.push(
-    `${String(result.dependencies_scanned)} dependencies scanned` +
+    `${String(result.dependencies_scanned)} ${result.ecosystem} dependencies scanned` +
       (result.lock_file_present ? "" : " (no lock file — confidence is lower)"),
   );
   lines.push("");

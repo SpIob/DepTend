@@ -1,6 +1,7 @@
 import type {
   AdvisorySource,
   DepType,
+  Ecosystem,
   EffortLabel,
   ScoreConfidence,
   Severity,
@@ -8,7 +9,12 @@ import type {
 import type { EcosystemValueInputs, EffortInputs, ImpactInputs } from "@deptend/core";
 
 export interface AnalyzeOptions {
-  /** Local filesystem path to the repo root (containing package.json). */
+  /**
+   * Local filesystem path to the repo root. Which ecosystem it is (npm,
+   * pypi) is detected automatically by probing for each ecosystem's
+   * manifest file(s) in order — see detectEcosystem() (ADR 0022) — not
+   * something the caller specifies up front.
+   */
   repoPath: string;
   githubOwner: string;
   githubName: string;
@@ -67,6 +73,8 @@ export interface AnalyzeResult {
     open_issues_count: number;
   };
   dependencies_scanned: number;
+  /** Which ecosystem was actually detected — see detectEcosystem() (ADR 0022). */
+  ecosystem: Ecosystem;
   lock_file_present: boolean;
   missions: AnalyzedMission[];
   /** Data-quality warnings aggregated across the whole pipeline. */

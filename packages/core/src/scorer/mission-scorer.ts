@@ -14,6 +14,12 @@
  */
 
 import semver from "semver";
+import {
+  compare as pep440Compare,
+  explain as pep440Explain,
+  valid as pep440Valid,
+  validRange as pep440ValidRange,
+} from "@renovatebot/pep440";
 import type { Dependency, Advisory, Repo, EffortLabel, ScoreConfidence } from "../db/schema.js";
 import type {
   ConfidenceFlags,
@@ -119,6 +125,127 @@ function inferSemverBump(versionSpec: string, targetVersion: string | null): Sem
   }
 }
 
+// ---------------------------------------------------------------------------
+// PEP 440 bump inference — PyPI equivalent of inferSemverBump above
+// (ADR 0022, Decision 3)
+// ---------------------------------------------------------------------------
+
+/** Operators that establish a lower bound on a PEP 440 specifier clause. */
+const PEP440_FLOOR_OPERATORS = new Set(["==", ">=", "~=", ">", "==="]);
+
+/**
+ * "operator version" — same shape PEP 440 uses inside a comma-separated
+ * specifier, e.g. the two clauses of ">=2.25,<3". Longer operators are
+ * listed before their prefixes (">=" before ">", "===" before "==") so the
+ * alternation doesn't stop early and leave a stray "=" in the version part.
+ */
+const PEP440_CLAUSE_RE = /^(===|~=|==|!=|<=|>=|<|>)\s*(.+)$/;
+
+/**
+ * Extracts a "current version" proxy from a PEP 440 specifier — the PyPI
+ * equivalent of semver.minVersion() above, but hand-rolled rather than
+ * pulled from @renovatebot/pep440 itself: the library's own specifier.parse
+ * (the function that would normally do this) carries an explicit "have
+ * doubts regarding this" comment from its own maintainers and isn't
+ * re-exported from the package's public entry point. This only needs
+ * comma-splitting plus a single-operator regex — much smaller surface than
+ * full range parsing — so it doesn't need that function anyway.
+ *
+ * When multiple clauses establish a lower bound (rare, but syntactically
+ * legal — e.g. ">=1.0,>=2.0"), the most restrictive (highest) one wins,
+ * using the library's public, stable compare().
+ */
+function extractPep440Floor(specifier: string): string | null {
+  const clauses = specifier
+    .split(",")
+    .map((clause) => clause.trim())
+    .filter((clause) => clause !== "");
+
+  let floor: string | null = null;
+
+  for (const clause of clauses) {
+    const match = PEP440_CLAUSE_RE.exec(clause);
+    if (match === null) continue;
+
+    const [, operator, rawVersion] = match;
+    if (
+      operator === undefined ||
+      rawVersion === undefined ||
+      !PEP440_FLOOR_OPERATORS.has(operator)
+    ) {
+      continue;
+    }
+
+    // valid() rejects wildcard forms like the version half of "==1.4.*",
+    // which isn't a usable single-version floor — skip rather than guess.
+    const version = pep440Valid(rawVersion.trim());
+    if (version === null) continue;
+
+    if (floor === null || pep440Compare(version, floor) > 0) {
+      floor = version;
+    }
+  }
+
+  return floor;
+}
+
+function releaseTriple(release: number[]): [number, number, number] {
+  return [release[0] ?? 0, release[1] ?? 0, release[2] ?? 0];
+}
+
+/**
+ * PEP 440 equivalent of inferSemverBump above — same estimate-not-fact
+ * caveat applies (resolved_version is null until lock file parsing lands).
+ */
+function inferPep440Bump(versionSpec: string, targetVersion: string | null): SemverBump {
+  if (targetVersion === null) {
+    return "unknown";
+  }
+
+  // validRange never throws — safe gate, same role semver.validRange plays
+  // above. Note: pep440's validRange("*") is false, unlike node-semver's
+  // (which returns the truthy string "*") — that difference is exactly
+  // what routes an unconstrained dependency (version_spec "*", set by
+  // pypi-parse.ts for a PEP 508 entry with no explicit constraint) to
+  // "unknown" here, with no separate special case needed for it.
+  if (!pep440ValidRange(versionSpec)) {
+    return "unknown";
+  }
+
+  const floorRaw = extractPep440Floor(versionSpec);
+  if (floorRaw === null) {
+    return "unknown";
+  }
+
+  // explain() never throws either — returns null on anything unparseable,
+  // same safe-gate treatment as validRange above.
+  const floor = pep440Explain(floorRaw);
+  const target = pep440Explain(targetVersion);
+  if (floor === null || target === null) {
+    return "unknown";
+  }
+
+  // Epoch is PEP 440's highest-precedence ordering component (compared
+  // before release segments at all) — a change here is a bigger
+  // discontinuity than any release-segment bump, and release-segment
+  // comparison alone would never notice it.
+  if (floor.epoch !== target.epoch) {
+    return "major";
+  }
+
+  const [floorMajor, floorMinor, floorPatch] = releaseTriple(floor.release);
+  const [targetMajor, targetMinor, targetPatch] = releaseTriple(target.release);
+
+  if (floorMajor !== targetMajor) return "major";
+  if (floorMinor !== targetMinor) return "minor";
+  if (floorPatch !== targetPatch) return "patch";
+
+  // Release segments identical — could still differ only in pre/post/dev/
+  // local segments. Smallest bump category, mirrors inferSemverBump's own
+  // "prerelease" -> "patch" mapping above.
+  return "patch";
+}
+
 function daysSince(date: Date | null): number | null {
   if (date === null) {
     return null;
@@ -145,8 +272,13 @@ export function buildImpactInputs(ctx: MissionScoringContext): ImpactInputs {
 export function buildEffortInputs(ctx: MissionScoringContext): EffortInputs {
   const targetVersion = ctx.advisory.fixedVersion ?? ctx.dependency.latestVersion;
 
+  const semverBump =
+    ctx.dependency.ecosystem === "pypi"
+      ? inferPep440Bump(ctx.dependency.versionSpec, targetVersion)
+      : inferSemverBump(ctx.dependency.versionSpec, targetVersion);
+
   return {
-    semver_bump: inferSemverBump(ctx.dependency.versionSpec, targetVersion),
+    semver_bump: semverBump,
     // No data source ingested yet — see ADR 0007, §5.
     has_migration_guide: false,
     breaking_change_signals: [],
@@ -214,7 +346,7 @@ export function buildConfidenceNotes(flags: ConfidenceFlags): string[] {
   }
   if (flags.registry_metadata_incomplete === true) {
     notes.push(
-      "The npm registry did not return complete metadata (e.g. latest version) for this package.",
+      "The package registry did not return complete metadata (e.g. latest version) for this package.",
     );
   }
   if (flags.downstream_dependents_unavailable === true) {

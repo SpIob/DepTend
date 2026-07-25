@@ -375,12 +375,106 @@ describe("OsvFetcher", () => {
       expect(ranges).toHaveLength(1);
     });
 
+    it("for pypi, accepts ECOSYSTEM range type too (PEP 440 isn't semver — ADR 0022) but still ignores GIT", async () => {
+      // Without this fix, every PyPI advisory would come back with
+      // affectedVersions: [] and fixedVersion: null unconditionally, since
+      // OSV represents PyPI ranges as ECOSYSTEM type, not SEMVER — this is
+      // the actual regression this test guards against.
+      const vuln = makeVuln({
+        affected: [
+          {
+            ranges: [
+              { type: "GIT", events: [{ introduced: "abc123" }] },
+              { type: "ECOSYSTEM", events: [{ introduced: "0" }, { fixed: "2.31.0" }] },
+            ],
+          },
+        ],
+      });
+      vi.stubGlobal("fetch", mockOsvApiForVulns([[vuln]]));
+
+      const result = await fetcher.fetchAdvisories([dep("requests")], "pypi");
+      const advisory = result.advisories.get("GHSA-xxxx-yyyy-zzzz");
+      const ranges = advisory?.affectedVersions as { type: string }[];
+
+      expect(ranges).toHaveLength(1);
+      expect(ranges[0]?.type).toBe("ECOSYSTEM");
+      expect(advisory?.fixedVersion).toBe("2.31.0");
+    });
+
     it("stores empty affectedVersions array when no ranges exist", async () => {
       const vuln = makeVuln({ affected: [] });
       vi.stubGlobal("fetch", mockOsvApiForVulns([[vuln]]));
 
       const result = await fetcher.fetchAdvisories([dep("pkg")]);
       expect(result.advisories.get("GHSA-xxxx-yyyy-zzzz")?.affectedVersions).toEqual([]);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  describe("fetchAdvisories — ecosystem parametrization (ADR 0022)", () => {
+    it("defaults to npm when no ecosystem argument is passed", async () => {
+      let capturedBody: string | null = null;
+      vi.stubGlobal(
+        "fetch",
+        vi.fn((_url: string | URL, init?: RequestInit): Response => {
+          if (init?.method === "POST") {
+            capturedBody = init.body as string;
+          }
+          return new Response(JSON.stringify({ results: [{ vulns: [] }] }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }),
+      );
+
+      await fetcher.fetchAdvisories([dep("pkg")]);
+
+      expect(capturedBody).not.toBeNull();
+      const parsed = JSON.parse(capturedBody as unknown as string) as {
+        queries: { package: { ecosystem: string } }[];
+      };
+      expect(parsed.queries[0]?.package.ecosystem).toBe("npm");
+    });
+
+    it("sends OSV's exact 'PyPI' ecosystem casing (not 'pypi') in the batch query", async () => {
+      let capturedBody: string | null = null;
+      vi.stubGlobal(
+        "fetch",
+        vi.fn((_url: string | URL, init?: RequestInit): Response => {
+          if (init?.method === "POST") {
+            capturedBody = init.body as string;
+          }
+          return new Response(JSON.stringify({ results: [{ vulns: [] }] }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }),
+      );
+
+      await fetcher.fetchAdvisories([dep("requests")], "pypi");
+
+      const parsed = JSON.parse(capturedBody as unknown as string) as {
+        queries: { package: { ecosystem: string } }[];
+      };
+      expect(parsed.queries[0]?.package.ecosystem).toBe("PyPI");
+    });
+
+    it("stores our internal ecosystem value ('pypi', not OSV's 'PyPI') on the advisory row", async () => {
+      const vuln = makeVuln();
+      vi.stubGlobal("fetch", mockOsvApiForVulns([[vuln]]));
+
+      const result = await fetcher.fetchAdvisories([dep("requests")], "pypi");
+
+      expect(result.advisories.get("GHSA-xxxx-yyyy-zzzz")?.ecosystem).toBe("pypi");
+    });
+
+    it("stores ecosystem: 'npm' on the advisory row by default", async () => {
+      const vuln = makeVuln();
+      vi.stubGlobal("fetch", mockOsvApiForVulns([[vuln]]));
+
+      const result = await fetcher.fetchAdvisories([dep("pkg")]);
+
+      expect(result.advisories.get("GHSA-xxxx-yyyy-zzzz")?.ecosystem).toBe("npm");
     });
   });
 

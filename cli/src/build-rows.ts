@@ -25,6 +25,7 @@ import type { Advisory, Dependency, Repo } from "@deptend/core/db/schema.js";
 import type { IngestorResult } from "@deptend/core/ingestor/interface.js";
 import type { OsvFetchResult } from "@deptend/core/ingestor/osv.js";
 import type { NpmRegistryFetchResult } from "@deptend/core/ingestor/registry.js";
+import type { PyPIRegistryFetchResult } from "@deptend/core/ingestor/pypi-registry.js";
 import type { GitHubRepoMeta } from "@deptend/core/ingestor/github-meta.js";
 
 /** Builds an in-memory Repo row from GitHub API metadata. */
@@ -56,13 +57,13 @@ export function buildRepo(ghMeta: GitHubRepoMeta): Repo {
 }
 
 /**
- * Builds in-memory Dependency rows, merging npm registry metadata in —
+ * Builds in-memory Dependency rows, merging registry metadata in —
  * mirrors IngestionWriter's upsertDependencies depRows construction.
  */
 export function buildDependencies(
   repoId: string,
   ingestorResult: IngestorResult,
-  registryResult: NpmRegistryFetchResult,
+  registryResult: NpmRegistryFetchResult | PyPIRegistryFetchResult,
 ): Dependency[] {
   const now = new Date();
 
@@ -71,7 +72,11 @@ export function buildDependencies(
     return {
       id: randomUUID(),
       repoId,
-      ecosystem: "npm",
+      // Same fix as writer.ts's upsertDependencies (ADR 0022) — this
+      // mirrors that function by design, so it inherited the identical
+      // hardcoded-"npm" bug until now. Every dependency in one run shares
+      // the winning ingestor's ecosystem, same reasoning as writer.ts.
+      ecosystem: ingestorResult.ecosystem,
       packageName: dep.package_name,
       versionSpec: dep.version_spec,
       // Lock file parsing deferred — same as the real pipeline (ADR 0003).

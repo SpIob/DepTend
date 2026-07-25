@@ -15,6 +15,13 @@
       "when": 1784677308045,
       "tag": "0001_overjoyed_wild_pack",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1784789475708,
+      "tag": "0002_spotty_elektra",
+      "breakpoints": true
     }
   ]
 }
