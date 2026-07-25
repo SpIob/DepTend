@@ -126,12 +126,12 @@ Requires Node.js ≥20 and [pnpm](https://pnpm.io/installation) ≥9 (this proje
    (`pnpm install` also builds `packages/core` automatically via a root `postinstall` hook — nothing else to build by hand for a first-time setup.)
 
 2. **Set up environment variables** — copy `.env.example` to `.env.local` and fill it in:
-   - `DATABASE_URL` / `DATABASE_URL_UNPOOLED` — from a free [Neon](https://neon.tech/) project (pooled and direct connection strings; the direct one is required for schema/migration work)
+   - `DATABASE_URL` / `DATABASE_URL_UNPOOLED` — from a free [Neon](https://neon.tech/) project (pooled and direct connection strings; the direct one is required for schema/migration work). **Use a Neon branch, not the same branch Vercel's Production environment points at** — Neon branches are free (copy-on-write, no card required) and keep local test submissions off the live public mission board. See [ADR 0023](docs/adr/0023-dev-prod-database-separation.md).
    - `GH_CLIENT_ID` / `GH_CLIENT_SECRET` — from a [GitHub OAuth App](https://github.com/settings/developers) with callback URL `http://localhost:3000/api/auth/callback/github`
    - `NEXTAUTH_SECRET` — generate with `openssl rand -base64 32`
    - `NEXTAUTH_URL` — `http://localhost:3000` for local dev
    - `GITHUB_TOKEN` — a personal access token (read-only, public repos) for ingestion and CLI use
-   - `GH_DISPATCH_TOKEN` / `GH_REPO` — only needed to test the on-demand ingestion trigger locally; safe to leave blank otherwise
+   - `GH_DISPATCH_TOKEN` / `GH_REPO` — **leave blank in local `.env.local`.** These fire a _real_ GitHub Actions run, and that workflow's `DATABASE_URL` is a repo secret pointing at the production branch — it can never see a repo row that only exists in your local dev branch (ADR 0023). Only set these in Vercel's Production environment, where the submitter's DB and the workflow's DB are the same branch. Leaving them blank locally makes repo submission fall back gracefully to "will be processed on the next scheduled run" instead of dispatching a run that's guaranteed to fail — see step 5 for how to actually ingest a locally-submitted repo.
 
 3. **Apply the database schema** (replays the existing migration history — this project uses migration files, not `drizzle-kit push`)
 
@@ -147,10 +147,14 @@ Requires Node.js ≥20 and [pnpm](https://pnpm.io/installation) ≥9 (this proje
 
    Visit `http://localhost:3000`. OAuth sign-in only round-trips correctly from a stable URL matching your OAuth App's registered callback — not from arbitrary preview URLs.
 
-5. **Run an ingestion manually** (populates real mission data without waiting for the nightly cron)
+5. **Run an ingestion manually** — with `GH_DISPATCH_TOKEN`/`GH_REPO` unset locally (step 2), this is now the _only_ way to populate mission data for a repo you submitted through the local dashboard, since neither the nightly cron nor an on-demand dispatch can reach your dev branch:
 
    ```bash
-   node scripts/ingest.js --repo-url https://github.com/owner/name --triggered-by manual
+   # For a repo already submitted through the local dashboard's UI:
+   node --env-file=.env.local scripts/ingest.js --repo-id <the-repo's-uuid> --triggered-by manual
+
+   # Or skip the UI and ingest any repo directly by URL:
+   node --env-file=.env.local scripts/ingest.js --repo-url https://github.com/owner/name --triggered-by manual
    ```
 
 6. **Build and try the CLI**
