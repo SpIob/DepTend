@@ -401,12 +401,103 @@ describe("OsvFetcher", () => {
       expect(advisory?.fixedVersion).toBe("2.31.0");
     });
 
+    it("for go, accepts SEMVER ranges (real Go module versions) but rejects ECOSYSTEM, unlike pypi (ADR 0024)", async () => {
+      // Go is real SemVer, and OSV's own Go implementation is documented as
+      // populating SEMVER-type ranges only — so unlike pypi, an ECOSYSTEM-
+      // type range for go should be filtered out, not accepted.
+      const vuln = makeVuln({
+        affected: [
+          {
+            ranges: [
+              { type: "GIT", events: [{ introduced: "abc123" }] },
+              { type: "ECOSYSTEM", events: [{ introduced: "0" }, { fixed: "9.9.9" }] },
+              { type: "SEMVER", events: [{ introduced: "0" }, { fixed: "1.9.0" }] },
+            ],
+          },
+        ],
+      });
+      vi.stubGlobal("fetch", mockOsvApiForVulns([[vuln]]));
+
+      const result = await fetcher.fetchAdvisories([dep("github.com/foo/bar")], "go");
+      const advisory = result.advisories.get("GHSA-xxxx-yyyy-zzzz");
+      const ranges = advisory?.affectedVersions as { type: string }[];
+
+      expect(ranges).toHaveLength(1);
+      expect(ranges[0]?.type).toBe("SEMVER");
+      expect(advisory?.fixedVersion).toBe("1.9.0");
+    });
+
     it("stores empty affectedVersions array when no ranges exist", async () => {
       const vuln = makeVuln({ affected: [] });
       vi.stubGlobal("fetch", mockOsvApiForVulns([[vuln]]));
 
       const result = await fetcher.fetchAdvisories([dep("pkg")]);
       expect(result.advisories.get("GHSA-xxxx-yyyy-zzzz")?.affectedVersions).toEqual([]);
+    });
+
+    it("uses only the queried package's own affected entry, ignoring a sibling package's ranges in the same record (real bug, CVE-2020-7919 / GO-2022-0229)", async () => {
+      // Real shape, confirmed live during ADR 0024's Step 6 fixture
+      // testing: a single OSV record can list multiple, unrelated
+      // packages as separate "affected" entries. This CVE genuinely
+      // covers both the Go toolchain/stdlib (fixed at Go release
+      // "1.12.16" — a Go version, nothing to do with any module's own
+      // versioning) and golang.org/x/crypto/cryptobyte (fixed at the
+      // unrelated pseudo-version below) as two sibling entries. Before
+      // this fix, querying for golang.org/x/crypto returned "1.12.16" as
+      // its fixedVersion — a nonsensical, actively misleading
+      // recommendation, not a hypothetical risk.
+      const vuln = makeVuln({
+        id: "GO-2022-0229",
+        affected: [
+          {
+            package: { name: "stdlib", ecosystem: "Go" },
+            ranges: [
+              {
+                type: "SEMVER",
+                events: [{ introduced: "0" }, { fixed: "1.12.16" }],
+              },
+            ],
+          },
+          {
+            package: { name: "golang.org/x/crypto", ecosystem: "Go" },
+            ranges: [
+              {
+                type: "SEMVER",
+                events: [{ introduced: "0" }, { fixed: "0.0.0-20200124225646-8b5121be2f68" }],
+              },
+            ],
+          },
+        ],
+      });
+      vi.stubGlobal("fetch", mockOsvApiForVulns([[vuln]]));
+
+      const result = await fetcher.fetchAdvisories([dep("golang.org/x/crypto")], "go");
+      const advisory = result.advisories.get("GO-2022-0229");
+
+      expect(advisory?.fixedVersion).toBe("0.0.0-20200124225646-8b5121be2f68");
+      expect(advisory?.affectedVersions).toHaveLength(1);
+    });
+
+    it("returns empty ranges when the vuln's affected array has entries, but none match the queried package", async () => {
+      // Sibling-package-only case — the queried package genuinely isn't
+      // one of the entries at all (shouldn't normally happen given how
+      // the batch query itself is package-scoped, but the extraction
+      // logic shouldn't silently borrow another package's data if it did).
+      const vuln = makeVuln({
+        affected: [
+          {
+            package: { name: "some-other-package", ecosystem: "npm" },
+            ranges: [{ type: "SEMVER", events: [{ introduced: "0" }, { fixed: "9.9.9" }] }],
+          },
+        ],
+      });
+      vi.stubGlobal("fetch", mockOsvApiForVulns([[vuln]]));
+
+      const result = await fetcher.fetchAdvisories([dep("pkg")]);
+      const advisory = result.advisories.get("GHSA-xxxx-yyyy-zzzz");
+
+      expect(advisory?.affectedVersions).toEqual([]);
+      expect(advisory?.fixedVersion).toBeNull();
     });
   });
 
@@ -466,6 +557,38 @@ describe("OsvFetcher", () => {
       const result = await fetcher.fetchAdvisories([dep("requests")], "pypi");
 
       expect(result.advisories.get("GHSA-xxxx-yyyy-zzzz")?.ecosystem).toBe("pypi");
+    });
+
+    it("sends OSV's exact 'Go' ecosystem casing (not 'go') in the batch query", async () => {
+      let capturedBody: string | null = null;
+      vi.stubGlobal(
+        "fetch",
+        vi.fn((_url: string | URL, init?: RequestInit): Response => {
+          if (init?.method === "POST") {
+            capturedBody = init.body as string;
+          }
+          return new Response(JSON.stringify({ results: [{ vulns: [] }] }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }),
+      );
+
+      await fetcher.fetchAdvisories([dep("github.com/foo/bar")], "go");
+
+      const parsed = JSON.parse(capturedBody as unknown as string) as {
+        queries: { package: { ecosystem: string } }[];
+      };
+      expect(parsed.queries[0]?.package.ecosystem).toBe("Go");
+    });
+
+    it("stores our internal ecosystem value ('go', not OSV's 'Go') on the advisory row", async () => {
+      const vuln = makeVuln();
+      vi.stubGlobal("fetch", mockOsvApiForVulns([[vuln]]));
+
+      const result = await fetcher.fetchAdvisories([dep("github.com/foo/bar")], "go");
+
+      expect(result.advisories.get("GHSA-xxxx-yyyy-zzzz")?.ecosystem).toBe("go");
     });
 
     it("stores ecosystem: 'npm' on the advisory row by default", async () => {

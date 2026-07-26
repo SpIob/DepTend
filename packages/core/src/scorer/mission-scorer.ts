@@ -20,7 +20,14 @@ import {
   valid as pep440Valid,
   validRange as pep440ValidRange,
 } from "@renovatebot/pep440";
-import type { Dependency, Advisory, Repo, EffortLabel, ScoreConfidence } from "../db/schema.js";
+import type {
+  Dependency,
+  Advisory,
+  Repo,
+  EffortLabel,
+  ScoreConfidence,
+  Ecosystem,
+} from "../db/schema.js";
 import type {
   ConfidenceFlags,
   EffortInputs,
@@ -246,6 +253,33 @@ function inferPep440Bump(versionSpec: string, targetVersion: string | null): Sem
   return "patch";
 }
 
+/**
+ * Which bump-inference function applies for each ecosystem's own version
+ * scheme. `go` and `npm` point at the literal same function — Go module
+ * versions are real, toolchain-enforced SemVer (sandbox-verified against
+ * node-semver during ADR 0024's own grounding: valid(), validRange(), and
+ * minVersion() all handle the "v" prefix and Go's version format directly,
+ * no wrapper needed), so no new inference function was written for Go at
+ * all — see ADR 0024, Decision 3.
+ *
+ * Record<Ecosystem, ...>, not a ternary — same exhaustiveness guarantee
+ * OSV_ECOSYSTEM_NAMES already has in osv.ts. (Found as a real pre-existing
+ * gap during ADR 0024's own grounding: this was a two-way
+ * `ecosystem === "pypi" ? ... : ...` ternary before Phase 7 — for `go`
+ * specifically it happened to already route to the correct function via
+ * the `else` branch, but that was incidental, not guaranteed, and gave no
+ * compile-time protection against a future ecosystem for which it
+ * wouldn't be.)
+ */
+const BUMP_INFERENCE_BY_ECOSYSTEM: Record<
+  Ecosystem,
+  (versionSpec: string, targetVersion: string | null) => SemverBump
+> = {
+  npm: inferSemverBump,
+  go: inferSemverBump,
+  pypi: inferPep440Bump,
+};
+
 function daysSince(date: Date | null): number | null {
   if (date === null) {
     return null;
@@ -272,10 +306,8 @@ export function buildImpactInputs(ctx: MissionScoringContext): ImpactInputs {
 export function buildEffortInputs(ctx: MissionScoringContext): EffortInputs {
   const targetVersion = ctx.advisory.fixedVersion ?? ctx.dependency.latestVersion;
 
-  const semverBump =
-    ctx.dependency.ecosystem === "pypi"
-      ? inferPep440Bump(ctx.dependency.versionSpec, targetVersion)
-      : inferSemverBump(ctx.dependency.versionSpec, targetVersion);
+  const inferBump = BUMP_INFERENCE_BY_ECOSYSTEM[ctx.dependency.ecosystem];
+  const semverBump = inferBump(ctx.dependency.versionSpec, targetVersion);
 
   return {
     semver_bump: semverBump,

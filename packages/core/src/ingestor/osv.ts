@@ -77,6 +77,19 @@ const DEFAULT_DETAIL_CONCURRENCY = 10;
 const OSV_ECOSYSTEM_NAMES: Record<Ecosystem, string> = {
   npm: "npm",
   pypi: "PyPI",
+  go: "Go",
+};
+
+/**
+ * Which OSV range type(s) extractAffectedRanges() accepts, per ecosystem —
+ * see that method's docstring for the reasoning behind each entry. Same
+ * Record<Ecosystem, ...> exhaustiveness guarantee as OSV_ECOSYSTEM_NAMES
+ * above.
+ */
+const ACCEPTED_RANGE_TYPES: Record<Ecosystem, OsvRange["type"][]> = {
+  npm: ["SEMVER"],
+  pypi: ["SEMVER", "ECOSYSTEM"],
+  go: ["SEMVER"],
 };
 
 // ---------------------------------------------------------------------------
@@ -418,7 +431,7 @@ export class OsvFetcher {
   ): NewAdvisory {
     const severity = this.extractSeverity(vuln, warnings);
     const cvssScore = this.extractCvssScore(vuln);
-    const affectedVersions = this.extractAffectedRanges(vuln, ecosystem);
+    const affectedVersions = this.extractAffectedRanges(vuln, ecosystem, packageName);
     const fixedVersion = this.extractFixedVersion(affectedVersions);
 
     // Determine advisory source: GHSA IDs are prefixed with "GHSA-"
@@ -525,10 +538,41 @@ export class OsvFetcher {
   }
 
   /**
-   * Extract affected ranges from the OSV vulnerability, filtered to the
-   * range type(s) that are actually usable for the queried ecosystem's own
-   * version scheme. GIT ranges are never used for either ecosystem — real,
-   * but not useful for the version-based matching this project does.
+   * Extract affected ranges from the OSV vulnerability, filtered to (a) the
+   * queried package's own "affected" entry and (b) the range type(s) that
+   * are actually usable for the queried ecosystem's own version scheme.
+   *
+   * CONFIRMED LIVE BUG (found during ADR 0024's Step 6 fixture testing, not
+   * hypothetical): a single OSV vulnerability record can legitimately list
+   * MULTIPLE, unrelated packages in its "affected" array. Real example:
+   * CVE-2020-7919 / GO-2022-0229 covers both the Go toolchain/stdlib
+   * (crypto/x509) AND golang.org/x/crypto/cryptobyte as two separate
+   * sibling entries in one record — the toolchain entry's fix is "1.12.16"
+   * (a Go *release* number), x/crypto's own fix is the unrelated pseudo-
+   * version "v0.0.0-20200124225646-8b5121be2f68". Before this fix, this
+   * method iterated every "affected" entry unconditionally and merged all
+   * of their ranges together — so querying for golang.org/x/crypto could
+   * silently surface the *stdlib* entry's "1.12.16" as if it were an
+   * x/crypto version, a nonsensical, actively-misleading recommendation.
+   * Confirmed via the real fixture's CLI output, then confirmed against
+   * the authoritative source (vuln.go.dev/ID/GO-2022-0229.json shows two
+   * separate "affected" entries), not guessed at.
+   *
+   * This shape was never exercised before Go: npm/PyPI advisories, in
+   * practice, essentially always carry exactly one "affected" entry
+   * matching the queried package — GHSA-sourced records rarely bundle
+   * multiple unrelated packages the way a Go toolchain+module advisory
+   * naturally does. The bug was latent, not Go-specific in principle, just
+   * Go-specific in what finally exercised it live.
+   *
+   * An "affected" entry with no `package` field at all (only ever happens
+   * in this project's own test fixtures, never in real OSV responses) is
+   * treated as unfiltered/always-included — real API data always
+   * populates `package`, so this only affects test ergonomics, not
+   * production correctness.
+   *
+   * GIT ranges are never used for any ecosystem — real, but not useful for
+   * the version-based matching this project does.
    *
    * npm is semver-versioned, so OSV represents its ranges as SEMVER type.
    * PyPI is PEP-440-versioned, not semver — OSV represents its ranges as
@@ -542,14 +586,40 @@ export class OsvFetcher {
    * accepted for pypi too, in case a specific record happens to use it —
    * accepting a broader set for pypi costs nothing; narrowing npm's
    * existing, already-verified behavior is what would carry real risk.
+   *
+   * Go is real, toolchain-enforced SemVer, and — unlike PyPI — OSV's own
+   * Go implementation is documented as populating SEMVER-type ranges only
+   * (golang.org/x/vuln/internal/osv's own doc comment: "only the SEMVER
+   * affected range type is implemented" for the Go database), so `go`
+   * needs no ECOSYSTEM-type handling (ADR 0024, Decision 5).
+   *
+   * ACCEPTED_RANGE_TYPES is a Record<Ecosystem, ...>, not a ternary —
+   * adding a future ecosystem here without an entry is a compile error,
+   * not a silent fall-through to the wrong range types.
    */
-  private extractAffectedRanges(vuln: OsvVulnerability, ecosystem: Ecosystem): OsvVersionRange[] {
-    const acceptedTypes: OsvRange["type"][] =
-      ecosystem === "pypi" ? ["SEMVER", "ECOSYSTEM"] : ["SEMVER"];
+  private extractAffectedRanges(
+    vuln: OsvVulnerability,
+    ecosystem: Ecosystem,
+    packageName: string,
+  ): OsvVersionRange[] {
+    const acceptedTypes = ACCEPTED_RANGE_TYPES[ecosystem];
+    const osvEcosystemName = OSV_ECOSYSTEM_NAMES[ecosystem];
 
     const ranges: OsvVersionRange[] = [];
 
     for (const affected of vuln.affected ?? []) {
+      // Skip sibling entries for a *different* package within the same
+      // vuln record — this is the actual fix (see docstring above). An
+      // entry with no `package` field at all is never disqualified (real
+      // OSV data always has one; this only matters for test fixtures that
+      // omit it because the package identity isn't what they're testing).
+      if (
+        affected.package !== undefined &&
+        (affected.package.name !== packageName || affected.package.ecosystem !== osvEcosystemName)
+      ) {
+        continue;
+      }
+
       for (const range of affected.ranges ?? []) {
         if (acceptedTypes.includes(range.type)) {
           ranges.push({

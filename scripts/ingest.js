@@ -34,6 +34,9 @@
  * PyPI), with no schema field recording the choice — it's re-decided fresh
  * on every run from what's actually in the repo, not stored as a fact
  * about the repo itself.
+ * Phase 7 (ADR 0024): Go added as a third probed ecosystem (npm, then
+ * PyPI, then Go) — same router, same "not stored" design, no changes to
+ * either.
  */
 
 import { Pool } from "@neondatabase/serverless";
@@ -46,10 +49,12 @@ import { eq, or } from "drizzle-orm";
 import * as schema from "../packages/core/dist/db/schema.js";
 import { NpmIngestor } from "../packages/core/dist/ingestor/npm.js";
 import { PyPIIngestor } from "../packages/core/dist/ingestor/pypi.js";
+import { GoIngestor } from "../packages/core/dist/ingestor/go.js";
 import { detectEcosystem } from "../packages/core/dist/ingestor/detect.js";
 import { OsvFetcher } from "../packages/core/dist/ingestor/osv.js";
 import { NpmRegistryFetcher } from "../packages/core/dist/ingestor/registry.js";
 import { PyPIRegistryFetcher } from "../packages/core/dist/ingestor/pypi-registry.js";
+import { GoRegistryFetcher } from "../packages/core/dist/ingestor/go-registry.js";
 import { IngestionWriter } from "../packages/core/dist/ingestor/writer.js";
 import { MissionWriter } from "../packages/core/dist/scorer/writer.js";
 import { fetchGitHubRepoMeta } from "../packages/core/dist/ingestor/github-meta.js";
@@ -124,16 +129,27 @@ async function main() {
   // ------------------------------------------------------------------
   // Run the pipeline for each repo
   // ------------------------------------------------------------------
-  // Two of each — the router (below, per-repo) probes npm first, then
-  // PyPI (ADR 0022), and the matching registry fetcher is picked once the
-  // winning ecosystem is known. Both ingestor/fetcher pairs are stateless
-  // and safely reused across every repo in this run, same as the single
-  // npm pair was before.
+  // Three of each — the router (below, per-repo) probes npm first, then
+  // PyPI, then Go (ADR 0024), and the matching registry fetcher is picked
+  // once the winning ecosystem is known via REGISTRY_FETCHERS_BY_ECOSYSTEM
+  // below. All three ingestor/fetcher pairs are stateless and safely
+  // reused across every repo in this run, same as the original single npm
+  // pair was before Phase 6.
   const npmIngestor = new NpmIngestor();
   const pypiIngestor = new PyPIIngestor();
+  const goIngestor = new GoIngestor();
   const osvFetcher = new OsvFetcher();
-  const npmRegistryFetcher = new NpmRegistryFetcher();
-  const pypiRegistryFetcher = new PyPIRegistryFetcher();
+  // Keyed by Ecosystem value, not a chain of ternaries — a future
+  // ecosystem missing an entry here fails loudly (see the lookup in
+  // ingestRepo below), not silently via a wrong fall-through. JS has no
+  // compile-time exhaustiveness check the way osv.ts's
+  // Record<Ecosystem, ...> maps get from TypeScript, so the runtime guard
+  // at the lookup site is this file's equivalent safety net.
+  const registryFetchersByEcosystem = {
+    npm: new NpmRegistryFetcher(),
+    pypi: new PyPIRegistryFetcher(),
+    go: new GoRegistryFetcher(),
+  };
 
   let failCount = 0;
 
@@ -150,9 +166,9 @@ async function main() {
         missionWriter,
         npmIngestor,
         pypiIngestor,
+        goIngestor,
         osvFetcher,
-        npmRegistryFetcher,
-        pypiRegistryFetcher,
+        registryFetchersByEcosystem,
         githubToken ?? null,
         args.triggeredBy,
       );
@@ -186,9 +202,9 @@ async function ingestRepo(
   missionWriter,
   npmIngestor,
   pypiIngestor,
+  goIngestor,
   osvFetcher,
-  npmRegistryFetcher,
-  pypiRegistryFetcher,
+  registryFetchersByEcosystem,
   githubToken,
   triggeredBy,
 ) {
@@ -217,9 +233,9 @@ async function ingestRepo(
     const rawBase = `https://raw.githubusercontent.com/${owner}/${name}/${repoInput.defaultBranch}`;
 
     // 3. Detect ecosystem + parse dependencies. Ordered probing (ADR
-    // 0022): npm first, then PyPI.
+    // 0022, extended in ADR 0024): npm first, then PyPI, then Go.
     log("info", `[${label}] Detecting ecosystem and parsing dependencies`);
-    const ingestorResult = await detectEcosystem([npmIngestor, pypiIngestor], rawBase);
+    const ingestorResult = await detectEcosystem([npmIngestor, pypiIngestor, goIngestor], rawBase);
     logWarnings(label, ingestorResult.warnings);
 
     log(
@@ -243,9 +259,15 @@ async function ingestRepo(
     );
 
     // 5. Fetch registry metadata — matching fetcher for whichever
-    // ecosystem actually resolved.
-    const registryFetcher =
-      ingestorResult.ecosystem === "pypi" ? pypiRegistryFetcher : npmRegistryFetcher;
+    // ecosystem actually resolved. Map lookup, not a ternary — a future
+    // ecosystem missing an entry fails loudly here rather than silently
+    // reusing npm's fetcher for the wrong registry.
+    const registryFetcher = registryFetchersByEcosystem[ingestorResult.ecosystem];
+    if (!registryFetcher) {
+      throw new Error(
+        `No registry fetcher configured for ecosystem "${ingestorResult.ecosystem}".`,
+      );
+    }
     log("info", `[${label}] Fetching ${ingestorResult.ecosystem} registry metadata`);
     const registryResult = await registryFetcher.fetchMetadata(ingestorResult.dependencies);
     logWarnings(label, registryResult.warnings);

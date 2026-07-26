@@ -352,6 +352,63 @@ describe("buildEffortInputs — PyPI / PEP 440", () => {
 });
 
 // ---------------------------------------------------------------------------
+// buildEffortInputs — Go (ADR 0024, Decision 3)
+//
+// No new bump-inference function exists for Go — BUMP_INFERENCE_BY_ECOSYSTEM
+// routes "go" at the literal same inferSemverBump() function "npm" uses,
+// since Go module versions are real, toolchain-enforced SemVer. These tests
+// confirm that routing actually happens (not just that inferSemverBump
+// itself works — that's already covered by the semver block above).
+// ---------------------------------------------------------------------------
+
+describe("buildEffortInputs — Go", () => {
+  function goContext(
+    versionSpec: string,
+    fixedVersion: string | null,
+    overrides: Partial<Dependency> = {},
+  ): MissionScoringContext {
+    return makeContext({
+      dependency: makeDependency({ ecosystem: "go", versionSpec, ...overrides }),
+      advisory: makeAdvisory({ fixedVersion }),
+    });
+  }
+
+  it("infers a patch bump for a Go module using v-prefixed versions", () => {
+    const inputs = buildEffortInputs(goContext("v1.2.3", "v1.2.4"));
+    expect(inputs.semver_bump).toBe("patch");
+  });
+
+  it("infers a minor bump for a Go module using v-prefixed versions", () => {
+    const inputs = buildEffortInputs(goContext("v1.2.3", "v1.3.0"));
+    expect(inputs.semver_bump).toBe("minor");
+  });
+
+  it("infers a major bump for a Go module using v-prefixed versions", () => {
+    const inputs = buildEffortInputs(goContext("v1.2.3", "v2.0.0"));
+    expect(inputs.semver_bump).toBe("major");
+  });
+
+  it("handles a Go pseudo-version as the version_spec without throwing", () => {
+    expect(() =>
+      buildEffortInputs(goContext("v0.0.0-20210101000000-abcdef123456", "v1.0.0")),
+    ).not.toThrow();
+  });
+
+  it("returns unknown when targetVersion is null (no fixed_version, no latestVersion)", () => {
+    const inputs = buildEffortInputs(goContext("v1.2.3", null, { latestVersion: null }));
+    expect(inputs.semver_bump).toBe("unknown");
+  });
+
+  it("does not route a Go dependency through inferPep440Bump", () => {
+    // "v1.2.3" is not valid PEP 440 syntax — if this accidentally routed
+    // through inferPep440Bump, pep440's validRange("v1.2.3") would reject
+    // it and this would come back "unknown" instead of "patch".
+    const inputs = buildEffortInputs(goContext("v1.2.3", "v1.2.4"));
+    expect(inputs.semver_bump).toBe("patch");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // buildEcosystemValueInputs
 // ---------------------------------------------------------------------------
 

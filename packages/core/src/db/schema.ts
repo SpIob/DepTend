@@ -49,7 +49,11 @@ export const ingestionStatusEnum = pgEnum("ingestion_status", [
 
 export const depTypeEnum = pgEnum("dep_type", ["production", "development", "peer", "optional"]);
 
-export const ecosystemEnum = pgEnum("ecosystem", ["npm", "pypi"]);
+// 'go' added Phase 7 (ADR 0024) — see docs/adr/0024-phase7-go-ecosystem.md.
+// Adding a value here is a compile-time-only change; the live Neon enum
+// still needs the matching migration applied (Decision 1 of that ADR),
+// separately, to each of the dev and production branches per ADR 0023.
+export const ecosystemEnum = pgEnum("ecosystem", ["npm", "pypi", "go"]);
 
 export const advisorySourceEnum = pgEnum("advisory_source", ["osv", "ghsa"]);
 

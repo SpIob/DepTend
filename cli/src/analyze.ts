@@ -16,14 +16,18 @@
  * via ordered probing (detectEcosystem, same router scripts/ingest.js uses)
  * so a repo path is analyzed identically regardless of which pipeline
  * touches it.
+ * Phase 7 (ADR 0024): Go added as a third probed ecosystem — same router,
+ * same reasoning.
  */
 
 import { LocalNpmIngestor } from "@deptend/core/ingestor/local-npm.js";
 import { LocalPyPIIngestor } from "@deptend/core/ingestor/local-pypi.js";
+import { LocalGoIngestor } from "@deptend/core/ingestor/local-go.js";
 import { detectEcosystem } from "@deptend/core/ingestor/detect.js";
 import { OsvFetcher } from "@deptend/core/ingestor/osv.js";
 import { NpmRegistryFetcher } from "@deptend/core/ingestor/registry.js";
 import { PyPIRegistryFetcher } from "@deptend/core/ingestor/pypi-registry.js";
+import { GoRegistryFetcher } from "@deptend/core/ingestor/go-registry.js";
 import { fetchGitHubRepoMeta } from "@deptend/core/ingestor/github-meta.js";
 import {
   computeMissionScore,
@@ -31,6 +35,9 @@ import {
 } from "@deptend/core/scorer/mission-scorer.js";
 import { generateMissionCopy } from "@deptend/core/scorer/mission-copy.js";
 import { rankMissions, type RankableMission } from "@deptend/core/scorer/ranking.js";
+import type { Ecosystem } from "@deptend/core/db/schema.js";
+import type { ParsedDependency } from "@deptend/core/ingestor/interface.js";
+import type { PackageMetadata } from "@deptend/core/ingestor/registry.js";
 import {
   buildAdvisories,
   buildCandidatePairs,
@@ -39,15 +46,41 @@ import {
 } from "./build-rows.js";
 import type { AnalyzeOptions, AnalyzeResult, AnalyzedMission } from "./types.js";
 
+/**
+ * Common shape all three registry fetchers already share structurally —
+ * used only to type REGISTRY_FETCHERS_BY_ECOSYSTEM below, not exported.
+ */
+interface RegistryFetcherLike {
+  fetchMetadata(
+    dependencies: ParsedDependency[],
+  ): Promise<{ metadata: Map<string, PackageMetadata>; warnings: string[] }>;
+}
+
+/**
+ * Which registry fetcher applies for each detected ecosystem.
+ * Record<Ecosystem, ...>, not a ternary — same exhaustiveness guarantee
+ * osv.ts's OSV_ECOSYSTEM_NAMES already has; a future ecosystem missing an
+ * entry here is a compile error, not a silent npm-fetcher fall-through.
+ * (Found as a real pre-existing gap during ADR 0024's own grounding —
+ * this was a `ecosystem === "pypi" ? new PyPIRegistryFetcher() : new
+ * NpmRegistryFetcher()` ternary before Phase 7, the CLI-side mirror of
+ * the identical gap fixed in scripts/ingest.js.)
+ */
+const REGISTRY_FETCHERS_BY_ECOSYSTEM: Record<Ecosystem, RegistryFetcherLike> = {
+  npm: new NpmRegistryFetcher(),
+  pypi: new PyPIRegistryFetcher(),
+  go: new GoRegistryFetcher(),
+};
+
 export async function analyze(options: AnalyzeOptions): Promise<AnalyzeResult> {
   const warnings: string[] = [];
 
   // 1. Detect ecosystem + parse dependencies from the local repo path.
-  // Ordered probing (ADR 0022): npm first, then PyPI — matches
-  // scripts/ingest.js's own probing order, so a repo detects the same way
-  // regardless of which pipeline analyzed it.
+  // Ordered probing (ADR 0022, extended in ADR 0024): npm first, then
+  // PyPI, then Go — matches scripts/ingest.js's own probing order, so a
+  // repo detects the same way regardless of which pipeline analyzed it.
   const ingestorResult = await detectEcosystem(
-    [new LocalNpmIngestor(), new LocalPyPIIngestor()],
+    [new LocalNpmIngestor(), new LocalPyPIIngestor(), new LocalGoIngestor()],
     options.repoPath,
   );
   warnings.push(...ingestorResult.warnings);
@@ -70,8 +103,7 @@ export async function analyze(options: AnalyzeOptions): Promise<AnalyzeResult> {
 
   // 4. Fetch registry metadata (latest version, deprecation status) —
   // matching fetcher for whichever ecosystem actually resolved.
-  const registryFetcher =
-    ingestorResult.ecosystem === "pypi" ? new PyPIRegistryFetcher() : new NpmRegistryFetcher();
+  const registryFetcher = REGISTRY_FETCHERS_BY_ECOSYSTEM[ingestorResult.ecosystem];
   const registryResult = await registryFetcher.fetchMetadata(ingestorResult.dependencies);
   warnings.push(...registryResult.warnings);
 
