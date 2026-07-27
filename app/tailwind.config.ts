@@ -20,6 +20,14 @@ const config: Config = {
           low: "#3B6EA5",
           unknown: "#6B7280",
         },
+        // Deliberately a different hue family than `severity` (red/orange/
+        // amber/blue/gray) so ecosystem badges never get misread as a
+        // severity signal at a glance.
+        ecosystem: {
+          npm: "#7C5CBF",
+          pypi: "#2F855A",
+          go: "#0E7C86",
+        },
       },
       fontFamily: {
         // Monospace-forward on purpose: this is a page about package names,

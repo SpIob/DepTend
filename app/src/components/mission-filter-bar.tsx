@@ -1,4 +1,4 @@
-import type { EffortLabel, Severity } from "@deptend/core/db/schema.js";
+import type { Ecosystem, EffortLabel, Severity } from "@deptend/core/db/schema.js";
 
 const SEVERITY_OPTIONS: readonly Severity[] = ["critical", "high", "medium", "low", "unknown"];
 const SEVERITY_LABELS: Record<Severity, string> = {
@@ -17,12 +17,23 @@ const EFFORT_LABELS: Record<EffortLabel, string> = {
   high: "High",
 };
 
+// Static, like SEVERITY_OPTIONS/EFFORT_OPTIONS above — adding a fourth
+// ecosystem later means adding it here, same as it would for severity/effort.
+const ECOSYSTEM_OPTIONS: readonly Ecosystem[] = ["npm", "pypi", "go"];
+const ECOSYSTEM_LABELS: Record<Ecosystem, string> = {
+  npm: "npm",
+  pypi: "PyPI",
+  go: "Go",
+};
+
 function Chip({
   label,
+  count,
   active,
   onToggle,
 }: {
   label: string;
+  count: number | undefined;
   active: boolean;
   onToggle: () => void;
 }): React.JSX.Element {
@@ -38,6 +49,7 @@ function Chip({
       }`}
     >
       {label}
+      {count !== undefined ? ` (${count.toString()})` : ""}
     </button>
   );
 }
@@ -45,28 +57,40 @@ function Chip({
 export function MissionFilterBar({
   selectedSeverities,
   onToggleSeverity,
+  severityCounts,
+  selectedEcosystems,
+  onToggleEcosystem,
+  ecosystemCounts,
   selectedEfforts,
   onToggleEffort,
+  effortCounts,
   onClear,
 }: {
   selectedSeverities: ReadonlySet<Severity>;
   onToggleSeverity: (severity: Severity) => void;
+  severityCounts: Partial<Record<Severity, number>>;
+  selectedEcosystems: ReadonlySet<Ecosystem>;
+  onToggleEcosystem: (ecosystem: Ecosystem) => void;
+  ecosystemCounts: Partial<Record<Ecosystem, number>>;
   selectedEfforts: ReadonlySet<EffortLabel>;
   onToggleEffort: (effort: EffortLabel) => void;
+  effortCounts: Partial<Record<EffortLabel, number>>;
   onClear: () => void;
 }): React.JSX.Element {
-  const hasFilters = selectedSeverities.size > 0 || selectedEfforts.size > 0;
+  const hasFilters =
+    selectedSeverities.size > 0 || selectedEcosystems.size > 0 || selectedEfforts.size > 0;
 
   return (
     <div className="flex flex-col gap-2.5">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-ink-muted w-14 shrink-0 font-mono text-xs uppercase tracking-wide">
+        <span className="text-ink-muted w-20 shrink-0 font-mono text-xs uppercase tracking-wide">
           Impact
         </span>
         {SEVERITY_OPTIONS.map((severity) => (
           <Chip
             key={severity}
             label={SEVERITY_LABELS[severity]}
+            count={severityCounts[severity]}
             active={selectedSeverities.has(severity)}
             onToggle={() => {
               onToggleSeverity(severity);
@@ -75,13 +99,30 @@ export function MissionFilterBar({
         ))}
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-ink-muted w-14 shrink-0 font-mono text-xs uppercase tracking-wide">
+        <span className="text-ink-muted w-20 shrink-0 font-mono text-xs uppercase tracking-wide">
+          Ecosystem
+        </span>
+        {ECOSYSTEM_OPTIONS.map((ecosystem) => (
+          <Chip
+            key={ecosystem}
+            label={ECOSYSTEM_LABELS[ecosystem]}
+            count={ecosystemCounts[ecosystem]}
+            active={selectedEcosystems.has(ecosystem)}
+            onToggle={() => {
+              onToggleEcosystem(ecosystem);
+            }}
+          />
+        ))}
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-ink-muted w-20 shrink-0 font-mono text-xs uppercase tracking-wide">
           Effort
         </span>
         {EFFORT_OPTIONS.map((effort) => (
           <Chip
             key={effort}
             label={EFFORT_LABELS[effort]}
+            count={effortCounts[effort]}
             active={selectedEfforts.has(effort)}
             onToggle={() => {
               onToggleEffort(effort);

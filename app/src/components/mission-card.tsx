@@ -5,6 +5,7 @@ import { signIn, useSession } from "next-auth/react";
 import type { EffortLabel, MissionStatus, ScoreConfidence } from "@deptend/core/db/schema.js";
 import type { MissionWithScore } from "@deptend/core";
 import { SeverityMark, severityBorderClass } from "./severity-mark";
+import { EcosystemBadge } from "./ecosystem-badge";
 
 const EFFORT_LABEL_TEXT: Record<EffortLabel, string> = {
   trivial: "Trivial effort",
@@ -64,7 +65,7 @@ function ClaimAction({
   status: MissionStatus;
   claimedBy: string | null;
   onStatusChange: (missionId: string, patch: MissionClaimPatch) => void;
-}): React.JSX.Element | null {
+}): React.JSX.Element {
   const { data: session } = useSession();
   const [request, setRequest] = useState<ClaimRequestState>({ kind: "idle" });
   const login = session?.user?.login;
@@ -160,152 +161,171 @@ export function MissionCard({
   const { score, advisory, dependency, repo } = mission;
   const severity = advisory?.severity ?? "unknown";
   const isLowConfidence = score.confidence === "low";
+  const isClaimed = mission.status === "claimed";
 
   return (
     <article
-      className={`border-border bg-surface border border-l-4 ${severityBorderClass(severity)} rounded-sm ${mission.status === "claimed" ? "opacity-75" : ""}`}
+      className={`border-border bg-surface border border-l-4 ${severityBorderClass(severity)} rounded-sm ${isClaimed ? "opacity-75" : ""}`}
     >
-      <div className="flex flex-col gap-3 p-5">
-        <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
-          <div className="flex flex-col gap-1.5">
-            <SeverityMark severity={severity} />
-            <h2 className="text-ink text-balance text-base font-semibold leading-snug">
-              {mission.title}
-            </h2>
-          </div>
-          <div className="flex shrink-0 items-baseline gap-2 font-mono">
-            <span className="text-accent text-2xl font-bold" title="Composite score, out of 10">
-              {score.compositeScore.toFixed(1)}
-            </span>
-            <span className="text-ink-muted text-xs">/10</span>
-          </div>
-        </div>
-
-        <p className="text-ink-muted whitespace-pre-line text-sm leading-relaxed">
-          {mission.description}
-        </p>
-
-        {mission.actionHint !== null && (
-          <p className="text-ink border-border border-l-2 pl-3 text-sm font-medium">
-            {mission.actionHint}
-          </p>
-        )}
-
-        <div className="text-ink-muted flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-xs">
-          <span>{EFFORT_LABEL_TEXT[score.effortLabel]}</span>
-          <span aria-hidden="true">·</span>
-          <span className={isLowConfidence ? "font-semibold" : ""}>
-            <span className={CONFIDENCE_CLASS[score.confidence]}>
-              {isLowConfidence && "⚠ "}
-              {CONFIDENCE_TEXT[score.confidence]}
-            </span>
-          </span>
-          <span aria-hidden="true">·</span>
-          <a
-            href={`https://github.com/${repo.owner}/${repo.name}`}
-            className="hover:text-accent underline decoration-dotted underline-offset-2"
+      {/*
+        Collapsed by default — only the summary row below renders until
+        clicked. Named group (`group/card`) so its own chevron doesn't react
+        to the nested "why this score" details' open state, and vice versa.
+      */}
+      <details className="group/card">
+        <summary className="hover:bg-bg flex items-center gap-3 px-4 py-3">
+          <span
+            className="text-ink-muted shrink-0 font-mono text-xs transition-transform group-open/card:rotate-90"
+            aria-hidden="true"
           >
+            ▸
+          </span>
+          <SeverityMark severity={severity} />
+          {dependency !== null && <EcosystemBadge ecosystem={dependency.ecosystem} />}
+          <h2 className="text-ink min-w-0 flex-1 truncate text-sm font-semibold">
+            {mission.title}
+          </h2>
+          <span className="text-ink-muted hidden shrink-0 font-mono text-xs sm:inline">
+            {EFFORT_LABEL_TEXT[score.effortLabel]}
+          </span>
+          <span className="text-ink-muted hidden max-w-[9rem] shrink-0 truncate font-mono text-xs md:inline">
             {repo.owner}/{repo.name}
-          </a>
-        </div>
+          </span>
+          <span
+            className="text-accent shrink-0 font-mono text-base font-bold"
+            title="Composite score, out of 10"
+          >
+            {score.compositeScore.toFixed(1)}
+          </span>
+        </summary>
 
-        <ClaimAction
-          missionId={mission.id}
-          status={mission.status}
-          claimedBy={mission.claimedBy}
-          onStatusChange={onStatusChange}
-        />
+        <div className="border-border/60 flex flex-col gap-3 border-t px-5 py-4">
+          <p className="text-ink-muted whitespace-pre-line text-sm leading-relaxed">
+            {mission.description}
+          </p>
 
-        <details className="group -mx-5 -mb-5 mt-1">
-          <summary className="text-ink-muted hover:text-ink hover:bg-bg border-border/60 flex items-center gap-1.5 border-t px-5 py-3 font-mono text-xs font-medium">
-            <span className="transition-transform group-open:rotate-90">▸</span>
-            Why this score?
-          </summary>
-          <div className="bg-bg border-border/60 flex flex-col gap-4 border-t px-5 py-4 font-mono text-xs">
-            <div>
-              <p className="text-ink-muted mb-1 uppercase">Formula</p>
-              <p className="text-ink">
-                0.60 × impact ({score.impactScore.toFixed(1)}) + 0.40 × ecosystem value (
-                {score.ecosystemValueScore.toFixed(1)}) = {score.compositeScore.toFixed(1)}
-              </p>
-            </div>
+          {mission.actionHint !== null && (
+            <p className="text-ink border-border border-l-2 pl-3 text-sm font-medium">
+              {mission.actionHint}
+            </p>
+          )}
 
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-              <div>
-                <p className="text-ink-muted mb-1 uppercase">Impact inputs</p>
-                <ul className="text-ink flex flex-col gap-0.5">
-                  <li>
-                    CVSS:{" "}
-                    {score.impactInputs.cvss_score !== null
-                      ? score.impactInputs.cvss_score.toFixed(1)
-                      : "unknown"}
-                  </li>
-                  <li>Severity: {score.impactInputs.severity}</li>
-                  <li>Dependency type: {score.impactInputs.dep_type}</li>
-                  <li>
-                    Advisory age:{" "}
-                    {score.impactInputs.days_since_advisory !== null
-                      ? `${score.impactInputs.days_since_advisory.toString()}d`
-                      : "unknown"}
-                  </li>
-                </ul>
-              </div>
-
-              <div>
-                <p className="text-ink-muted mb-1 uppercase">Ecosystem value inputs</p>
-                <ul className="text-ink flex flex-col gap-0.5">
-                  <li>Repo stars: {score.ecosystemValueInputs.repo_stars.toLocaleString()}</li>
-                  <li>Open issues: {score.ecosystemValueInputs.open_issues_count}</li>
-                  <li>
-                    Downstream dependents:{" "}
-                    {score.ecosystemValueInputs.downstream_dependents ?? "not tracked yet"}
-                  </li>
-                </ul>
-              </div>
-
-              <div>
-                <p className="text-ink-muted mb-1 uppercase">Effort inputs</p>
-                <ul className="text-ink flex flex-col gap-0.5">
-                  <li>Semver bump: {score.effortInputs.semver_bump}</li>
-                  <li>
-                    Migration guide:{" "}
-                    {score.effortInputs.has_migration_guide ? "available" : "not tracked yet"}
-                  </li>
-                </ul>
-              </div>
-            </div>
-
-            {score.confidenceNotes !== null && score.confidenceNotes.length > 0 && (
-              <div>
-                <p className="text-ink-muted mb-1 uppercase">
-                  Why {CONFIDENCE_TEXT[score.confidence].toLowerCase()}
-                </p>
-                <ul className="text-ink flex flex-col gap-0.5">
-                  {score.confidenceNotes.map((note) => (
-                    <li key={note}>· {note}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {advisory !== null && (
-              <div>
-                <p className="text-ink-muted mb-1 uppercase">Source</p>
-                <p className="text-ink">
-                  {advisory.source.toUpperCase()} advisory{" "}
-                  <a
-                    href={osvUrl(advisory.osvId)}
-                    className="text-accent underline decoration-dotted underline-offset-2"
-                  >
-                    {advisory.osvId}
-                  </a>
-                  {dependency !== null && <> for {dependency.packageName}</>}
-                </p>
-              </div>
-            )}
+          <div className="text-ink-muted flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-xs">
+            <span>{EFFORT_LABEL_TEXT[score.effortLabel]}</span>
+            <span aria-hidden="true">·</span>
+            <span className={isLowConfidence ? "font-semibold" : ""}>
+              <span className={CONFIDENCE_CLASS[score.confidence]}>
+                {isLowConfidence && "⚠ "}
+                {CONFIDENCE_TEXT[score.confidence]}
+              </span>
+            </span>
+            <span aria-hidden="true">·</span>
+            <a
+              href={`https://github.com/${repo.owner}/${repo.name}`}
+              className="hover:text-accent underline decoration-dotted underline-offset-2"
+            >
+              {repo.owner}/{repo.name}
+            </a>
           </div>
-        </details>
-      </div>
+
+          <ClaimAction
+            missionId={mission.id}
+            status={mission.status}
+            claimedBy={mission.claimedBy}
+            onStatusChange={onStatusChange}
+          />
+
+          <details className="group/score -mx-5 -mb-4 mt-1">
+            <summary className="text-ink-muted hover:text-ink hover:bg-bg border-border/60 flex items-center gap-1.5 border-t px-5 py-3 font-mono text-xs font-medium">
+              <span className="transition-transform group-open/score:rotate-90">▸</span>
+              Why this score?
+            </summary>
+            <div className="bg-bg border-border/60 flex flex-col gap-4 border-t px-5 py-4 font-mono text-xs">
+              <div>
+                <p className="text-ink-muted mb-1 uppercase">Formula</p>
+                <p className="text-ink">
+                  0.60 × impact ({score.impactScore.toFixed(1)}) + 0.40 × ecosystem value (
+                  {score.ecosystemValueScore.toFixed(1)}) = {score.compositeScore.toFixed(1)}
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <div>
+                  <p className="text-ink-muted mb-1 uppercase">Impact inputs</p>
+                  <ul className="text-ink flex flex-col gap-0.5">
+                    <li>
+                      CVSS:{" "}
+                      {score.impactInputs.cvss_score !== null
+                        ? score.impactInputs.cvss_score.toFixed(1)
+                        : "unknown"}
+                    </li>
+                    <li>Severity: {score.impactInputs.severity}</li>
+                    <li>Dependency type: {score.impactInputs.dep_type}</li>
+                    <li>
+                      Advisory age:{" "}
+                      {score.impactInputs.days_since_advisory !== null
+                        ? `${score.impactInputs.days_since_advisory.toString()}d`
+                        : "unknown"}
+                    </li>
+                  </ul>
+                </div>
+
+                <div>
+                  <p className="text-ink-muted mb-1 uppercase">Ecosystem value inputs</p>
+                  <ul className="text-ink flex flex-col gap-0.5">
+                    <li>Repo stars: {score.ecosystemValueInputs.repo_stars.toLocaleString()}</li>
+                    <li>Open issues: {score.ecosystemValueInputs.open_issues_count}</li>
+                    <li>
+                      Downstream dependents:{" "}
+                      {score.ecosystemValueInputs.downstream_dependents ?? "not tracked yet"}
+                    </li>
+                  </ul>
+                </div>
+
+                <div>
+                  <p className="text-ink-muted mb-1 uppercase">Effort inputs</p>
+                  <ul className="text-ink flex flex-col gap-0.5">
+                    <li>Semver bump: {score.effortInputs.semver_bump}</li>
+                    <li>
+                      Migration guide:{" "}
+                      {score.effortInputs.has_migration_guide ? "available" : "not tracked yet"}
+                    </li>
+                  </ul>
+                </div>
+              </div>
+
+              {score.confidenceNotes !== null && score.confidenceNotes.length > 0 && (
+                <div>
+                  <p className="text-ink-muted mb-1 uppercase">
+                    Why {CONFIDENCE_TEXT[score.confidence].toLowerCase()}
+                  </p>
+                  <ul className="text-ink flex flex-col gap-0.5">
+                    {score.confidenceNotes.map((note) => (
+                      <li key={note}>· {note}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {advisory !== null && (
+                <div>
+                  <p className="text-ink-muted mb-1 uppercase">Source</p>
+                  <p className="text-ink">
+                    {advisory.source.toUpperCase()} advisory{" "}
+                    <a
+                      href={osvUrl(advisory.osvId)}
+                      className="text-accent underline decoration-dotted underline-offset-2"
+                    >
+                      {advisory.osvId}
+                    </a>
+                    {dependency !== null && <> for {dependency.packageName}</>}
+                  </p>
+                </div>
+              )}
+            </div>
+          </details>
+        </div>
+      </details>
     </article>
   );
 }
