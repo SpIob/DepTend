@@ -1,11 +1,76 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 import type { Ecosystem, EffortLabel, Severity } from "@deptend/core/db/schema.js";
 import type { MissionWithScore } from "@deptend/core";
 import { MissionCard, type MissionClaimPatch } from "./mission-card";
 import { MissionFilterBar } from "./mission-filter-bar";
 import { MissionSearchInput } from "./mission-search";
+
+const SEVERITY_VALUES: readonly Severity[] = ["critical", "high", "medium", "low", "unknown"];
+const ECOSYSTEM_VALUES: readonly Ecosystem[] = ["npm", "pypi", "go"];
+const EFFORT_VALUES: readonly EffortLabel[] = ["trivial", "low", "medium", "high"];
+
+type SortMode = "priority" | "quick-wins" | "newest";
+const SORT_MODES: readonly SortMode[] = ["priority", "quick-wins", "newest"];
+const SORT_LABELS: Record<SortMode, string> = {
+  priority: "Highest impact first",
+  "quick-wins": "Quickest wins first",
+  newest: "Newest advisory first",
+};
+
+// Lower number sorts first under "quick-wins" — trivial fixes surface before
+// high-effort ones.
+const EFFORT_ORDER: Record<EffortLabel, number> = { trivial: 0, low: 1, medium: 2, high: 3 };
+
+/** Parsed, validated shape of everything this board keeps in the URL. */
+export interface MissionBoardQuery {
+  q: string;
+  severity: ReadonlySet<Severity>;
+  ecosystem: ReadonlySet<Ecosystem>;
+  effort: ReadonlySet<EffortLabel>;
+  sort: SortMode;
+  group: boolean;
+}
+
+function parseSetParam<T extends string>(
+  value: string | null,
+  allowed: readonly T[],
+): ReadonlySet<T> {
+  if (value === null || value === "") {
+    return new Set();
+  }
+  const allowedSet: ReadonlySet<string> = new Set(allowed);
+  return new Set(value.split(",").filter((v): v is T => allowedSet.has(v)));
+}
+
+function parseSortParam(value: string | null): SortMode {
+  return SORT_MODES.find((mode) => mode === value) ?? "priority";
+}
+
+/**
+ * Reads the same query shape whether it came from Next's server-side
+ * `searchParams` (page.tsx, on first load) or this component's own
+ * client-side state serialization — one parser, one source of truth.
+ */
+export function parseMissionBoardQuery(params: {
+  q?: string | undefined;
+  severity?: string | undefined;
+  ecosystem?: string | undefined;
+  effort?: string | undefined;
+  sort?: string | undefined;
+  group?: string | undefined;
+}): MissionBoardQuery {
+  return {
+    q: params.q ?? "",
+    severity: parseSetParam(params.severity ?? null, SEVERITY_VALUES),
+    ecosystem: parseSetParam(params.ecosystem ?? null, ECOSYSTEM_VALUES),
+    effort: parseSetParam(params.effort ?? null, EFFORT_VALUES),
+    sort: parseSortParam(params.sort ?? null),
+    group: params.group === "1",
+  };
+}
 
 function EmptyFilterState(): React.JSX.Element {
   return (
@@ -27,6 +92,10 @@ function ecosystemOf(mission: MissionWithScore): Ecosystem | null {
   return mission.dependency?.ecosystem ?? mission.advisory?.ecosystem ?? null;
 }
 
+function repoKeyOf(mission: MissionWithScore): string {
+  return `${mission.repo.owner}/${mission.repo.name}`;
+}
+
 function matchesSearch(mission: MissionWithScore, query: string): boolean {
   const needle = query.trim().toLowerCase();
   if (needle === "") {
@@ -35,7 +104,7 @@ function matchesSearch(mission: MissionWithScore, query: string): boolean {
   const haystack = [
     mission.title,
     mission.dependency?.packageName ?? "",
-    `${mission.repo.owner}/${mission.repo.name}`,
+    repoKeyOf(mission),
     mission.advisory?.osvId ?? "",
   ]
     .join(" ")
@@ -68,16 +137,98 @@ function countBy<T extends string>(
   return counts;
 }
 
+function compareMissions(a: MissionWithScore, b: MissionWithScore, sortMode: SortMode): number {
+  if (sortMode === "quick-wins") {
+    const effortDiff = EFFORT_ORDER[a.score.effortLabel] - EFFORT_ORDER[b.score.effortLabel];
+    if (effortDiff !== 0) {
+      return effortDiff;
+    }
+    return b.score.compositeScore - a.score.compositeScore;
+  }
+  if (sortMode === "newest") {
+    const aTime = a.advisory?.publishedAt?.getTime() ?? 0;
+    const bTime = b.advisory?.publishedAt?.getTime() ?? 0;
+    return bTime - aTime;
+  }
+  // "priority": preserve the server's own ranked order. Array#sort is a
+  // stable sort, so returning 0 for every pair leaves it untouched.
+  return 0;
+}
+
+interface MissionGroup {
+  repoKey: string;
+  missions: MissionWithScore[];
+}
+
+function groupByRepoKey(missions: readonly MissionWithScore[]): MissionGroup[] {
+  const order: string[] = [];
+  const groups = new Map<string, MissionWithScore[]>();
+  for (const mission of missions) {
+    const key = repoKeyOf(mission);
+    const existing = groups.get(key);
+    if (existing === undefined) {
+      groups.set(key, [mission]);
+      order.push(key);
+    } else {
+      existing.push(mission);
+    }
+  }
+  return order.map((repoKey) => ({ repoKey, missions: groups.get(repoKey) ?? [] }));
+}
+
 export function MissionBoard({
   missions: initialMissions,
+  initialQuery,
 }: {
   missions: MissionWithScore[];
+  initialQuery: MissionBoardQuery;
 }): React.JSX.Element {
+  const pathname = usePathname();
+
   const [missions, setMissions] = useState(initialMissions);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [selectedSeverities, setSelectedSeverities] = useState<ReadonlySet<Severity>>(new Set());
-  const [selectedEcosystems, setSelectedEcosystems] = useState<ReadonlySet<Ecosystem>>(new Set());
-  const [selectedEfforts, setSelectedEfforts] = useState<ReadonlySet<EffortLabel>>(new Set());
+  const [searchQuery, setSearchQuery] = useState(initialQuery.q);
+  const [selectedSeverities, setSelectedSeverities] = useState(initialQuery.severity);
+  const [selectedEcosystems, setSelectedEcosystems] = useState(initialQuery.ecosystem);
+  const [selectedEfforts, setSelectedEfforts] = useState(initialQuery.effort);
+  const [sortMode, setSortMode] = useState(initialQuery.sort);
+  const [groupByRepo, setGroupByRepo] = useState(initialQuery.group);
+
+  // Keeps the URL shareable/bookmarkable/refresh-safe. Deliberately
+  // `window.history.replaceState` rather than next/navigation's router —
+  // the router treats this as a navigation and would re-run the page's
+  // server component (and its Neon queries) on every keystroke, which a
+  // client-side-only filter/search/sort change has no reason to trigger.
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (searchQuery.trim() !== "") {
+      params.set("q", searchQuery.trim());
+    }
+    if (selectedSeverities.size > 0) {
+      params.set("severity", Array.from(selectedSeverities).join(","));
+    }
+    if (selectedEcosystems.size > 0) {
+      params.set("ecosystem", Array.from(selectedEcosystems).join(","));
+    }
+    if (selectedEfforts.size > 0) {
+      params.set("effort", Array.from(selectedEfforts).join(","));
+    }
+    if (sortMode !== "priority") {
+      params.set("sort", sortMode);
+    }
+    if (groupByRepo) {
+      params.set("group", "1");
+    }
+    const query = params.toString();
+    window.history.replaceState(null, "", query === "" ? pathname : `${pathname}?${query}`);
+  }, [
+    searchQuery,
+    selectedSeverities,
+    selectedEcosystems,
+    selectedEfforts,
+    sortMode,
+    groupByRepo,
+    pathname,
+  ]);
 
   function toggleSeverity(severity: Severity): void {
     setSelectedSeverities((prev) => {
@@ -162,6 +313,9 @@ export function MissionBoard({
       matchesSet(mission.score.effortLabel, selectedEfforts),
   );
 
+  const sorted = [...filtered].sort((a, b) => compareMissions(a, b, sortMode));
+  const groups = groupByRepo ? groupByRepoKey(sorted) : null;
+
   const isFiltered =
     selectedSeverities.size > 0 ||
     selectedEcosystems.size > 0 ||
@@ -184,6 +338,35 @@ export function MissionBoard({
           effortCounts={effortCounts}
           onClear={clearFilters}
         />
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <label className="text-ink-muted flex items-center gap-2 font-mono text-xs">
+            <input
+              type="checkbox"
+              checked={groupByRepo}
+              onChange={(event) => {
+                setGroupByRepo(event.target.checked);
+              }}
+              className="accent-accent"
+            />
+            Group by repo
+          </label>
+          <label className="text-ink-muted flex items-center gap-2 font-mono text-xs">
+            Sort
+            <select
+              value={sortMode}
+              onChange={(event) => {
+                setSortMode(parseSortParam(event.target.value));
+              }}
+              className="border-border bg-surface text-ink rounded-sm border px-2 py-1 font-mono text-xs"
+            >
+              {SORT_MODES.map((mode) => (
+                <option key={mode} value={mode}>
+                  {SORT_LABELS[mode]}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
         {isFiltered && (
           <p className="text-ink-muted font-mono text-xs">
             {filtered.length} of {missions.length} missions
@@ -191,11 +374,29 @@ export function MissionBoard({
         )}
       </div>
 
-      {filtered.length === 0 ? (
+      {sorted.length === 0 ? (
         <EmptyFilterState />
+      ) : groups !== null ? (
+        <div className="flex flex-col gap-5">
+          {groups.map((group) => (
+            <div key={group.repoKey} className="flex flex-col gap-3">
+              <h2 className="text-ink-muted border-border border-b pb-1 font-mono text-xs font-semibold uppercase tracking-wide">
+                {group.repoKey}{" "}
+                <span className="normal-case">({group.missions.length.toString()})</span>
+              </h2>
+              <ul className="flex flex-col gap-3">
+                {group.missions.map((mission) => (
+                  <li key={mission.id}>
+                    <MissionCard mission={mission} onStatusChange={handleStatusChange} />
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
       ) : (
         <ul className="flex flex-col gap-3">
-          {filtered.map((mission) => (
+          {sorted.map((mission) => (
             <li key={mission.id}>
               <MissionCard mission={mission} onStatusChange={handleStatusChange} />
             </li>

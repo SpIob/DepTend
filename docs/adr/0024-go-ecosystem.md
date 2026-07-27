@@ -1,8 +1,8 @@
-# ADR 0024 — Phase 7: Go Ecosystem Detection, Manifest Scope, and Effort Scoring
+# ADR 0024 — Go Ecosystem Detection, Manifest Scope, and Effort Scoring
 
 **Status:** Accepted
 **Date:** 2026-07-25
-**Phase:** 7 — Ecosystem Expansion (Go)
+**Note:** Originally written and filed as "Phase 7" (title, filename, and this metadata field). The project's phased roadmap concluded at Phase 6 — there is no Phase 7; work since is tracked as dated session reports instead (see `07-27-26_Go_Ecosystem_Support.md`). Title, filename, and this line corrected 2026-07-27 at Mico's direction; body text below is left as originally written and may still say "Phase 7" in places — those are incidental, not a claim that a Phase 7 exists.
 
 ---
 

@@ -4,9 +4,16 @@ import {
   getSkippedRepos,
   getTotalRepoCount,
 } from "@/lib/queries/missions";
-import { MissionBoard } from "@/components/mission-board";
+import { MissionBoard, parseMissionBoardQuery } from "@/components/mission-board";
 import { AuthStatus } from "@/components/auth-status";
 import { SubmitRepoForm } from "@/components/submit-repo-form";
+
+// Next 15 can hand a param multiple values (`?severity=high&severity=low`);
+// this board only ever writes a single comma-joined value, so the first one
+// is the only shape it needs to understand on read.
+function firstValue(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
 
 // This page reads live data from Neon on every request — missions change
 // as ingestion runs complete, so baking a snapshot in at build time would
@@ -26,13 +33,27 @@ function EmptyState(): React.JSX.Element {
   );
 }
 
-export default async function MissionListPage(): Promise<React.JSX.Element> {
-  const [missions, repoCount, totalRepoCount, skippedRepos] = await Promise.all([
+export default async function MissionListPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}): Promise<React.JSX.Element> {
+  const [missions, repoCount, totalRepoCount, skippedRepos, rawParams] = await Promise.all([
     getBoardMissions(),
     getIndexedRepoCount(),
     getTotalRepoCount(),
     getSkippedRepos(),
+    searchParams,
   ]);
+
+  const initialQuery = parseMissionBoardQuery({
+    q: firstValue(rawParams.q),
+    severity: firstValue(rawParams.severity),
+    ecosystem: firstValue(rawParams.ecosystem),
+    effort: firstValue(rawParams.effort),
+    sort: firstValue(rawParams.sort),
+    group: firstValue(rawParams.group),
+  });
 
   return (
     <main className="mx-auto flex max-w-3xl flex-col gap-8 px-6 py-12">
@@ -74,7 +95,11 @@ export default async function MissionListPage(): Promise<React.JSX.Element> {
         <SubmitRepoForm repoCount={totalRepoCount} maxRepos={MAX_REPOS} />
       </header>
 
-      {missions.length === 0 ? <EmptyState /> : <MissionBoard missions={missions} />}
+      {missions.length === 0 ? (
+        <EmptyState />
+      ) : (
+        <MissionBoard missions={missions} initialQuery={initialQuery} />
+      )}
     </main>
   );
 }

@@ -83,7 +83,8 @@
   "scripts": {
     "build": "rm -rf dist && tsc --project tsconfig.json",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --passWithNoTests",
+    "typecheck:tests": "tsc --noEmit --project tsconfig.eslint.json"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

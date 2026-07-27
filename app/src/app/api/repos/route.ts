@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { parseGithubUrl, submitRepo } from "@deptend/core/db/repos.js";
 import { triggerIngestion } from "@/lib/github-dispatch";
+import { checkRepoSubmissionLimit } from "@/lib/rate-limit";
 
 interface SubmitBody {
   githubUrl?: unknown;
@@ -18,6 +19,14 @@ export async function POST(request: Request): Promise<Response> {
   const login = session?.user?.login;
   if (login === undefined) {
     return NextResponse.json({ error: "Sign in with GitHub to submit a repo." }, { status: 401 });
+  }
+
+  const rateLimit = checkRepoSubmissionLimit(login);
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { error: "Too many repo submissions. Try again later." },
+      { status: 429, headers: { "Retry-After": String(rateLimit.retryAfterSeconds) } },
+    );
   }
 
   let body: unknown;

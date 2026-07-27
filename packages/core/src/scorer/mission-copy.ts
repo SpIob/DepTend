@@ -25,11 +25,18 @@ function capitalize(value: string): string {
   return value.length === 0 ? value : value.charAt(0).toUpperCase() + value.slice(1);
 }
 
+// Only "unknown" among the 5 severity enum values starts with a vowel sound.
+// Hardcoded rather than a general vowel-detection heuristic — not worth the
+// generality for a closed, 5-value enum.
+function articleFor(severity: string): string {
+  return severity === "unknown" ? "an" : "a";
+}
+
 function buildTitle(ctx: MissionScoringContext): string {
   const { dependency, advisory } = ctx;
 
   if (advisory.fixedVersion !== null) {
-    return `Update ${dependency.packageName} to fix a ${advisory.severity} vulnerability`;
+    return `Update ${dependency.packageName} to fix ${articleFor(advisory.severity)} ${advisory.severity} vulnerability`;
   }
   return `${capitalize(advisory.severity)} vulnerability in ${dependency.packageName} has no fix yet`;
 }

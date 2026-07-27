@@ -139,6 +139,8 @@ Requires Node.js ≥20 and [pnpm](https://pnpm.io/installation) ≥9 (this proje
    pnpm drizzle-kit migrate
    ```
 
+   **Known issue:** `drizzle-kit migrate` reliably hangs on `ALTER TYPE ... ADD VALUE` statements specifically — 2-for-2 in this project's own history, and not lock contention (ruled out via `pg_stat_activity`, see [ADR 0021](docs/adr/0021-ingestion-status-skipped.md)). If it hangs, kill it and apply that one migration's `.sql` file directly in Neon's SQL Editor instead — that's the expected path for enum additions now, not a last-resort fallback (see [ADR 0026](docs/adr/0026-migration-bookkeeping-backfill.md)). Everything else (table/column changes) has run fine through the CLI so far.
+
 4. **Run the dashboard**
 
    ```bash
@@ -172,7 +174,7 @@ Requires Node.js ≥20 and [pnpm](https://pnpm.io/installation) ≥9 (this proje
 
 ## Status
 
-Phases 0–4 complete: foundation, data pipeline, scoring engine, MVP dashboard (live), and the CLI companion. Currently entering Phase 5 (public rescue board — filterable cross-repo mission view, mission claiming). See [`docs/adr/`](docs/adr/) for the full decision history and the `PhaseN_Status.md` documents for phase-by-phase detail
+DepTend is live and under active development — new features and fixes ship regularly, and the UI is currently undergoing a refactor for a more minimal, modern look. See [`docs/adr/`](docs/adr/) for the decision history.
 
 ## Contributing
 

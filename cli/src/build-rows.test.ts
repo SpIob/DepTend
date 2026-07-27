@@ -110,6 +110,25 @@ describe("buildDependencies", () => {
     expect(deps).toHaveLength(1);
     expect(deps[0]?.ecosystem).toBe("pypi");
   });
+
+  it("writes ecosystem: 'go' on every row for a go ingestor result (ADR 0024 — mirrors writer.ts's fix)", () => {
+    const goResult: IngestorResult = {
+      ...ingestorResult,
+      ecosystem: "go",
+      dependencies: [
+        {
+          package_name: "github.com/vulnerable/pkg",
+          version_spec: "v1.0.0",
+          dep_type: "production",
+        },
+      ],
+    };
+
+    const deps = buildDependencies("repo-1", goResult, { metadata: new Map(), warnings: [] });
+
+    expect(deps).toHaveLength(1);
+    expect(deps[0]?.ecosystem).toBe("go");
+  });
 });
 
 describe("buildAdvisories", () => {

@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { claimMission, isValidMissionId } from "@deptend/core/db/missions.js";
+import { checkMissionActionLimit } from "@/lib/rate-limit";
 
 export async function POST(
   _request: Request,
@@ -12,6 +13,14 @@ export async function POST(
   const login = session?.user?.login;
   if (login === undefined) {
     return NextResponse.json({ error: "Sign in with GitHub to claim a mission." }, { status: 401 });
+  }
+
+  const rateLimit = checkMissionActionLimit(login);
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { error: "Too many mission actions. Try again shortly." },
+      { status: 429, headers: { "Retry-After": String(rateLimit.retryAfterSeconds) } },
+    );
   }
 
   const { id } = await params;

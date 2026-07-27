@@ -231,6 +231,106 @@ describe("analyze", () => {
     expect(mission?.advisory.fixed_version).toBe("1.0.1");
   });
 
+  it("produces a ranked mission list from a local Go repo with a real vulnerability (ADR 0024)", async () => {
+    // No package.json or pyproject.toml anywhere in repoDir — only go.mod —
+    // so the router (npm, then PyPI, tried first) falls through to Go.
+    await writeFile(
+      join(repoDir, "go.mod"),
+      "module github.com/owner/repo\n\ngo 1.21\n\nrequire github.com/vulnerable/pkg v1.0.0\n",
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: string | URL | Request) => {
+        const url =
+          typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+
+        if (url.includes("api.github.com/repos/")) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                full_name: "owner/repo",
+                name: "repo",
+                owner: { login: "owner" },
+                default_branch: "main",
+                description: "A test repo",
+                stargazers_count: 100,
+                open_issues_count: 5,
+                topics: [],
+                homepage: null,
+              }),
+              { status: 200 },
+            ),
+          );
+        }
+        if (url.includes("api.osv.dev/v1/querybatch")) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                results: [
+                  { vulns: [{ id: "GHSA-test-go-1234", modified: "2026-01-01T00:00:00Z" }] },
+                ],
+              }),
+              { status: 200 },
+            ),
+          );
+        }
+        if (url.includes("api.osv.dev/v1/vulns/")) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                id: "GHSA-test-go-1234",
+                modified: "2026-01-01T00:00:00Z",
+                published: "2025-12-01T00:00:00Z",
+                summary: "Test vulnerability in github.com/vulnerable/pkg",
+                severity: [{ type: "CVSS_V3", score: "9.8" }],
+                affected: [
+                  {
+                    package: { name: "github.com/vulnerable/pkg", ecosystem: "Go" },
+                    // SEMVER type — OSV's real shape for Go (unlike PyPI's
+                    // ECOSYSTEM-type ranges), confirmed against vuln.go.dev
+                    // during ADR 0024's own grounding. v-prefixed, matching
+                    // real Go module version convention.
+                    ranges: [
+                      { type: "SEMVER", events: [{ introduced: "0" }, { fixed: "v1.0.1" }] },
+                    ],
+                  },
+                ],
+              }),
+              { status: 200 },
+            ),
+          );
+        }
+        if (url.includes("proxy.golang.org/")) {
+          // All-lowercase module path here — no case-encoding to verify;
+          // that's encodeGoModulePath()'s own unit tests' job. This just
+          // confirms the CLI pipeline reaches the right host/shape.
+          return Promise.resolve(
+            new Response(JSON.stringify({ Version: "v1.0.1" }), { status: 200 }),
+          );
+        }
+        throw new Error(`Unmocked fetch call in analyze.test.ts (go): ${url}`);
+      }),
+    );
+
+    const result = await analyze({
+      repoPath: repoDir,
+      githubOwner: "owner",
+      githubName: "repo",
+      githubToken: null,
+    });
+
+    expect(result.ecosystem).toBe("go");
+    expect(result.dependencies_scanned).toBe(1);
+    expect(result.lock_file_present).toBe(false);
+
+    expect(result.missions).toHaveLength(1);
+    const mission = result.missions[0];
+    expect(mission?.dependency.package_name).toBe("github.com/vulnerable/pkg");
+    expect(mission?.advisory.osv_id).toBe("GHSA-test-go-1234");
+    expect(mission?.advisory.severity).toBe("critical");
+    expect(mission?.advisory.fixed_version).toBe("v1.0.1");
+  });
+
   it("produces no missions for a repo with no vulnerable dependencies", async () => {
     await writeFile(
       join(repoDir, "package.json"),

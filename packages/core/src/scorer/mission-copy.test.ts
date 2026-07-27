@@ -89,6 +89,15 @@ describe("generateMissionCopy", () => {
     expect(copy.title.startsWith("High")).toBe(true);
   });
 
+  it("uses 'an' instead of 'a' before an unknown severity", () => {
+    const ctx = makeContext({
+      advisory: makeAdvisory({ severity: "unknown", fixedVersion: "1.2.4" }),
+    });
+    const copy = generateMissionCopy(ctx, computeMissionScore(ctx));
+    expect(copy.title).toContain("an unknown vulnerability");
+    expect(copy.title).not.toContain("a unknown vulnerability");
+  });
+
   it("includes the advisory summary, dep_type, severity, CVSS, and source in the description", () => {
     const ctx = makeContext();
     const copy = generateMissionCopy(ctx, computeMissionScore(ctx));
