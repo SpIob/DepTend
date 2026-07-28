@@ -4,7 +4,8 @@ import {
   getSkippedRepos,
   getTotalRepoCount,
 } from "@/lib/queries/missions";
-import { MissionBoard, parseMissionBoardQuery } from "@/components/mission-board";
+import { MissionBoard } from "@/components/mission-board";
+import { parseMissionBoardQuery } from "@/lib/mission-board-query";
 import { AuthStatus } from "@/components/auth-status";
 import { SubmitRepoForm } from "@/components/submit-repo-form";
 

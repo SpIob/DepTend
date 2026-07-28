@@ -4,16 +4,18 @@ import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import type { Ecosystem, EffortLabel, Severity } from "@deptend/core/db/schema.js";
 import type { MissionWithScore } from "@deptend/core";
+import {
+  parseSortParam,
+  SORT_MODES,
+  type MissionBoardQuery,
+  type SortMode,
+} from "@/lib/mission-board-query";
 import { MissionCard, type MissionClaimPatch } from "./mission-card";
 import { MissionFilterBar } from "./mission-filter-bar";
 import { MissionSearchInput } from "./mission-search";
 
-const SEVERITY_VALUES: readonly Severity[] = ["critical", "high", "medium", "low", "unknown"];
-const ECOSYSTEM_VALUES: readonly Ecosystem[] = ["npm", "pypi", "go"];
-const EFFORT_VALUES: readonly EffortLabel[] = ["trivial", "low", "medium", "high"];
+export type { MissionBoardQuery };
 
-type SortMode = "priority" | "quick-wins" | "newest";
-const SORT_MODES: readonly SortMode[] = ["priority", "quick-wins", "newest"];
 const SORT_LABELS: Record<SortMode, string> = {
   priority: "Highest impact first",
   "quick-wins": "Quickest wins first",
@@ -23,54 +25,6 @@ const SORT_LABELS: Record<SortMode, string> = {
 // Lower number sorts first under "quick-wins" — trivial fixes surface before
 // high-effort ones.
 const EFFORT_ORDER: Record<EffortLabel, number> = { trivial: 0, low: 1, medium: 2, high: 3 };
-
-/** Parsed, validated shape of everything this board keeps in the URL. */
-export interface MissionBoardQuery {
-  q: string;
-  severity: ReadonlySet<Severity>;
-  ecosystem: ReadonlySet<Ecosystem>;
-  effort: ReadonlySet<EffortLabel>;
-  sort: SortMode;
-  group: boolean;
-}
-
-function parseSetParam<T extends string>(
-  value: string | null,
-  allowed: readonly T[],
-): ReadonlySet<T> {
-  if (value === null || value === "") {
-    return new Set();
-  }
-  const allowedSet: ReadonlySet<string> = new Set(allowed);
-  return new Set(value.split(",").filter((v): v is T => allowedSet.has(v)));
-}
-
-function parseSortParam(value: string | null): SortMode {
-  return SORT_MODES.find((mode) => mode === value) ?? "priority";
-}
-
-/**
- * Reads the same query shape whether it came from Next's server-side
- * `searchParams` (page.tsx, on first load) or this component's own
- * client-side state serialization — one parser, one source of truth.
- */
-export function parseMissionBoardQuery(params: {
-  q?: string | undefined;
-  severity?: string | undefined;
-  ecosystem?: string | undefined;
-  effort?: string | undefined;
-  sort?: string | undefined;
-  group?: string | undefined;
-}): MissionBoardQuery {
-  return {
-    q: params.q ?? "",
-    severity: parseSetParam(params.severity ?? null, SEVERITY_VALUES),
-    ecosystem: parseSetParam(params.ecosystem ?? null, ECOSYSTEM_VALUES),
-    effort: parseSetParam(params.effort ?? null, EFFORT_VALUES),
-    sort: parseSortParam(params.sort ?? null),
-    group: params.group === "1",
-  };
-}
 
 function EmptyFilterState(): React.JSX.Element {
   return (
