@@ -15,7 +15,12 @@
  */
 
 import { describe, expect, it, vi } from "vitest";
-import { parseGithubUrl, submitRepo, type SubmitRepoParams } from "./repos.js";
+import {
+  getRepoByOwnerAndName,
+  parseGithubUrl,
+  submitRepo,
+  type SubmitRepoParams,
+} from "./repos.js";
 import type { Repo } from "./schema.js";
 
 // ---------------------------------------------------------------------------
@@ -281,5 +286,28 @@ describe("submitRepo", () => {
     const result = await submitRepo(db, BASE_PARAMS);
 
     expect(result.outcome).toBe("created");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getRepoByOwnerAndName
+// ---------------------------------------------------------------------------
+
+describe("getRepoByOwnerAndName", () => {
+  it("returns the matching repo row", async () => {
+    const row = makeRepoRow({ owner: "octocat", name: "hello-world" });
+    const { db } = makeMockDb({ selectResponses: [[row]], insertResponse: [] });
+
+    const result = await getRepoByOwnerAndName(db, "octocat", "hello-world");
+
+    expect(result).toEqual(row);
+  });
+
+  it("returns null when no repo matches", async () => {
+    const { db } = makeMockDb({ selectResponses: [[]], insertResponse: [] });
+
+    const result = await getRepoByOwnerAndName(db, "octocat", "does-not-exist");
+
+    expect(result).toBeNull();
   });
 });

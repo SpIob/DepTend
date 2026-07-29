@@ -7,7 +7,7 @@
  * from ADR 0012.
  */
 
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { repos, type Repo } from "./schema.js";
 import type { ReadonlyDb } from "./queries.js";
 
@@ -38,6 +38,25 @@ export function parseGithubUrl(input: string): ParsedGithubUrl | null {
     return null;
   }
   return { githubUrl: `https://github.com/${owner}/${name}`, owner, name };
+}
+
+/**
+ * Resolves a repo by its (owner, name) pair — the shape /repo/[owner]/[name]
+ * (ADR 0027) is addressed by, matching the existing repos_owner_name_unique
+ * constraint. Returns null rather than throwing so the page can render a
+ * clean 404 instead of an unhandled error.
+ */
+export async function getRepoByOwnerAndName(
+  db: ReadonlyDb,
+  owner: string,
+  name: string,
+): Promise<Repo | null> {
+  const [repo] = await db
+    .select()
+    .from(repos)
+    .where(and(eq(repos.owner, owner), eq(repos.name, name)))
+    .limit(1);
+  return repo ?? null;
 }
 
 export type SubmitRepoOutcome = "created" | "already_exists" | "cap_reached";

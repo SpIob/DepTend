@@ -20,19 +20,17 @@
 import { and, eq } from "drizzle-orm";
 import { missions } from "./schema.js";
 import type { ReadonlyDb } from "./queries.js";
-
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+import { isValidUuid } from "./validation.js";
 
 /**
  * Shape-only validation for a mission ID before it reaches a guarded
- * update — same role parseGithubUrl() plays for repos.ts. Without this, a
- * malformed ID (e.g. a stray route param) reaches Postgres as a raw
- * "invalid input syntax for type uuid" error instead of a clean 400 at
- * the API route.
+ * update — same role parseGithubUrl() plays for repos.ts. Alias over the
+ * shared isValidUuid() (extracted to validation.ts per ADR 0027, once
+ * db/bookmarks.ts needed the identical check) — kept under this name so
+ * the existing claim/unclaim API routes don't need to change their
+ * import.
  */
-export function isValidMissionId(id: string): boolean {
-  return UUID_PATTERN.test(id);
-}
+export const isValidMissionId = isValidUuid;
 
 export type ClaimMissionOutcome = "claimed" | "already_claimed" | "not_found";
 

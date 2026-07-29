@@ -1,24 +1,20 @@
+import Link from "next/link";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import {
-  getBoardMissions,
-  getIndexedRepoCount,
+  getReposWithMissionSummary,
   getSkippedRepos,
   getTotalRepoCount,
 } from "@/lib/queries/missions";
-import { MissionBoard } from "@/components/mission-board";
-import { parseMissionBoardQuery } from "@/lib/mission-board-query";
 import { AuthStatus } from "@/components/auth-status";
 import { SubmitRepoForm } from "@/components/submit-repo-form";
+import { RepoCard } from "@/components/repo-card";
+import type { RepoWithMissionSummary } from "@deptend/core";
 
-// Next 15 can hand a param multiple values (`?severity=high&severity=low`);
-// this board only ever writes a single comma-joined value, so the first one
-// is the only shape it needs to understand on read.
-function firstValue(value: string | string[] | undefined): string | undefined {
-  return Array.isArray(value) ? value[0] : value;
-}
-
-// This page reads live data from Neon on every request — missions change
-// as ingestion runs complete, so baking a snapshot in at build time would
-// show stale results. Also means `next build` never needs a DB connection.
+// This page reads live data from Neon on every request — repo/mission
+// state changes as ingestion runs complete and bookmarks are toggled, so
+// baking a snapshot in at build time would show stale results. Also means
+// `next build` never needs a DB connection.
 export const dynamic = "force-dynamic";
 
 const MAX_REPOS = Number.parseInt(process.env.NEXT_PUBLIC_MAX_REPOS ?? "10", 10);
@@ -26,38 +22,52 @@ const MAX_REPOS = Number.parseInt(process.env.NEXT_PUBLIC_MAX_REPOS ?? "10", 10)
 function EmptyState(): React.JSX.Element {
   return (
     <div className="border-border bg-surface rounded-sm border border-dashed p-10 text-center">
-      <p className="text-ink font-medium">No missions yet.</p>
+      <p className="text-ink font-medium">No repos indexed yet.</p>
       <p className="text-ink-muted mt-1 text-sm">
-        Missions appear here once a submitted repo has been ingested and scored.
+        Submit a public GitHub repo above to get started.
       </p>
     </div>
   );
 }
 
-export default async function MissionListPage({
-  searchParams,
-}: {
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
-}): Promise<React.JSX.Element> {
-  const [missions, repoCount, totalRepoCount, skippedRepos, rawParams] = await Promise.all([
-    getBoardMissions(),
-    getIndexedRepoCount(),
+// Bookmarked repos surface first; among the rest, the neediest repo (most
+// open+claimed missions) leads — same "what to fix next" framing the
+// mission board itself uses, just one level up. owner/name is the final,
+// deterministic tie-break.
+function compareRepos(a: RepoWithMissionSummary, b: RepoWithMissionSummary): number {
+  if (a.isBookmarked !== b.isBookmarked) {
+    return a.isBookmarked ? -1 : 1;
+  }
+  if (a.missionCounts.total !== b.missionCounts.total) {
+    return b.missionCounts.total - a.missionCounts.total;
+  }
+  return `${a.owner}/${a.name}`.localeCompare(`${b.owner}/${b.name}`);
+}
+
+/**
+ * Repo directory (ADR 0027) — the default landing page as of this ADR,
+ * replacing the flat cross-repo mission board (still at /missions,
+ * unchanged). Scan repos here, drill into one at /repo/[owner]/[name] for
+ * its full ranked mission list — bounds both the query and the payload by
+ * one repo's mission count instead of the whole board's.
+ */
+export default async function RepoDirectoryPage(): Promise<React.JSX.Element> {
+  const session = await getServerSession(authOptions);
+  const login = session?.user?.login;
+
+  const [repos, totalRepoCount, skippedRepos] = await Promise.all([
+    getReposWithMissionSummary(login),
     getTotalRepoCount(),
     getSkippedRepos(),
-    searchParams,
   ]);
 
-  const initialQuery = parseMissionBoardQuery({
-    q: firstValue(rawParams.q),
-    severity: firstValue(rawParams.severity),
-    ecosystem: firstValue(rawParams.ecosystem),
-    effort: firstValue(rawParams.effort),
-    sort: firstValue(rawParams.sort),
-    group: firstValue(rawParams.group),
-  });
+  // Derived from the same fetch, not a second query — getIndexedRepoCount()
+  // would just recompute what's already sitting in `repos`.
+  const indexedCount = repos.filter((repo) => repo.ingestionStatus === "complete").length;
+  const sorted = [...repos].sort(compareRepos);
 
   return (
-    <main className="mx-auto flex max-w-3xl flex-col gap-8 px-6 py-12">
+    <main className="mx-auto flex max-w-6xl flex-col gap-8 px-6 py-12">
       <header className="border-border flex flex-col gap-5 border-b pb-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
@@ -66,7 +76,7 @@ export default async function MissionListPage({
           </div>
           <div className="text-ink-muted flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-xs">
             <span>
-              {repoCount} {repoCount === 1 ? "repo" : "repos"} indexed
+              {indexedCount} {indexedCount === 1 ? "repo" : "repos"} indexed
             </span>
             {skippedRepos.length > 0 && (
               <>
@@ -93,21 +103,36 @@ export default async function MissionListPage({
             <span className="text-border" aria-hidden="true">
               |
             </span>
+            <Link
+              href="/missions"
+              className="hover:text-ink underline decoration-dotted underline-offset-2"
+            >
+              Browse all missions
+            </Link>
+            <span className="text-border" aria-hidden="true">
+              |
+            </span>
             <AuthStatus />
           </div>
         </div>
-        <p className="text-ink-muted max-w-xl text-sm leading-relaxed">
-          Prioritized maintenance missions, ranked by impact and ecosystem value, effort as the
-          tie-breaker. Every score shows its work — expand any mission for the inputs and weights
-          behind it.
+        <p className="text-ink-muted max-w-2xl text-sm leading-relaxed">
+          Every indexed repo, with its highest-priority missions summarized. Open a repo for the
+          full ranked list — every score shows its work, expand any mission for the inputs and
+          weights behind it.
         </p>
         <SubmitRepoForm repoCount={totalRepoCount} maxRepos={MAX_REPOS} />
       </header>
 
-      {missions.length === 0 ? (
+      {sorted.length === 0 ? (
         <EmptyState />
       ) : (
-        <MissionBoard missions={missions} initialQuery={initialQuery} />
+        <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {sorted.map((repo) => (
+            <li key={repo.id}>
+              <RepoCard repo={repo} />
+            </li>
+          ))}
+        </ul>
       )}
     </main>
   );

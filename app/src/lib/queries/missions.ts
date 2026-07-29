@@ -6,15 +6,19 @@
  * lives there instead of here.
  */
 
+import { getBookmarkedRepoIds as coreGetBookmarkedRepoIds } from "@deptend/core/db/bookmarks.js";
 import {
   getBoardMissionsWithScores,
   getIndexedRepoCount as coreGetIndexedRepoCount,
   getOpenMissionsWithScores,
+  getRepoMissionsWithScores as coreGetRepoMissionsWithScores,
+  getReposWithMissionSummary as coreGetReposWithMissionSummary,
   getSkippedRepos as coreGetSkippedRepos,
   getTotalRepoCount as coreGetTotalRepoCount,
   type SkippedRepo,
 } from "@deptend/core/db/queries.js";
-import type { MissionWithScore } from "@deptend/core";
+import { getRepoByOwnerAndName as coreGetRepoByOwnerAndName } from "@deptend/core/db/repos.js";
+import type { MissionWithScore, Repo, RepoWithMissionSummary } from "@deptend/core";
 import { getDb } from "../db";
 
 export async function getOpenMissions(): Promise<MissionWithScore[]> {
@@ -36,4 +40,26 @@ export async function getTotalRepoCount(): Promise<number> {
 
 export async function getSkippedRepos(): Promise<SkippedRepo[]> {
   return coreGetSkippedRepos(getDb());
+}
+
+/** Repo directory rows (ADR 0027) — pass the signed-in user's login to populate isBookmarked. */
+export async function getReposWithMissionSummary(
+  userLogin?: string,
+): Promise<RepoWithMissionSummary[]> {
+  return coreGetReposWithMissionSummary(getDb(), userLogin);
+}
+
+/** Open + claimed missions for one repo — the /repo/[owner]/[name] page's query (ADR 0027). */
+export async function getRepoMissionsWithScores(repoId: string): Promise<MissionWithScore[]> {
+  return coreGetRepoMissionsWithScores(getDb(), repoId);
+}
+
+/** Resolves /repo/[owner]/[name]'s route params to a repo row, or null for a 404 (ADR 0027). */
+export async function getRepoByOwnerAndName(owner: string, name: string): Promise<Repo | null> {
+  return coreGetRepoByOwnerAndName(getDb(), owner, name);
+}
+
+/** Repo IDs bookmarked by userLogin — backs the repo detail page's bookmark toggle (ADR 0027). */
+export async function getBookmarkedRepoIds(userLogin: string): Promise<Set<string>> {
+  return coreGetBookmarkedRepoIds(getDb(), userLogin);
 }

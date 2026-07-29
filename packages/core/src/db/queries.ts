@@ -24,14 +24,20 @@
  * ever compiled by one program, sidesteps it entirely.
  */
 
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { drizzle, type NeonHttpDatabase } from "drizzle-orm/neon-http";
 import { neon } from "@neondatabase/serverless";
 import * as schema from "./schema.js";
 import { advisories, dependencies, missions, missionScores, repos } from "./schema.js";
 import type { MissionStatus } from "./schema.js";
 import { rankMissions, type RankableMission } from "../scorer/ranking.js";
-import type { MissionWithScore } from "./query-types.js";
+import {
+  EMPTY_REPO_MISSION_COUNTS,
+  type MissionWithScore,
+  type RepoMissionCounts,
+  type RepoWithMissionSummary,
+} from "./query-types.js";
+import { getBookmarkedRepoIds } from "./bookmarks.js";
 
 export type ReadonlyDb = NeonHttpDatabase<typeof schema>;
 
@@ -46,13 +52,16 @@ export function createReadonlyDb(databaseUrl: string): ReadonlyDb {
 }
 
 /**
- * Shared implementation behind getOpenMissionsWithScores() and
- * getBoardMissionsWithScores() below — same join, same ranking, only the
- * status filter differs.
+ * Shared implementation behind getOpenMissionsWithScores(),
+ * getBoardMissionsWithScores(), and getRepoMissionsWithScores() below —
+ * same join, same ranking; status filter always applies, repoId narrows
+ * to one repo when passed (ADR 0027) and is left off entirely otherwise
+ * so the board-wide callers are unchanged.
  */
 async function getMissionsWithScoresByStatus(
   db: ReadonlyDb,
   statuses: readonly MissionStatus[],
+  repoId?: string,
 ): Promise<MissionWithScore[]> {
   const rows = await db
     .select({
@@ -67,7 +76,11 @@ async function getMissionsWithScoresByStatus(
     .innerJoin(repos, eq(missions.repoId, repos.id))
     .leftJoin(advisories, eq(missions.advisoryId, advisories.id))
     .leftJoin(dependencies, eq(missions.dependencyId, dependencies.id))
-    .where(inArray(missions.status, statuses));
+    .where(
+      repoId === undefined
+        ? inArray(missions.status, statuses)
+        : and(inArray(missions.status, statuses), eq(missions.repoId, repoId)),
+    );
 
   const withScores: MissionWithScore[] = rows.map((row) => ({
     ...row.mission,
@@ -125,6 +138,19 @@ export async function getBoardMissionsWithScores(db: ReadonlyDb): Promise<Missio
   return getMissionsWithScoresByStatus(db, ["open", "claimed"]);
 }
 
+/**
+ * Open + claimed missions for one repo, ranked the same way as
+ * getBoardMissionsWithScores() — the query behind /repo/[owner]/[name]
+ * (ADR 0027). Scoped to a single repo_id so query cost and payload size
+ * are bounded by one repo's mission count, not the whole board's.
+ */
+export async function getRepoMissionsWithScores(
+  db: ReadonlyDb,
+  repoId: string,
+): Promise<MissionWithScore[]> {
+  return getMissionsWithScoresByStatus(db, ["open", "claimed"], repoId);
+}
+
 /** Count of repos that have completed at least one ingestion run. */
 export async function getIndexedRepoCount(db: ReadonlyDb): Promise<number> {
   const rows = await db
@@ -166,4 +192,68 @@ export async function getSkippedRepos(db: ReadonlyDb): Promise<SkippedRepo[]> {
     .select({ owner: repos.owner, name: repos.name, reason: repos.ingestionError })
     .from(repos)
     .where(eq(repos.ingestionStatus, "skipped"));
+}
+
+/**
+ * One row per repo for the directory page (ADR 0027) — mission counts by
+ * severity and the set of ecosystems present, without shipping every
+ * mission's full payload the way getBoardMissionsWithScores() does.
+ *
+ * Deliberately four small, independently-bounded queries assembled in
+ * application code rather than one mega-join: a single query joining
+ * missions/advisories/dependencies against repos would multiply rows in
+ * exactly the way this function exists to avoid. Every one of the four is
+ * bounded by repo count (the MVP cap) or (repo × severity) pairs, not by
+ * total mission count — matching the reasoning in this file's own header
+ * comment about why these queries live in packages/core in the first
+ * place: correctness and cost here matter more than a single round trip.
+ *
+ * userLogin is optional — omit it (e.g. a signed-out visitor) and every
+ * row's isBookmarked is simply false, not a separate tri-state.
+ */
+export async function getReposWithMissionSummary(
+  db: ReadonlyDb,
+  userLogin?: string,
+): Promise<RepoWithMissionSummary[]> {
+  const [repoRows, ecosystemRows, severityRows, bookmarkedRepoIds] = await Promise.all([
+    db.select().from(repos),
+    db
+      .selectDistinct({ repoId: dependencies.repoId, ecosystem: dependencies.ecosystem })
+      .from(dependencies),
+    db
+      .select({
+        repoId: missions.repoId,
+        severity: advisories.severity,
+        count: sql<number>`count(*)::int`,
+      })
+      .from(missions)
+      .innerJoin(advisories, eq(missions.advisoryId, advisories.id))
+      .where(inArray(missions.status, ["open", "claimed"]))
+      .groupBy(missions.repoId, advisories.severity),
+    userLogin === undefined
+      ? Promise.resolve(new Set<string>())
+      : getBookmarkedRepoIds(db, userLogin),
+  ]);
+
+  const ecosystemsByRepo = new Map<string, Set<schema.Ecosystem>>();
+  for (const row of ecosystemRows) {
+    const set = ecosystemsByRepo.get(row.repoId) ?? new Set<schema.Ecosystem>();
+    set.add(row.ecosystem);
+    ecosystemsByRepo.set(row.repoId, set);
+  }
+
+  const countsByRepo = new Map<string, RepoMissionCounts>();
+  for (const row of severityRows) {
+    const counts = countsByRepo.get(row.repoId) ?? { ...EMPTY_REPO_MISSION_COUNTS };
+    counts[row.severity] += row.count;
+    counts.total += row.count;
+    countsByRepo.set(row.repoId, counts);
+  }
+
+  return repoRows.map((repo) => ({
+    ...repo,
+    ecosystems: Array.from(ecosystemsByRepo.get(repo.id) ?? []),
+    missionCounts: countsByRepo.get(repo.id) ?? EMPTY_REPO_MISSION_COUNTS,
+    isBookmarked: bookmarkedRepoIds.has(repo.id),
+  }));
 }

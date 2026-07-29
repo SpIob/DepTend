@@ -29,6 +29,13 @@
       "when": 1785044819736,
       "tag": "0003_wide_silver_sable",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1785300168968,
+      "tag": "0004_yellow_firestar",
+      "breakpoints": true
     }
   ]
 }

@@ -364,6 +364,34 @@ export const ingestionRuns = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// repo_bookmarks
+// ---------------------------------------------------------------------------
+// A (user, repo) pair, not a column on repos — repos is one shared global
+// row, not owned by a single user (ADR 0027). userLogin stores the GitHub
+// login directly, same pattern as missions.claimedBy / repos.submittedBy —
+// no separate users table anywhere in this project.
+
+export const repoBookmarks = pgTable(
+  "repo_bookmarks",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+
+    repoId: uuid("repo_id")
+      .notNull()
+      .references(() => repos.id, { onDelete: "cascade" }),
+    userLogin: text("user_login").notNull(),
+
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    // Leads with user_login: "list this user's bookmarks" (the repo
+    // directory's own read pattern) is the primary access path, not
+    // "list this repo's bookmarkers" — no product surface needs that.
+    unique("repo_bookmarks_user_repo_unique").on(table.userLogin, table.repoId),
+  ],
+);
+
+// ---------------------------------------------------------------------------
 // Enum value types
 // ---------------------------------------------------------------------------
 // Derived from the pgEnum objects above so enum unions never need a
@@ -404,3 +432,6 @@ export type NewMissionScore = typeof missionScores.$inferInsert;
 
 export type IngestionRun = typeof ingestionRuns.$inferSelect;
 export type NewIngestionRun = typeof ingestionRuns.$inferInsert;
+
+export type RepoBookmark = typeof repoBookmarks.$inferSelect;
+export type NewRepoBookmark = typeof repoBookmarks.$inferInsert;

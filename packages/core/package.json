@@ -27,6 +27,14 @@
       "import": "./dist/db/missions.js",
       "types": "./dist/db/missions.d.ts"
     },
+    "./db/bookmarks.js": {
+      "import": "./dist/db/bookmarks.js",
+      "types": "./dist/db/bookmarks.d.ts"
+    },
+    "./db/validation.js": {
+      "import": "./dist/db/validation.js",
+      "types": "./dist/db/validation.d.ts"
+    },
     "./ingestor/interface.js": {
       "import": "./dist/ingestor/interface.js",
       "types": "./dist/ingestor/interface.d.ts"
