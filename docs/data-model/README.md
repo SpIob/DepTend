@@ -30,26 +30,26 @@ repos
 
 Tracks GitHub repositories submitted for analysis.
 
-| Column              | Type         | Notes                                      |
-| ------------------- | ------------ | ------------------------------------------ |
-| `id`                | uuid PK      | gen_random_uuid()                          |
-| `github_url`        | text UNIQUE  | `https://github.com/{owner}/{name}`        |
-| `owner`             | text         | GitHub org or username                     |
-| `name`              | text         | Repo name                                  |
-| `default_branch`    | text         | Default: `'main'`                          |
-| `description`       | text?        | From GitHub API                            |
-| `stars`             | integer      | Refreshed each ingestion                   |
-| `open_issues_count` | integer      | Refreshed each ingestion                   |
-| `topics`            | text[]       | GitHub repo topics                         |
-| `homepage_url`      | text?        | From GitHub API                            |
-| `ingestion_status`  | enum         | `pending \| running \| complete \| failed` |
-| `last_ingested_at`  | timestamptz? | NULL until first completed run             |
-| `ingestion_error`   | text?        | Last error message                         |
-| `submitted_by`      | text?        | GitHub username; NULL for CLI-submitted    |
-| `created_at`        | timestamptz  |                                            |
-| `updated_at`        | timestamptz  | Managed by trigger                         |
+| Column              | Type         | Notes                                                   |
+| ------------------- | ------------ | ------------------------------------------------------- |
+| `id`                | uuid PK      | gen_random_uuid()                                       |
+| `github_url`        | text UNIQUE  | `https://github.com/{owner}/{name}`                     |
+| `owner`             | text         | GitHub org or username                                  |
+| `name`              | text         | Repo name                                               |
+| `default_branch`    | text         | Default: `'main'`                                       |
+| `description`       | text?        | From GitHub API                                         |
+| `stars`             | integer      | Refreshed each ingestion                                |
+| `open_issues_count` | integer      | Refreshed each ingestion                                |
+| `topics`            | text[]       | GitHub repo topics                                      |
+| `homepage_url`      | text?        | From GitHub API                                         |
+| `ingestion_status`  | enum         | `pending \| running \| complete \| failed \| skipped`   |
+| `last_ingested_at`  | timestamptz? | NULL until first completed run                          |
+| `ingestion_error`   | text?        | Last error message; also holds the reason for `skipped` |
+| `submitted_by`      | text?        | GitHub username; NULL for CLI-submitted                 |
+| `created_at`        | timestamptz  |                                                         |
+| `updated_at`        | timestamptz  | Managed by trigger                                      |
 
-**MVP constraint:** Maximum 3 rows. Enforced at application layer.
+**MVP constraint:** Maximum 10 rows (`NEXT_PUBLIC_MAX_REPOS`, raised from 3 — [ADR 0020](../adr/0020-raise-repo-cap-to-10.md)). Enforced at application layer.
 
 ---
 
@@ -61,7 +61,7 @@ One row per `(repo, package_name, dep_type)`.
 | ------------------ | --------------- | ----------------------------------------------- |
 | `id`               | uuid PK         |                                                 |
 | `repo_id`          | uuid FK → repos | CASCADE on delete                               |
-| `ecosystem`        | enum            | `npm` (Phase 1 only)                            |
+| `ecosystem`        | enum            | `npm \| pypi \| go`                             |
 | `package_name`     | text            | e.g. `lodash`                                   |
 | `version_spec`     | text            | Range from package.json, e.g. `^4.17.0`         |
 | `resolved_version` | text?           | From lock file; NULL in Phase 1 baseline        |
@@ -83,7 +83,7 @@ Global advisory records from OSV and GHSA. Shared across repos.
 | `id`                | uuid PK       |                                                |
 | `osv_id`            | text UNIQUE   | e.g. `GHSA-p6mc-r536-x9xx`                     |
 | `source`            | enum          | `osv \| ghsa`                                  |
-| `ecosystem`         | enum          | `npm`                                          |
+| `ecosystem`         | enum          | `npm \| pypi \| go`                            |
 | `package_name`      | text          |                                                |
 | `severity`          | enum          | `critical \| high \| medium \| low \| unknown` |
 | `cvss_score`        | numeric(4,1)? | 0.0–10.0; NULL when not provided               |
@@ -177,21 +177,21 @@ composite = (impact_score × 0.60) + (ecosystem_value_score × 0.40)
 
 Append-only audit log. Rows are never updated or deleted.
 
-| Column               | Type            | Notes                                      |
-| -------------------- | --------------- | ------------------------------------------ |
-| `id`                 | uuid PK         |                                            |
-| `repo_id`            | uuid FK → repos | CASCADE on delete                          |
-| `triggered_by`       | text            | `cron \| manual \| submit`                 |
-| `status`             | enum            | `pending \| running \| complete \| failed` |
-| `dependencies_found` | integer         |                                            |
-| `advisories_fetched` | integer         |                                            |
-| `missions_created`   | integer         |                                            |
-| `missions_updated`   | integer         |                                            |
-| `error_message`      | text?           |                                            |
-| `error_stack`        | text?           |                                            |
-| `started_at`         | timestamptz     |                                            |
-| `finished_at`        | timestamptz?    | NULL while running                         |
-| `created_at`         | timestamptz     |                                            |
+| Column               | Type            | Notes                                                 |
+| -------------------- | --------------- | ----------------------------------------------------- |
+| `id`                 | uuid PK         |                                                       |
+| `repo_id`            | uuid FK → repos | CASCADE on delete                                     |
+| `triggered_by`       | text            | `cron \| manual \| submit`                            |
+| `status`             | enum            | `pending \| running \| complete \| failed \| skipped` |
+| `dependencies_found` | integer         |                                                       |
+| `advisories_fetched` | integer         |                                                       |
+| `missions_created`   | integer         |                                                       |
+| `missions_updated`   | integer         |                                                       |
+| `error_message`      | text?           |                                                       |
+| `error_stack`        | text?           |                                                       |
+| `started_at`         | timestamptz     |                                                       |
+| `finished_at`        | timestamptz?    | NULL while running                                    |
+| `created_at`         | timestamptz     |                                                       |
 
 ---
 
@@ -199,9 +199,9 @@ Append-only audit log. Rows are never updated or deleted.
 
 | Enum               | Values                                                            |
 | ------------------ | ----------------------------------------------------------------- |
-| `ingestion_status` | `pending`, `running`, `complete`, `failed`                        |
+| `ingestion_status` | `pending`, `running`, `complete`, `failed`, `skipped`             |
 | `dep_type`         | `production`, `development`, `peer`, `optional`                   |
-| `ecosystem`        | `npm`                                                             |
+| `ecosystem`        | `npm`, `pypi`, `go`                                               |
 | `advisory_source`  | `osv`, `ghsa`                                                     |
 | `severity`         | `critical`, `high`, `medium`, `low`, `unknown`                    |
 | `mission_type`     | `vulnerability_fix`, `dep_update`, `maintenance`, `license_issue` |
@@ -213,7 +213,10 @@ Append-only audit log. Rows are never updated or deleted.
 
 ## Schema changelog
 
-| Version | Date       | Change                                                                                                                                                                                         |
-| ------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0.1.0   | 2026-06-29 | Initial schema — Phase 0                                                                                                                                                                       |
-| 0.1.1   | 2026-07-09 | ADR 0011: schema.ts is now the sole row-type source (db/types.ts removed); jsonb columns and numeric score columns gained precise TS types via `.$type<>()` / `mode: "number"` — no DDL change |
+| Version | Date       | Change                                                                                                                                                                                                  |
+| ------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0.1.0   | 2026-06-29 | Initial schema — Phase 0                                                                                                                                                                                |
+| 0.1.1   | 2026-07-09 | ADR 0011: schema.ts is now the sole row-type source (db/types.ts removed); jsonb columns and numeric score columns gained precise TS types via `.$type<>()` / `mode: "number"` — no DDL change          |
+| 0.1.2   | 2026-07-22 | ADR 0021 (migration `0001`): `'skipped'` added to `ingestion_status`, distinct from `'complete'`/`'failed'`; plus 3 pre-existing `SET DEFAULT` drift fixes on `mission_scores`' jsonb columns           |
+| 0.1.3   | 2026-07-25 | ADR 0022 (migration `0002`): `'pypi'` added to `ecosystem`. No `repos.ecosystem` column — ecosystem is decided per-ingestion by `detectEcosystem`, recorded per-row on `dependencies`/`advisories` only |
+| 0.1.4   | 2026-07-25 | ADR 0024 (migration `0003`): `'go'` added to `ecosystem`, same pattern as 0.1.3                                                                                                                         |

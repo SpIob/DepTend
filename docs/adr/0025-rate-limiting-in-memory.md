@@ -28,9 +28,17 @@ All four return `429` with a `Retry-After` header (seconds) on rejection.
 
 ## Verification
 
-`pnpm typecheck`, `pnpm lint --max-warnings 0`, `prettier --check` all clean, run against the real repo in Claude's sandbox. `pnpm build` / `pnpm test` confirmed passing by Mico.
+`pnpm typecheck`, `pnpm lint --max-warnings 0`, `prettier --check` all clean, run against the real repo in Claude's sandbox. `pnpm build` / `pnpm test` confirmed passing by Mico. Dedicated unit coverage added afterward (`app/src/lib/rate-limit.test.ts`, 13 tests) — the first tests `/app` has ever had; exercises limit/window enforcement, per-key isolation, sliding-window expiry, the `retryAfterSeconds ≥ 1` floor, and both configured instances, all driven by vitest's fake timers rather than real sleeps.
 
-**Not yet exercised:** actually triggering a real `429` against live/dev data — six rapid repo submissions, or six rapid claim/unclaim toggles. Worth a quick live pass before flipping this ADR to Accepted, same closing pattern every prior ADR has followed.
+**Live-verified against `localhost:3000`, real GitHub OAuth session, 2026-07-28 (Mico):**
+
+- `checkRepoSubmissionLimit` (5/hour): 5× `POST /api/repos` with an invalid body → `400` each; 6th → `429` with `Retry-After: 3599`. Clean, uncontaminated run — no prior submissions in the preceding hour.
+- `checkMissionActionLimit` (20/minute): 21× `POST /api/missions/<nonexistent-uuid>/claim` → first 19 calls `404`, then `429` from call 20 onward, `Retry-After` values of `19` then `1`. One call earlier than a fresh-bucket run would predict — expected, not a bug: claim/unclaim draw from this same key-scoped bucket with no reset, and the immediately-preceding 404/409 tests below had already banked a hit or two still inside the 60s window when this loop started. The sharp `19 → 1` `Retry-After` drop between calls 20 and 21 has the same cause: those leftover hits were fired within a second or two of each other, so more than one aged out of the window in the ~0.4s between calls 20 and 21.
+- `404` (`claim`/`unclaim` against a syntactically-valid but nonexistent mission id): confirmed — `{ error: "Mission not found." }`.
+- `409 already_claimed`: confirmed — claiming an already-claimed mission returns `{ error: "This mission has already been claimed." }`.
+- `409 not_claimed_by_you`: confirmed — unclaiming an open (unclaimed) mission returns `{ error: "This mission isn't currently claimed by you." }`.
+
+All five outcomes (`400`, `404`, `409` ×2, `429` ×2) match the route code's documented behavior exactly. Closes the "claim/unclaim error paths untested against live data" gap open since Phase 5.
 
 ## Consequences
 

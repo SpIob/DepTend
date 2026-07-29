@@ -1,6 +1,6 @@
 # ADR 0021 — Ingestion Status: Distinguish "Skipped" from "Complete"
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-07-21
 
 ---

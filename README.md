@@ -32,18 +32,18 @@ export GITHUB_TOKEN=<a token with public repo read access>  # recommended, raise
 npx deptend . --github-url https://github.com/your-username/your-repo --output missions.json
 ```
 
-| Flag                 | Required         | Purpose                                                                                                                        |
-| -------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `<repo-path>`        | Yes (positional) | Local path to the repo root, i.e. the directory containing `package.json`                                                      |
-| `--github-url <url>` | Yes              | The repo's GitHub URL — used to fetch stars/open-issues for ecosystem-value scoring. A local checkout alone can't derive this. |
-| `--output <file>`    | No               | Write the full JSON result to this file                                                                                        |
-| `--json`             | No               | Print the full JSON result to stdout instead of the human-readable summary (ignored if `--output` is set)                      |
+| Flag                 | Required         | Purpose                                                                                                                                                                                               |
+| -------------------- | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `<repo-path>`        | Yes (positional) | Local path to the repo root — the directory containing `package.json` (npm), `pyproject.toml`/`requirements.txt` (PyPI), or `go.mod` (Go). Ecosystem is auto-detected, npm first, then PyPI, then Go. |
+| `--github-url <url>` | Yes              | The repo's GitHub URL — used to fetch stars/open-issues for ecosystem-value scoring. A local checkout alone can't derive this.                                                                        |
+| `--output <file>`    | No               | Write the full JSON result to this file                                                                                                                                                               |
+| `--json`             | No               | Print the full JSON result to stdout instead of the human-readable summary (ignored if `--output` is set)                                                                                             |
 
 **`GITHUB_TOKEN`** (env var, optional but recommended) raises the GitHub API rate limit from 60 to 5,000 requests/hour. A fine-grained PAT with public-repo read access is sufficient.
 
 The CLI reuses the exact same scoring and ranking code the dashboard runs — same formula, same tie-break rules, same explainability. It doesn't touch a database and doesn't require the dashboard to be running; the two are independent, cross-verified implementations of the same engine, not a client/server pair.
 
-**Note on npx:** `@deptend/cli`'s `bin` entry is set up for `npx`-style invocation once published, but hasn't been published to the npm registry yet as of Phase 4. Until then, run it from a local clone — see [Local development](#local-development) below, or use `pnpm --filter @deptend/cli exec deptend <args>` / `node cli/dist/index.js <args>` from the repo root after building.
+**Note on npx:** `@deptend/cli`'s `bin` entry is set up for `npx`-style invocation once published, but hasn't been published to the npm registry yet. Until then, run it from a local clone — see [Local development](#local-development) below, or use `pnpm --filter @deptend/cli exec deptend <args>` / `node cli/dist/index.js <args>` from the repo root after building.
 
 ## What a mission looks like
 
@@ -71,27 +71,35 @@ Full detail: [`docs/adr/0006-scoring-algorithm.md`](docs/adr/0006-scoring-algori
 
 ## Ecosystem support
 
-npm (JavaScript) only, through at least Phase 5. PyPI is the planned second ecosystem — see [`docs/adr/0003-npm-ecosystem-first.md`](docs/adr/0003-npm-ecosystem-first.md) for why npm came first and how the ingestor interface stays ecosystem-agnostic for when that lands.
+Three ecosystems, auto-detected per repo in this order — npm first, then PyPI, then Go. A repo with manifests for more than one ecosystem detects as whichever is tried first; true multi-ecosystem-per-repo isn't supported.
 
-Dependency resolution currently reads `package.json` only — lock file parsing (`package-lock.json`/`pnpm-lock.yaml`/`yarn.lock`) is detected but not yet parsed, so resolved versions are estimated from declared ranges rather than confirmed. This is visibly flagged as lower confidence wherever it applies, never silently assumed.
+| Ecosystem | Manifest read                                                                                        | Registry                                                                       | Notes                                                                                                            |
+| --------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| npm       | `package.json` only                                                                                  | [npm registry](https://github.com/npm/registry/blob/main/docs/REGISTRY-API.md) | First ecosystem — [ADR 0003](docs/adr/0003-npm-ecosystem-first.md)                                               |
+| PyPI      | `pyproject.toml` ([PEP 621](https://peps.python.org/pep-0621/)) primary, `requirements.txt` fallback | [pypi.org JSON API](https://pypi.org/pypi/)                                    | Poetry's `[tool.poetry.dependencies]` table is out of scope — [ADR 0022](docs/adr/0022-phase6-pypi-ecosystem.md) |
+| Go        | `go.mod` `require` directives, direct only                                                           | [proxy.golang.org](https://proxy.golang.org/)                                  | `replace`/`exclude`/`retract` directives not handled — [ADR 0024](docs/adr/0024-go-ecosystem.md)                 |
+
+Lock files (`package-lock.json`/`pnpm-lock.yaml`/`yarn.lock` for npm, `go.sum` for Go) are detected but never parsed — resolved versions are estimated from declared ranges rather than confirmed. This is visibly flagged as lower confidence wherever it applies, never silently assumed.
+
+A repo whose manifest lives outside the repo root is currently indistinguishable from a repo with no manifest at all — both land on `ingestionStatus: 'skipped'`. This is a scoping choice (root-only parsing), not a bug.
 
 ## Tech stack
 
-| Layer           | Choice                                                                                                                                                                                                                               |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Frontend        | Next.js 15 + Tailwind CSS                                                                                                                                                                                                            |
-| Backend         | Next.js API routes                                                                                                                                                                                                                   |
-| Database        | PostgreSQL ([Neon](https://neon.tech/) free tier)                                                                                                                                                                                    |
-| ORM             | [Drizzle ORM](https://orm.drizzle.team/) + Drizzle Kit                                                                                                                                                                               |
-| Auth            | GitHub OAuth ([next-auth](https://next-auth.js.org/) v4), JWT sessions                                                                                                                                                               |
-| Hosting         | [Vercel](https://vercel.com/) Hobby                                                                                                                                                                                                  |
-| CI/CD           | GitHub Actions — lint/typecheck/test on every PR, nightly ingestion cron, on-demand ingestion on repo submission                                                                                                                     |
-| Data sources    | [OSV.dev](https://osv.dev/docs/) / [GitHub Advisory Database](https://github.com/advisories), [npm registry API](https://github.com/npm/registry/blob/main/docs/REGISTRY-API.md), [GitHub REST API](https://docs.github.com/en/rest) |
-| CLI             | Node.js, npx-runnable                                                                                                                                                                                                                |
-| Package manager | [pnpm](https://pnpm.io/) workspaces                                                                                                                                                                                                  |
-| Language        | TypeScript (JS permitted only in `scripts/`)                                                                                                                                                                                         |
-| Testing         | [Vitest](https://vitest.dev/)                                                                                                                                                                                                        |
-| Lint/format     | ESLint 9 (flat config) + typescript-eslint, Prettier                                                                                                                                                                                 |
+| Layer           | Choice                                                                                                                                                                                                                                                                                                                           |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Frontend        | Next.js 15 + Tailwind CSS                                                                                                                                                                                                                                                                                                        |
+| Backend         | Next.js API routes                                                                                                                                                                                                                                                                                                               |
+| Database        | PostgreSQL ([Neon](https://neon.tech/) free tier)                                                                                                                                                                                                                                                                                |
+| ORM             | [Drizzle ORM](https://orm.drizzle.team/) + Drizzle Kit                                                                                                                                                                                                                                                                           |
+| Auth            | GitHub OAuth ([next-auth](https://next-auth.js.org/) v4), JWT sessions                                                                                                                                                                                                                                                           |
+| Hosting         | [Vercel](https://vercel.com/) Hobby                                                                                                                                                                                                                                                                                              |
+| CI/CD           | GitHub Actions — lint/typecheck/test on every PR, nightly ingestion cron, on-demand ingestion on repo submission                                                                                                                                                                                                                 |
+| Data sources    | [OSV.dev](https://osv.dev/docs/) / [GitHub Advisory Database](https://github.com/advisories), [npm registry API](https://github.com/npm/registry/blob/main/docs/REGISTRY-API.md), [pypi.org JSON API](https://pypi.org/pypi/), [proxy.golang.org](https://proxy.golang.org/), [GitHub REST API](https://docs.github.com/en/rest) |
+| CLI             | Node.js, npx-runnable                                                                                                                                                                                                                                                                                                            |
+| Package manager | [pnpm](https://pnpm.io/) workspaces                                                                                                                                                                                                                                                                                              |
+| Language        | TypeScript (JS permitted only in `scripts/`)                                                                                                                                                                                                                                                                                     |
+| Testing         | [Vitest](https://vitest.dev/)                                                                                                                                                                                                                                                                                                    |
+| Lint/format     | ESLint 9 (flat config) + typescript-eslint, Prettier                                                                                                                                                                                                                                                                             |
 
 Every choice above is free at the tier this project uses. See [`docs/adr/`](docs/adr/) for the reasoning behind each one.
 
@@ -182,4 +190,4 @@ This is currently a solo-maintained project without a formal contribution proces
 
 ## License
 
-Not yet finalized — treat this repo as all-rights-reserved until a license is added.
+MIT — see [`LICENSE`](LICENSE).

@@ -58,37 +58,45 @@ export default async function MissionListPage({
 
   return (
     <main className="mx-auto flex max-w-3xl flex-col gap-8 px-6 py-12">
-      <header className="border-border flex flex-col gap-4 border-b pb-6">
-        <div className="flex items-baseline justify-between gap-4">
-          <h1 className="text-ink font-mono text-lg font-bold tracking-tight">deptend.dev</h1>
-          <div className="flex items-center gap-4">
-            <span className="text-ink-muted font-mono text-xs">
+      <header className="border-border flex flex-col gap-5 border-b pb-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <span className="bg-accent inline-block h-2.5 w-2.5" aria-hidden="true" />
+            <h1 className="text-ink font-mono text-xl font-bold tracking-tight">deptend.dev</h1>
+          </div>
+          <div className="text-ink-muted flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-xs">
+            <span>
               {repoCount} {repoCount === 1 ? "repo" : "repos"} indexed
-              {skippedRepos.length > 0 && (
-                <>
-                  {" · "}
-                  <details className="inline">
-                    <summary className="hover:text-ink inline cursor-pointer underline decoration-dotted underline-offset-2">
-                      {skippedRepos.length} skipped
-                    </summary>
-                    <ul className="text-ink-muted mt-2 flex flex-col gap-1 text-left font-mono text-xs">
-                      {skippedRepos.map((repo) => (
-                        <li key={`${repo.owner}/${repo.name}`}>
-                          <span className="text-ink">
-                            {repo.owner}/{repo.name}
-                          </span>{" "}
-                          — {repo.reason ?? "no package.json found"}
-                        </li>
-                      ))}
-                    </ul>
-                  </details>
-                </>
-              )}
+            </span>
+            {skippedRepos.length > 0 && (
+              <>
+                <span className="text-border" aria-hidden="true">
+                  |
+                </span>
+                <details className="inline">
+                  <summary className="hover:text-ink inline cursor-pointer underline decoration-dotted underline-offset-2">
+                    {skippedRepos.length} skipped
+                  </summary>
+                  <ul className="text-ink-muted mt-2 flex flex-col gap-1 text-left font-mono text-xs">
+                    {skippedRepos.map((repo) => (
+                      <li key={`${repo.owner}/${repo.name}`}>
+                        <span className="text-ink">
+                          {repo.owner}/{repo.name}
+                        </span>{" "}
+                        — {repo.reason ?? "no package.json found"}
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              </>
+            )}
+            <span className="text-border" aria-hidden="true">
+              |
             </span>
             <AuthStatus />
           </div>
         </div>
-        <p className="text-ink-muted text-sm">
+        <p className="text-ink-muted max-w-xl text-sm leading-relaxed">
           Prioritized maintenance missions, ranked by impact and ecosystem value, effort as the
           tie-breaker. Every score shows its work — expand any mission for the inputs and weights
           behind it.

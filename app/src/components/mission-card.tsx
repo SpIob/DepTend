@@ -4,8 +4,9 @@ import { useState } from "react";
 import { signIn, useSession } from "next-auth/react";
 import type { EffortLabel, MissionStatus, ScoreConfidence } from "@deptend/core/db/schema.js";
 import type { MissionWithScore } from "@deptend/core";
-import { SeverityMark, severityBorderClass } from "./severity-mark";
+import { SeverityMark, severityBarClass } from "./severity-mark";
 import { EcosystemBadge } from "./ecosystem-badge";
+import { Tag } from "./tag";
 
 const EFFORT_LABEL_TEXT: Record<EffortLabel, string> = {
   trivial: "Trivial effort",
@@ -101,7 +102,7 @@ function ClaimAction({
           onClick={() =>
             void callAction("unclaim", { status: "open", claimedBy: null, claimedAt: null })
           }
-          className="border-border text-ink-muted hover:text-ink hover:border-ink-muted w-fit rounded-sm border px-2.5 py-1 font-mono text-xs disabled:opacity-50"
+          className="border-border text-ink-muted hover:text-ink hover:border-ink-muted w-fit rounded-md border px-2.5 py-1 font-mono text-xs disabled:opacity-50"
         >
           {pending ? "Releasing…" : "Unclaim"}
         </button>
@@ -142,12 +143,32 @@ function ClaimAction({
         onClick={() =>
           void callAction("claim", { status: "claimed", claimedBy: login, claimedAt: new Date() })
         }
-        className="bg-accent w-fit rounded-sm px-2.5 py-1 font-mono text-xs font-medium text-white hover:opacity-90 disabled:opacity-50"
+        className="bg-accent w-fit rounded-md px-2.5 py-1 font-mono text-xs font-medium text-white hover:opacity-90 disabled:opacity-50"
       >
         {pending ? "Claiming…" : "Claim this mission"}
       </button>
       {errorMessage !== null && <p className="text-severity-critical text-xs">{errorMessage}</p>}
     </div>
+  );
+}
+
+/**
+ * The fix-target tag shown next to the title. This is the one thing that
+ * reliably differs between two advisories against the same package at the
+ * same severity — mission-copy.ts's buildTitle() produces an identical
+ * string for both ("Update golang.org/x/crypto to fix a critical
+ * vulnerability") regardless of which CVE it is — so it's what actually
+ * lets otherwise-identical rows read as distinct at a glance, without
+ * touching mission-copy.ts itself.
+ */
+function FixedVersionTag({ version }: { version: string }): React.JSX.Element {
+  return (
+    <span
+      className="border-border bg-bg text-ink shrink-0 rounded-sm border px-1.5 py-0.5 font-mono text-[11px]"
+      aria-label={`Fixed in ${version}`}
+    >
+      <span aria-hidden="true">→ {version}</span>
+    </span>
   );
 }
 
@@ -162,44 +183,68 @@ export function MissionCard({
   const severity = advisory?.severity ?? "unknown";
   const isLowConfidence = score.confidence === "low";
   const isClaimed = mission.status === "claimed";
+  const priorityPct = Math.min(100, Math.max(0, (score.compositeScore / 10) * 100));
 
   return (
-    <article
-      className={`border-border bg-surface border border-l-4 ${severityBorderClass(severity)} rounded-sm ${isClaimed ? "opacity-75" : ""}`}
-    >
-      {/*
-        Collapsed by default — only the summary row below renders until
-        clicked. Named group (`group/card`) so its own chevron doesn't react
-        to the nested "why this score" details' open state, and vice versa.
-      */}
-      <details className="group/card">
-        <summary className="hover:bg-bg flex items-center gap-3 px-4 py-3">
+    <article className="border-border bg-surface hover:border-ink-muted/50 flex overflow-hidden rounded-md border transition-shadow hover:shadow-md">
+      <span className={`w-1.5 shrink-0 ${severityBarClass(severity)}`} aria-hidden="true" />
+      <details className="group/card min-w-0 flex-1">
+        <summary className="hover:bg-bg flex items-start gap-2.5 px-3.5 py-2.5 focus-visible:outline-offset-[-2px]">
           <span
-            className="text-ink-muted shrink-0 font-mono text-xs transition-transform group-open/card:rotate-90"
+            className="text-ink-muted mt-0.5 shrink-0 font-mono text-xs transition-transform group-open/card:rotate-90"
             aria-hidden="true"
           >
             ▸
           </span>
           <SeverityMark severity={severity} />
           {dependency !== null && <EcosystemBadge ecosystem={dependency.ecosystem} />}
-          <h2 className="text-ink min-w-0 flex-1 truncate text-sm font-semibold">
-            {mission.title}
-          </h2>
-          <span className="text-ink-muted hidden shrink-0 font-mono text-xs sm:inline">
-            {EFFORT_LABEL_TEXT[score.effortLabel]}
+
+          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <span className="flex min-w-0 items-baseline gap-2">
+              <h2 className="text-ink min-w-0 truncate text-sm font-semibold">{mission.title}</h2>
+              {advisory?.fixedVersion != null && (
+                <FixedVersionTag version={advisory.fixedVersion} />
+              )}
+            </span>
+            <span className="text-ink-muted flex flex-wrap items-center gap-x-2 font-mono text-[11px]">
+              <span>{EFFORT_LABEL_TEXT[score.effortLabel]}</span>
+              <span aria-hidden="true">·</span>
+              <span>
+                {repo.owner}/{repo.name}
+              </span>
+              {isLowConfidence && (
+                <>
+                  <span aria-hidden="true">·</span>
+                  <span className="text-severity-high font-semibold">⚠ low confidence</span>
+                </>
+              )}
+            </span>
           </span>
-          <span className="text-ink-muted hidden max-w-[9rem] shrink-0 truncate font-mono text-xs md:inline">
-            {repo.owner}/{repo.name}
-          </span>
-          <span
-            className="text-accent shrink-0 font-mono text-base font-bold"
-            title="Composite score, out of 10"
-          >
-            {score.compositeScore.toFixed(1)}
+
+          {isClaimed && (
+            <Tag className="bg-accent/10 text-accent">Claimed · @{mission.claimedBy}</Tag>
+          )}
+
+          <span className="flex shrink-0 flex-col items-end gap-1">
+            <span title="Composite score, out of 10">
+              <span className="text-accent font-mono text-2xl font-bold">
+                {score.compositeScore.toFixed(1)}
+              </span>
+              <span className="text-ink-muted font-mono text-xs">/10</span>
+            </span>
+            <span
+              className="bg-border block h-[3px] w-11 overflow-hidden rounded-full"
+              aria-hidden="true"
+            >
+              <span
+                className={`block h-full ${severityBarClass(severity)}`}
+                style={{ width: `${priorityPct.toString()}%` }}
+              />
+            </span>
           </span>
         </summary>
 
-        <div className="border-border/60 flex flex-col gap-3 border-t px-5 py-4">
+        <div className="border-border/60 flex flex-col gap-3 border-t px-4 py-4">
           <p className="text-ink-muted whitespace-pre-line text-sm leading-relaxed">
             {mission.description}
           </p>
@@ -210,14 +255,10 @@ export function MissionCard({
             </p>
           )}
 
-          <div className="text-ink-muted flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-xs">
-            <span>{EFFORT_LABEL_TEXT[score.effortLabel]}</span>
-            <span aria-hidden="true">·</span>
-            <span className={isLowConfidence ? "font-semibold" : ""}>
-              <span className={CONFIDENCE_CLASS[score.confidence]}>
-                {isLowConfidence && "⚠ "}
-                {CONFIDENCE_TEXT[score.confidence]}
-              </span>
+          <div className="text-ink-muted flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-xs">
+            <span className={CONFIDENCE_CLASS[score.confidence]}>
+              {isLowConfidence && "⚠ "}
+              {CONFIDENCE_TEXT[score.confidence]}
             </span>
             <span aria-hidden="true">·</span>
             <a
@@ -235,12 +276,12 @@ export function MissionCard({
             onStatusChange={onStatusChange}
           />
 
-          <details className="group/score -mx-5 -mb-4 mt-1">
-            <summary className="text-ink-muted hover:text-ink hover:bg-bg border-border/60 flex items-center gap-1.5 border-t px-5 py-3 font-mono text-xs font-medium">
+          <details className="group/score -mx-4 -mb-4 mt-1">
+            <summary className="text-ink-muted hover:text-ink hover:bg-bg border-border/60 flex items-center gap-1.5 border-t px-4 py-3 font-mono text-xs font-medium focus-visible:outline-offset-[-2px]">
               <span className="transition-transform group-open/score:rotate-90">▸</span>
               Why this score?
             </summary>
-            <div className="bg-bg border-border/60 flex flex-col gap-4 border-t px-5 py-4 font-mono text-xs">
+            <div className="bg-bg border-border/60 flex flex-col gap-4 border-t px-4 py-4 font-mono text-xs">
               <div>
                 <p className="text-ink-muted mb-1 uppercase">Formula</p>
                 <p className="text-ink">
@@ -295,8 +336,16 @@ export function MissionCard({
               </div>
 
               {score.confidenceNotes !== null && score.confidenceNotes.length > 0 && (
-                <div>
-                  <p className="text-ink-muted mb-1 uppercase">
+                <div
+                  className={
+                    isLowConfidence
+                      ? "border-severity-high/40 bg-severity-high/10 rounded-sm border-l-2 px-3 py-2"
+                      : ""
+                  }
+                >
+                  <p
+                    className={`mb-1 uppercase ${isLowConfidence ? "text-severity-high font-semibold" : "text-ink-muted"}`}
+                  >
                     Why {CONFIDENCE_TEXT[score.confidence].toLowerCase()}
                   </p>
                   <ul className="text-ink flex flex-col gap-0.5">
