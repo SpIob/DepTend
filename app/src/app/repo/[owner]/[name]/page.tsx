@@ -5,12 +5,14 @@ import { authOptions } from "@/lib/auth";
 import {
   getBookmarkedRepoIds,
   getRepoByOwnerAndName,
+  getRepoEcosystems,
   getRepoMissionsWithScores,
 } from "@/lib/queries/missions";
 import { MissionBoard } from "@/components/mission-board";
 import { parseMissionBoardQuery } from "@/lib/mission-board-query";
 import { AuthStatus } from "@/components/auth-status";
 import { BookmarkToggle } from "@/components/bookmark-toggle";
+import { EcosystemBadge } from "@/components/ecosystem-badge";
 import { ingestionStatusNote } from "@/lib/ingestion-status";
 
 // Next 15 can hand a param multiple values (`?severity=high&severity=low`);
@@ -56,9 +58,10 @@ export default async function RepoPage({
   const session = await getServerSession(authOptions);
   const login = session?.user?.login;
 
-  const [missions, bookmarkedIds, rawParams] = await Promise.all([
+  const [missions, bookmarkedIds, ecosystems, rawParams] = await Promise.all([
     getRepoMissionsWithScores(repo.id),
     login === undefined ? Promise.resolve(new Set<string>()) : getBookmarkedRepoIds(login),
+    getRepoEcosystems(repo.id),
     searchParams,
   ]);
 
@@ -74,9 +77,9 @@ export default async function RepoPage({
   const statusNote = ingestionStatusNote(repo.ingestionStatus);
 
   return (
-    <main className="mx-auto flex max-w-3xl flex-col gap-8 px-6 py-12">
+    <main className="mx-auto flex max-w-3xl flex-col gap-8 px-4 py-8 sm:px-6 sm:py-12">
       <header className="border-border flex flex-col gap-5 border-b pb-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex min-w-0 items-center gap-3">
             <Link href="/" className="flex shrink-0 items-center gap-2">
               <span className="bg-accent inline-block h-2.5 w-2.5" aria-hidden="true" />
@@ -105,6 +108,13 @@ export default async function RepoPage({
             <AuthStatus />
           </div>
         </div>
+        {ecosystems.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            {ecosystems.map((ecosystem) => (
+              <EcosystemBadge key={ecosystem} ecosystem={ecosystem} />
+            ))}
+          </div>
+        )}
         <p className="text-ink-muted max-w-xl text-sm leading-relaxed">
           {repo.description ?? "Prioritized maintenance missions for this repo."}
         </p>
@@ -121,7 +131,7 @@ export default async function RepoPage({
       ) : missions.length === 0 ? (
         <EmptyState note={null} />
       ) : (
-        <MissionBoard missions={missions} initialQuery={initialQuery} />
+        <MissionBoard missions={missions} initialQuery={initialQuery} showGroupByRepo={false} />
       )}
     </main>
   );

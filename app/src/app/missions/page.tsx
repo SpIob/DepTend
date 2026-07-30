@@ -55,10 +55,10 @@ export default async function AllMissionsPage({
   });
 
   return (
-    <main className="mx-auto flex max-w-3xl flex-col gap-8 px-6 py-12">
+    <main className="mx-auto flex max-w-3xl flex-col gap-8 px-4 py-8 sm:px-6 sm:py-12">
       <header className="border-border flex flex-col gap-5 border-b pb-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 items-center gap-3">
             <Link href="/" className="flex items-center gap-2">
               <span className="bg-accent inline-block h-2.5 w-2.5" aria-hidden="true" />
               <span className="text-ink font-mono text-xl font-bold tracking-tight">

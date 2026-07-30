@@ -11,6 +11,7 @@ import {
   getBoardMissionsWithScores,
   getIndexedRepoCount as coreGetIndexedRepoCount,
   getOpenMissionsWithScores,
+  getRepoEcosystems as coreGetRepoEcosystems,
   getRepoMissionsWithScores as coreGetRepoMissionsWithScores,
   getReposWithMissionSummary as coreGetReposWithMissionSummary,
   getSkippedRepos as coreGetSkippedRepos,
@@ -18,7 +19,7 @@ import {
   type SkippedRepo,
 } from "@deptend/core/db/queries.js";
 import { getRepoByOwnerAndName as coreGetRepoByOwnerAndName } from "@deptend/core/db/repos.js";
-import type { MissionWithScore, Repo, RepoWithMissionSummary } from "@deptend/core";
+import type { Ecosystem, MissionWithScore, Repo, RepoWithMissionSummary } from "@deptend/core";
 import { getDb } from "../db";
 
 export async function getOpenMissions(): Promise<MissionWithScore[]> {
@@ -62,4 +63,9 @@ export async function getRepoByOwnerAndName(owner: string, name: string): Promis
 /** Repo IDs bookmarked by userLogin — backs the repo detail page's bookmark toggle (ADR 0027). */
 export async function getBookmarkedRepoIds(userLogin: string): Promise<Set<string>> {
   return coreGetBookmarkedRepoIds(getDb(), userLogin);
+}
+
+/** Ecosystems present in one repo — backs the repo detail page's badge row. */
+export async function getRepoEcosystems(repoId: string): Promise<Ecosystem[]> {
+  return coreGetRepoEcosystems(getDb(), repoId);
 }

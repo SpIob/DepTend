@@ -189,43 +189,47 @@ export function MissionCard({
     <article className="border-border bg-surface hover:border-ink-muted/50 flex overflow-hidden rounded-md border transition-shadow hover:shadow-md">
       <span className={`w-1.5 shrink-0 ${severityBarClass(severity)}`} aria-hidden="true" />
       <details className="group/card min-w-0 flex-1">
-        <summary className="hover:bg-bg flex items-start gap-2.5 px-3.5 py-2.5 focus-visible:outline-offset-[-2px]">
-          <span
-            className="text-ink-muted mt-0.5 shrink-0 font-mono text-xs transition-transform group-open/card:rotate-90"
-            aria-hidden="true"
-          >
-            ▸
-          </span>
-          <SeverityMark severity={severity} />
-          {dependency !== null && <EcosystemBadge ecosystem={dependency.ecosystem} />}
+        <summary className="hover:bg-bg flex flex-col gap-2 px-3.5 py-2.5 focus-visible:outline-offset-[-2px] sm:flex-row sm:items-start sm:gap-2.5">
+          <div className="flex items-start gap-2.5">
+            <span
+              className="text-ink-muted mt-0.5 shrink-0 font-mono text-xs transition-transform group-open/card:rotate-90"
+              aria-hidden="true"
+            >
+              ▸
+            </span>
+            <SeverityMark severity={severity} />
+            {dependency !== null && <EcosystemBadge ecosystem={dependency.ecosystem} />}
+          </div>
 
-          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <span className="flex min-w-0 flex-col gap-0.5 sm:flex-1">
             <span className="flex min-w-0 items-baseline gap-2">
               <h2 className="text-ink min-w-0 truncate text-sm font-semibold">{mission.title}</h2>
               {advisory?.fixedVersion != null && (
                 <FixedVersionTag version={advisory.fixedVersion} />
               )}
             </span>
-            <span className="text-ink-muted flex flex-wrap items-center gap-x-2 font-mono text-[11px]">
-              <span>{EFFORT_LABEL_TEXT[score.effortLabel]}</span>
-              <span aria-hidden="true">·</span>
-              <span>
-                {repo.owner}/{repo.name}
-              </span>
+            {/* Plain text flow, not one flex item per fragment — lets the
+                browser wrap at natural word boundaries ("Low effort ·"
+                staying together) instead of every "·" and its neighbor
+                landing on its own line on a narrow viewport. */}
+            <p className="text-ink-muted font-mono text-[11px] leading-relaxed">
+              {EFFORT_LABEL_TEXT[score.effortLabel]} <span aria-hidden="true">·</span> {repo.owner}/
+              {repo.name}
               {isLowConfidence && (
                 <>
-                  <span aria-hidden="true">·</span>
+                  {" "}
+                  <span aria-hidden="true">·</span>{" "}
                   <span className="text-severity-high font-semibold">⚠ low confidence</span>
                 </>
               )}
-            </span>
+            </p>
           </span>
 
           {isClaimed && (
             <Tag className="bg-accent/10 text-accent">Claimed · @{mission.claimedBy}</Tag>
           )}
 
-          <span className="flex shrink-0 flex-col items-end gap-1">
+          <span className="flex shrink-0 flex-row items-center gap-2 sm:flex-col sm:items-end sm:gap-1">
             <span title="Composite score, out of 10">
               <span className="text-accent font-mono text-2xl font-bold">
                 {score.compositeScore.toFixed(1)}

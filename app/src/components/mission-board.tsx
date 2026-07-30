@@ -133,9 +133,18 @@ function groupByRepoKey(missions: readonly MissionWithScore[]): MissionGroup[] {
 export function MissionBoard({
   missions: initialMissions,
   initialQuery,
+  showGroupByRepo = true,
 }: {
   missions: MissionWithScore[];
   initialQuery: MissionBoardQuery;
+  /**
+   * Hide the "Group by repo" checkbox — every mission on this board
+   * already belongs to one repo, so grouping is a redundant, single-group
+   * no-op (the per-repo page passes false). Forces the initial state off
+   * too, not just the control, so a stray `?group=1` in the URL can't
+   * bring back a grouping UI that isn't rendered anywhere.
+   */
+  showGroupByRepo?: boolean;
 }): React.JSX.Element {
   const pathname = usePathname();
 
@@ -145,7 +154,7 @@ export function MissionBoard({
   const [selectedEcosystems, setSelectedEcosystems] = useState(initialQuery.ecosystem);
   const [selectedEfforts, setSelectedEfforts] = useState(initialQuery.effort);
   const [sortMode, setSortMode] = useState(initialQuery.sort);
-  const [groupByRepo, setGroupByRepo] = useState(initialQuery.group);
+  const [groupByRepo, setGroupByRepo] = useState(showGroupByRepo && initialQuery.group);
 
   // Keeps the URL shareable/bookmarkable/refresh-safe. Deliberately
   // `window.history.replaceState` rather than next/navigation's router —
@@ -292,18 +301,22 @@ export function MissionBoard({
           effortCounts={effortCounts}
           onClear={clearFilters}
         />
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <label className="text-ink-muted flex items-center gap-2 font-mono text-xs">
-            <input
-              type="checkbox"
-              checked={groupByRepo}
-              onChange={(event) => {
-                setGroupByRepo(event.target.checked);
-              }}
-              className="accent-accent"
-            />
-            Group by repo
-          </label>
+        <div
+          className={`flex flex-wrap items-center gap-3 ${showGroupByRepo ? "justify-between" : "justify-end"}`}
+        >
+          {showGroupByRepo && (
+            <label className="text-ink-muted flex items-center gap-2 font-mono text-xs">
+              <input
+                type="checkbox"
+                checked={groupByRepo}
+                onChange={(event) => {
+                  setGroupByRepo(event.target.checked);
+                }}
+                className="accent-accent"
+              />
+              Group by repo
+            </label>
+          )}
           <label className="text-ink-muted flex items-center gap-2 font-mono text-xs">
             Sort
             <select

@@ -187,6 +187,23 @@ export interface SkippedRepo {
  * nothing was actually indexed. Small enough a list that the dashboard
  * can show it in full — no pagination.
  */
+/**
+ * Distinct ecosystems present in one repo — same source data
+ * getReposWithMissionSummary() uses for the directory grid, just scoped to
+ * a single repo_id instead of grouped across all of them. Backs the
+ * ecosystem badges on /repo/[owner]/[name]'s header.
+ */
+export async function getRepoEcosystems(
+  db: ReadonlyDb,
+  repoId: string,
+): Promise<schema.Ecosystem[]> {
+  const rows = await db
+    .selectDistinct({ ecosystem: dependencies.ecosystem })
+    .from(dependencies)
+    .where(eq(dependencies.repoId, repoId));
+  return rows.map((row) => row.ecosystem);
+}
+
 export async function getSkippedRepos(db: ReadonlyDb): Promise<SkippedRepo[]> {
   return db
     .select({ owner: repos.owner, name: repos.name, reason: repos.ingestionError })

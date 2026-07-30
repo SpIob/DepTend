@@ -1,7 +1,7 @@
 # ADR 0027 — Repo-First Navigation and Repo Bookmarks
 
-**Status:** Proposed
-**Date:** 2026-07-29
+**Status:** Accepted — verified live, local and production
+**Date:** 2026-07-29 (proposed) — verified 2026-07-30
 **Phase:** none — standalone UX/scale improvement, not tied to a numbered phase (per the project's own open-ended post-Phase-6 roadmap)
 
 ---
@@ -116,14 +116,31 @@ Mirrors existing conventions exactly: uuid PK, cascading FK, a unique constraint
 
 No new cost, no new service, no new third-party account, no new runtime dependency. `repo_bookmarks` is one more table in the same Neon free-tier database already in use — negligible storage at this project's scale (10-repo cap, one row per user-repo bookmark). Rate limiting reuses the existing in-memory limiter (ADR 0025), not Upstash. Zero-budget constraint holds.
 
-## Consequences (anticipated — nothing built or verified yet)
+## Consequences
 
-- **Schema migration required**, applied to **both** Neon branches (ADR 0023: dev and prod are separate branches now). Unlike the `ALTER TYPE ... ADD VALUE` statements ADR 0021/0026 flagged as a 2-for-2 hang in this project's history, `repo_bookmarks` is a plain `CREATE TABLE` — the more standard migration shape `drizzle-kit migrate` has applied cleanly elsewhere in this project (e.g. the Phase 0 baseline). Lower risk than the last few migrations, but applying to two branches instead of one is new since ADR 0023 and worth doing deliberately, not on autopilot.
-- Existing routes, queries, and components for the current flat board are reused, not rewritten — `MissionBoard` and friends just receive a smaller, repo-scoped array. Regression risk is concentrated in the new aggregate query (`getReposWithMissionSummary`) and the two new bookmark routes, not in already-shipped code.
-- `/`'s bundle composition changes: the directory page can likely ship with less client JS than today's board (a card grid has no per-item filter state to hold), while `/repo/[owner]/[name]` inherits the ~115 kB First Load JS `MissionBoard` already costs (ADR 0019) — no change there, just relocated.
-- Root route's canonical content changes from "every mission" to "every repo." No external consumer of `/` expecting a mission list has been identified — worth a quick grep before shipping, not expected to find anything.
-- Same five-check verification sequence applies once built (`typecheck` → `test` → `build` → `lint --max-warnings 0` → `format:check`, from a clean `dist`/`.next`), plus both `tsc --noEmit --project <pkg>/tsconfig.eslint.json` checks per the standing (still-not-CI-wired) recommendation from ADR 0021/0026.
-- Live verification, once built: directory page against real production data (multiple repos, varied mission counts), bookmark/unbookmark round-tripped against real Neon on both branches, and `/repo/[owner]/[name]` cross-checked against `/missions`' existing numbers for the same repo to confirm the added `repoId` filter doesn't change ranking or counts.
+- **Schema migration applied to both Neon branches.** Plain `CREATE TABLE`, not an enum add — applied cleanly on both, no repeat of the `ALTER TYPE` hangs from ADR 0021/0026.
+- Existing routes, queries, and components for the flat board were reused, not rewritten — `MissionBoard` and friends just receive a smaller, repo-scoped array now. All regression risk stayed concentrated in the new aggregate query and the two new bookmark routes, exactly as predicted; nothing broke in already-shipped code.
+- `/`'s bundle came in lighter than `/missions`, confirmed by the real build: 116 kB vs. 120 kB First Load JS. `/repo/[owner]/[name]` sits at 121 kB, inheriting `MissionBoard`'s existing cost unchanged.
+- Root route's canonical content changed from "every mission" to "every repo." No external consumer of `/` expecting a mission list surfaced as a problem.
+- `bookmarkRepo()`'s two sequential round trips (existence check, then insert) turned out not to matter — see "Cold start vs. per-request cost," below.
+
+## Live Verification
+
+**Automated, run in a clean sandbox before handoff:** `typecheck` (both `tsconfig.eslint.json` checks included), `test` (447/447 `packages/core`, 9 of them new; 17/17 `cli`; 13/13 `app`), `lint --max-warnings 0`, `format:check`, and a full clean `build` — all clean. Route table and bundle sizes confirmed as above.
+
+**Local (`pnpm --filter app dev`), by Mico:**
+
+- Repo directory renders correctly — cards, manifests, mission counts split by severity, all as designed.
+- Bookmark toggle works end to end; the row showed up in `repo_bookmarks` on the dev-branch Neon console, confirmed by direct query.
+- Rate limiting confirmed working as designed: clicking the bookmark toggle in quick succession hit a real `429` from the shared `checkMissionActionLimit` pool.
+- **One real bug, found and fixed:** the bookmark star was too small (16px) to comfortably click. Bumped to 20px with a small padding hit-area; re-verified clean (typecheck/lint/format/build) before re-delivering.
+- **Signed-out bookmark click, investigated in depth:** initial testing showed clicking the star while signed out immediately signed Mico back in with no visible prompt, which looked like a bug. Re-tested in an incognito window with no lingering GitHub session — confirmed a real GitHub "Authorize deptend.dev" consent screen appears, as expected. Root cause of the original observation: signing out of deptend.dev only clears deptend's own session cookie, not GitHub's own SSO session — `signIn("github")` silently re-approves against a still-active GitHub session with prior consent already granted. Not a bug, not new behavior (the claim flow's sign-in link would do the same thing), and not specific to bookmarks. No code change.
+- **Cold start vs. per-request cost, investigated in depth:** the first bookmark action took ~1–2s; every action after that was fast. This isolates the latency to Neon's free-tier compute auto-suspend/wake behavior, not to `bookmarkRepo()`'s two sequential round trips (existence check, then insert) — if the two round trips were the real cost, every request would be slow, not just the first. No code change; the existence-check-first design (ADR 0027's own reasoning: a clean `404` instead of a caught FK-violation error) stands as delivered.
+
+**Production (`deptend.vercel.app`):**
+
+- Vercel build succeeded clean from the delivered patch, first try — no repeat of ADR 0015's original build-ordering failure.
+- Same behaviors confirmed as local: bookmark round trip against prod-branch Neon, the same OAuth SSO re-authorization pattern, the same cold-start-then-fast pattern. No environment-specific regressions.
 
 ## Sequencing
 
@@ -131,9 +148,9 @@ Repo directory + per-repo page first — it's the change that actually fixes the
 
 ## Open items, flagged rather than assumed
 
-Proceeding with these defaults unless Mico says otherwise before implementation starts:
+None of these were challenged — all four defaults shipped exactly as proposed:
 
 - URL shape `/repo/[owner]/[name]` (not a UUID-based route).
 - `/missions` kept as a secondary "browse everything" view rather than removed outright.
-- Bookmark endpoints share the existing `checkMissionActionLimit` rate-limit pool rather than getting a dedicated one.
+- Bookmark endpoints share the existing `checkMissionActionLimit` rate-limit pool rather than getting a dedicated one — confirmed working as intended during live verification (see above).
 - Table/column names as drafted above (`repo_bookmarks`, `user_login`, `repo_id`).

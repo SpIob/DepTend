@@ -61,7 +61,7 @@ export function BookmarkToggle({
         onClick={() => void signIn("github")}
         title="Sign in with GitHub to bookmark this repo"
         aria-label="Sign in with GitHub to bookmark this repo"
-        className="text-ink-muted hover:text-ink shrink-0 font-mono text-base leading-none"
+        className="text-ink-muted hover:text-ink shrink-0 p-0.5 font-mono text-xl leading-none"
       >
         ☆
       </button>
@@ -80,7 +80,7 @@ export function BookmarkToggle({
         aria-pressed={bookmarked}
         aria-label={bookmarked ? "Remove bookmark" : "Bookmark this repo"}
         title={bookmarked ? "Remove bookmark" : "Bookmark this repo"}
-        className={`font-mono text-base leading-none transition-colors disabled:opacity-50 ${
+        className={`p-0.5 font-mono text-xl leading-none transition-colors disabled:opacity-50 ${
           bookmarked ? "text-accent" : "text-ink-muted hover:text-ink"
         }`}
       >
