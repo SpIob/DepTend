@@ -22,8 +22,8 @@
  *   processes repos strictly sequentially (`for (const repo of
  *   targetRepos) { await ingestRepo(...) }`), so registry fetches never
  *   overlap across repos regardless of how many are indexed — raising the
- *   repo cap (10 as of the Phase 5 close-out, see ADR 0020) doesn't change
- *   this budget's math at all.
+ *   repo cap (150 as of pre-launch prep, see ADR 0028; was 10 per ADR 0020)
+ *   doesn't change this budget's math at all.
  *
  * Phase 1 scope — intentionally out of scope:
  *   - Resolving version specs to concrete versions (requires lock file or

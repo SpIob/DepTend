@@ -50,7 +50,7 @@ export async function POST(request: Request): Promise<Response> {
     );
   }
 
-  const maxRepos = Number.parseInt(process.env.NEXT_PUBLIC_MAX_REPOS ?? "10", 10);
+  const maxRepos = Number.parseInt(process.env.NEXT_PUBLIC_MAX_REPOS ?? "150", 10);
 
   const result = await submitRepo(getDb(), {
     githubUrl: parsed.githubUrl,

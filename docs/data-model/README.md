@@ -49,7 +49,7 @@ Tracks GitHub repositories submitted for analysis.
 | `created_at`        | timestamptz  |                                                         |
 | `updated_at`        | timestamptz  | Managed by trigger                                      |
 
-**MVP constraint:** Maximum 10 rows (`NEXT_PUBLIC_MAX_REPOS`, raised from 3 — [ADR 0020](../adr/0020-raise-repo-cap-to-10.md)). Enforced at application layer.
+**MVP constraint:** Maximum 150 rows (`NEXT_PUBLIC_MAX_REPOS`, raised from 3 to 10 -- ADR 0020 -- then 10 to 150 for launch -- ADR 0028). Enforced at application layer.
 
 ---
 

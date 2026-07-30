@@ -1,8 +1,16 @@
 # deptend.dev
 
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Live dashboard](https://img.shields.io/badge/live-deptend.vercel.app-brightgreen)](https://deptend.vercel.app)
+[![GitHub stars](https://img.shields.io/github/stars/SpIob/DepTend?style=social)](https://github.com/SpIob/DepTend)
+
 **deptend.dev** converts a GitHub repository's dependency data into a prioritized, explainable list of maintenance missions. Instead of a flat vulnerability feed, it tells you what to fix next — combining security impact, ecosystem value, and estimated effort into a single ranked list, with every score's inputs one click away.
 
 **Live dashboard:** [deptend.vercel.app](https://deptend.vercel.app)
+
+https://github.com/user-attachments/assets/e044e4af-7c11-43d4-bf60-76e5c814275d
+
+deptend.dev mission board — a ranked, explainable list of maintenance missions
 
 ---
 
@@ -18,7 +26,7 @@ Three constraints are non-negotiable and shape every decision in this project:
 
 ## Two ways to use it
 
-**The hosted dashboard** — visit [deptend.vercel.app](https://deptend.vercel.app), no account needed to browse missions. GitHub sign-in is only required to submit a new repo (capped at 10 indexed repos for the MVP).
+**The hosted dashboard** — visit [deptend.vercel.app](https://deptend.vercel.app), no account needed to browse missions. GitHub sign-in is only required to submit a new repo or claim a mission.
 
 **The CLI** — runs the same scoring engine against a local repo path, entirely in-memory, no account or hosted infrastructure required:
 
@@ -55,6 +63,10 @@ Every mission — on the dashboard or from the CLI — includes:
 - **The score and every input that produced it** — never a bare number
 - **Confidence** — visibly flagged when data is incomplete (no lock file parsed yet, no CVSS score available, no downstream-dependents data, etc.), never hidden
 
+## The rescue board
+
+Missions aren't private to a repo's own maintainer. The dashboard's board lists every open (and claimed) mission across all indexed repos, filterable by severity and effort. Any signed-in GitHub user can claim a mission — and release it later if they change their mind — turning a maintainer's backlog into something someone else can actually pick up and ship. No separate account, no gatekeeping beyond GitHub sign-in.
+
 ## How scoring works
 
 ```
@@ -68,6 +80,8 @@ composite_score = impact_score × 0.60 + ecosystem_value_score × 0.40
 Missions are ranked by `composite_score`, bucketed into fixed-width tiers so near-equal scores don't produce an inconsistent order ([ADR 0017](docs/adr/0017-ranking-tie-break-transitivity-fix.md)). Within a tier, `effort_label` breaks the tie — an intentional "prefer the quick win" rule, not an accident. Below that, the tied advisory's own `published_at` (newest first) and finally its `osv_id` guarantee a fully deterministic order regardless of input order or ingestion timing ([ADR 0018](docs/adr/0018-ranking-final-tie-break.md)).
 
 Full detail: [`docs/adr/0006-scoring-algorithm.md`](docs/adr/0006-scoring-algorithm.md).
+
+> **On confidence right now:** every mission currently shows `low` confidence. That's not a bug — two scoring inputs (downstream-dependents data, migration-guide/breaking-change signals) don't have a data source wired up yet, so the score stays deliberately conservative instead of implying more precision than the data supports. Flagged openly, not smoothed over — consistent with the zero-black-box principle above.
 
 ## Ecosystem support
 
@@ -186,7 +200,7 @@ DepTend is live and under active development — new features and fixes ship reg
 
 ## Contributing
 
-This is currently a solo-maintained project without a formal contribution process yet. Issues and discussion are welcome via the GitHub repo's issue tracker (also used as the project's task board — no external project management tool, per the project's zero-budget/solo-dev principles).
+This is currently a solo-maintained project without a formal contribution process yet. Looking for a way to help without maintaining anything yourself? The [rescue board](#the-rescue-board) is the fastest way in — claim an open mission on any indexed repo. Issues and discussion are welcome via the GitHub repo's issue tracker (also used as the project's task board — no external project management tool, per the project's zero-budget/solo-dev principles).
 
 ## License
 

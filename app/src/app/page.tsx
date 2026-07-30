@@ -17,7 +17,7 @@ import type { RepoWithMissionSummary } from "@deptend/core";
 // `next build` never needs a DB connection.
 export const dynamic = "force-dynamic";
 
-const MAX_REPOS = Number.parseInt(process.env.NEXT_PUBLIC_MAX_REPOS ?? "10", 10);
+const MAX_REPOS = Number.parseInt(process.env.NEXT_PUBLIC_MAX_REPOS ?? "150", 10);
 
 function EmptyState(): React.JSX.Element {
   return (
