@@ -138,4 +138,26 @@ describe("generateMissionCopy", () => {
     expect(withFix.action_hint).not.toBeNull();
     expect(withoutFix.action_hint).not.toBeNull();
   });
+
+  it("names the ecosystem in the description using its display casing, not the raw enum value", () => {
+    const npmCopy = generateMissionCopy(makeContext(), computeMissionScore(makeContext()));
+    expect(npmCopy.description).toContain("npm dependency");
+
+    const pypiCtx = makeContext({ dependency: makeDependency({ ecosystem: "pypi" }) });
+    const pypiCopy = generateMissionCopy(pypiCtx, computeMissionScore(pypiCtx));
+    expect(pypiCopy.description).toContain("PyPI dependency");
+    expect(pypiCopy.description).not.toContain("pypi dependency");
+
+    const goCtx = makeContext({ dependency: makeDependency({ ecosystem: "go" }) });
+    const goCopy = generateMissionCopy(goCtx, computeMissionScore(goCtx));
+    expect(goCopy.description).toContain("Go dependency");
+  });
+
+  it("surfaces the derived effort_label in the upgrade action_hint, not just the raw semver bump", () => {
+    const ctx = makeContext();
+    const score = computeMissionScore(ctx);
+    const copy = generateMissionCopy(ctx, score);
+    expect(copy.action_hint).toContain(score.effort_label);
+    expect(copy.action_hint).toContain(score.effort_inputs.semver_bump);
+  });
 });
