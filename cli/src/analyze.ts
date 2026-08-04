@@ -18,6 +18,11 @@
  * touches it.
  * Phase 7 (ADR 0024): Go added as a third probed ecosystem — same router,
  * same reasoning.
+ * ADR 0029 (Step 6): mirrors writer.ts's Step 5 wiring exactly, minus the
+ * transaction concern that doesn't apply here — sourceRepoByPackage comes
+ * from the same registryResult already fetched at step 4 below (no second
+ * registry round trip), and the prefetch happens before the .map() over
+ * candidates so that loop can stay synchronous, same reasoning as writer.ts.
  */
 
 import { LocalNpmIngestor } from "@deptend/core/ingestor/local-npm.js";
@@ -30,7 +35,13 @@ import { PyPIRegistryFetcher } from "@deptend/core/ingestor/pypi-registry.js";
 import { GoRegistryFetcher } from "@deptend/core/ingestor/go-registry.js";
 import { fetchGitHubRepoMeta } from "@deptend/core/ingestor/github-meta.js";
 import {
+  prefetchEffortSignals,
+  type EffortSignalRequest,
+  type EffortSignals,
+} from "@deptend/core/ingestor/changelog-signals.js";
+import {
   computeMissionScore,
+  extractVersionFloor,
   type MissionScoringContext,
 } from "@deptend/core/scorer/mission-scorer.js";
 import { generateMissionCopy } from "@deptend/core/scorer/mission-copy.js";
@@ -43,6 +54,7 @@ import {
   buildCandidatePairs,
   buildDependencies,
   buildRepo,
+  type CandidatePair,
 } from "./build-rows.js";
 import type { AnalyzeOptions, AnalyzeResult, AnalyzedMission } from "./types.js";
 
@@ -107,6 +119,16 @@ export async function analyze(options: AnalyzeOptions): Promise<AnalyzeResult> {
   const registryResult = await registryFetcher.fetchMetadata(ingestorResult.dependencies);
   warnings.push(...registryResult.warnings);
 
+  // ADR 0029, Step 6: mirrors scripts/ingest.js exactly — no second
+  // registry round trip, sourceRepo was already resolved (best-effort) as
+  // part of the fetchMetadata() call above.
+  const sourceRepoByPackage = new Map(
+    [...registryResult.metadata.entries()].map(([packageName, meta]) => [
+      packageName,
+      meta.sourceRepo,
+    ]),
+  );
+
   // 5. Fabricate in-memory rows in the shape computeMissionScore expects
   const dependencies = buildDependencies(repo.id, ingestorResult, registryResult);
   const advisoriesByOsvId = buildAdvisories(osvResult);
@@ -116,12 +138,30 @@ export async function analyze(options: AnalyzeOptions): Promise<AnalyzeResult> {
     osvResult.packageAdvisoryMap,
   );
 
+  // ADR 0029, Step 6: prefetch before scoring, not inside it — same
+  // reasoning as writer.ts's Step 5 (keeps the per-candidate scoring loop
+  // below synchronous), even though there's no DB transaction here to
+  // avoid holding open.
+  const effortSignalsByKey = await prefetchEffortSignalsForCandidates(
+    candidates,
+    sourceRepoByPackage,
+    options.githubToken,
+  );
+
   // 6. Score + generate copy for each candidate — same pure functions the
   // web app's MissionWriter calls, completely unmodified.
   const now = new Date();
   const scored: (AnalyzedMission & RankableMission)[] = candidates.map(
     ({ dependency, advisory }) => {
-      const ctx: MissionScoringContext = { dependency, advisory, repo };
+      const targetVersion = advisory.fixedVersion ?? dependency.latestVersion;
+      const signals = effortSignalsByKey.get(buildSignalKey(dependency.id, targetVersion));
+      // exactOptionalPropertyTypes — see writer.ts's identical comment.
+      const ctx: MissionScoringContext = {
+        dependency,
+        advisory,
+        repo,
+        ...(signals !== undefined && { effortSignals: signals }),
+      };
       const score = computeMissionScore(ctx);
       const copy = generateMissionCopy(ctx, score);
 
@@ -186,6 +226,45 @@ export async function analyze(options: AnalyzeOptions): Promise<AnalyzeResult> {
     missions: ranked.map(stripRankingFields),
     warnings,
   };
+}
+
+/**
+ * Same key shape writer.ts's buildSignalKey() uses — kept here rather
+ * than exported/shared across a DB-backed vs. in-memory pipeline that
+ * otherwise have nothing else in common at this level. "null" is a safe
+ * sentinel (not a real npm/PyPI/Go version string), not an accident of
+ * String(null).
+ */
+function buildSignalKey(dependencyId: string, targetVersion: string | null): string {
+  return `${dependencyId}:${targetVersion ?? "null"}`;
+}
+
+/**
+ * Builds one EffortSignalRequest per candidate — sourceRepo looked up by
+ * package name, currentFloor derived via mission-scorer.ts's own
+ * extractVersionFloor() — and resolves them all through
+ * changelog-signals.ts's bounded-concurrency batch fetch. Mirrors
+ * writer.ts's identical private method; kept separate rather than shared
+ * since the two pipelines' candidate row shapes (DB-backed Dependency vs.
+ * in-memory CandidatePair) already diverge everywhere else in this file.
+ */
+async function prefetchEffortSignalsForCandidates(
+  candidates: CandidatePair[],
+  sourceRepoByPackage: Map<string, PackageMetadata["sourceRepo"]>,
+  githubToken: string | null,
+): Promise<Map<string, EffortSignals>> {
+  const requests: EffortSignalRequest[] = candidates.map(({ dependency, advisory }) => {
+    const targetVersion = advisory.fixedVersion ?? dependency.latestVersion;
+    return {
+      key: buildSignalKey(dependency.id, targetVersion),
+      sourceRepo: sourceRepoByPackage.get(dependency.packageName) ?? null,
+      ecosystem: dependency.ecosystem,
+      currentFloor: extractVersionFloor(dependency.ecosystem, dependency.versionSpec),
+      targetVersion,
+    };
+  });
+
+  return prefetchEffortSignals(requests, githubToken);
 }
 
 /** Drops the RankableMission-only fields (tie_break, score) before output. */

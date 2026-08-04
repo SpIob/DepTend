@@ -66,6 +66,7 @@ describe("buildDependencies", () => {
             latestVersion: "18.3.1",
             isDeprecated: false,
             deprecationNote: null,
+            sourceRepo: null,
           },
         ],
       ]),

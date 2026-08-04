@@ -8,7 +8,7 @@
  * that runs the callback synchronously against the same stub db.
  */
 
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { getTableName, type Table } from "drizzle-orm";
 import { MissionWriter } from "./writer.js";
 import { missions, missionScores } from "../db/schema.js";
@@ -45,6 +45,8 @@ interface MockDbCalls {
   updates: string[];
   selectCount: number;
   transactionCalled: boolean;
+  /** Captured values() argument for every mission_scores insert, in candidate order — lets tests inspect the real, unmocked computeMissionScore() output (ADR 0029). */
+  insertedScoreValues: Record<string, unknown>[];
 }
 
 function makeMockDb(overrides: {
@@ -55,6 +57,8 @@ function makeMockDb(overrides: {
   /** ids returned by the missions insert, consumed in order for candidates with no existing mission */
   insertedMissionIds?: string[];
   txShouldThrow?: boolean;
+  /** Optional shared array — "fetch" is pushed by the test's own fetch mock, "transaction" is pushed here, so tests can assert ordering (ADR 0029: prefetch must happen before the transaction opens). */
+  callOrder?: string[];
 }): { db: WriterDb; calls: MockDbCalls } {
   const {
     repoRow,
@@ -62,9 +66,16 @@ function makeMockDb(overrides: {
     existingMissionRows = [],
     insertedMissionIds = [],
     txShouldThrow = false,
+    callOrder,
   } = overrides;
 
-  const calls: MockDbCalls = { inserts: [], updates: [], selectCount: 0, transactionCalled: false };
+  const calls: MockDbCalls = {
+    inserts: [],
+    updates: [],
+    selectCount: 0,
+    transactionCalled: false,
+    insertedScoreValues: [],
+  };
 
   let insertedIdQueueIndex = 0;
 
@@ -87,7 +98,15 @@ function makeMockDb(overrides: {
         return thenableRows(existing === null ? [] : [existing]);
       },
       limit: (): Promise<unknown[]> => Promise.resolve([]),
-      values: (): Chain => chain,
+      values: (v: unknown): Chain => {
+        if (
+          currentTable !== undefined &&
+          getTableName(currentTable) === getTableName(missionScores)
+        ) {
+          calls.insertedScoreValues.push(v as Record<string, unknown>);
+        }
+        return chain;
+      },
       onConflictDoUpdate: (): Promise<unknown[]> => Promise.resolve([]),
       set: (): Chain => chain,
       returning: (): Promise<unknown[]> => {
@@ -117,6 +136,7 @@ function makeMockDb(overrides: {
     }),
     transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>): Promise<unknown> => {
       calls.transactionCalled = true;
+      callOrder?.push("transaction");
       if (txShouldThrow) throw new Error("DB transaction failed");
       return callback(db);
     }),
@@ -286,5 +306,153 @@ describe("MissionWriter.generateMissionsForRepo", () => {
     });
     const writer = new MissionWriter(db);
     await expect(writer.generateMissionsForRepo("repo-1")).rejects.toThrow("DB transaction failed");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ADR 0029, Step 5 — prefetch integration
+// ---------------------------------------------------------------------------
+
+describe("MissionWriter.generateMissionsForRepo — effortSignals prefetch (ADR 0029)", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("makes zero fetch calls and writes the pre-Step-5 defaults when sourceRepoByPackage is omitted", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { db, calls } = makeMockDb({
+      repoRow: REPO_ROW,
+      candidateRows: [{ dependency: makeDependencyRow(), advisory: makeAdvisoryRow() }],
+      existingMissionRows: [null],
+      insertedMissionIds: ["mission-1"],
+    });
+    const writer = new MissionWriter(db);
+    await writer.generateMissionsForRepo("repo-1");
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    const scoreValues = calls.insertedScoreValues[0] as {
+      effortInputs: { has_migration_guide: boolean; breaking_change_signals: string[] };
+      confidenceFlags: Record<string, boolean>;
+    };
+    expect(scoreValues.effortInputs.has_migration_guide).toBe(false);
+    expect(scoreValues.effortInputs.breaking_change_signals).toEqual([]);
+    expect(scoreValues.confidenceFlags.breaking_change_signals_unavailable).toBe(true);
+  });
+
+  it("threads a resolved effortSignals through to the written mission_scores row", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify([
+            {
+              tag_name: "v1.2.4",
+              body: "BREAKING CHANGE: removed foo()",
+              prerelease: false,
+              draft: false,
+            },
+          ]),
+          { status: 200 },
+        ),
+      ),
+    );
+
+    const { db, calls } = makeMockDb({
+      repoRow: REPO_ROW,
+      // versionSpec "^1.2.3" -> floor "1.2.3"; advisory.fixedVersion "1.2.4" -> target — the
+      // release above sits exactly in (floor, target], so it's in range.
+      candidateRows: [{ dependency: makeDependencyRow(), advisory: makeAdvisoryRow() }],
+      existingMissionRows: [null],
+      insertedMissionIds: ["mission-1"],
+    });
+    const writer = new MissionWriter(db);
+    const sourceRepoByPackage = new Map([["left-pad", { owner: "left-pad", name: "left-pad" }]]);
+    await writer.generateMissionsForRepo("repo-1", sourceRepoByPackage, "gh-token-abc");
+
+    const scoreValues = calls.insertedScoreValues[0] as {
+      effortInputs: { has_migration_guide: boolean; breaking_change_signals: string[] };
+      confidenceFlags: Record<string, boolean>;
+    };
+    expect(scoreValues.effortInputs.breaking_change_signals).toEqual(["removed foo()"]);
+    expect(scoreValues.confidenceFlags.breaking_change_signals_unavailable).toBeUndefined();
+  });
+
+  it("resolves to the unavailable defaults, with zero fetch calls, for a package missing from sourceRepoByPackage", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { db, calls } = makeMockDb({
+      repoRow: REPO_ROW,
+      candidateRows: [
+        { dependency: makeDependencyRow({ packageName: "left-pad" }), advisory: makeAdvisoryRow() },
+      ],
+      existingMissionRows: [null],
+      insertedMissionIds: ["mission-1"],
+    });
+    const writer = new MissionWriter(db);
+    // Map provided, but doesn't contain "left-pad" — a real, expected case
+    // (e.g. the registry lookup for that package failed independently).
+    const sourceRepoByPackage = new Map([["some-other-package", { owner: "x", name: "y" }]]);
+    await writer.generateMissionsForRepo("repo-1", sourceRepoByPackage, null);
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    const scoreValues = calls.insertedScoreValues[0] as {
+      confidenceFlags: Record<string, boolean>;
+    };
+    expect(scoreValues.confidenceFlags.breaking_change_signals_unavailable).toBe(true);
+  });
+
+  it("prefetches before opening the transaction, not inside it", async () => {
+    const callOrder: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(() => {
+        callOrder.push("fetch");
+        return new Response(JSON.stringify([]), { status: 200 });
+      }),
+    );
+
+    const { db } = makeMockDb({
+      repoRow: REPO_ROW,
+      candidateRows: [{ dependency: makeDependencyRow(), advisory: makeAdvisoryRow() }],
+      existingMissionRows: [null],
+      insertedMissionIds: ["mission-1"],
+      callOrder,
+    });
+    const writer = new MissionWriter(db);
+    const sourceRepoByPackage = new Map([["left-pad", { owner: "left-pad", name: "left-pad" }]]);
+    await writer.generateMissionsForRepo("repo-1", sourceRepoByPackage, null);
+
+    expect(callOrder).toEqual(["fetch", "transaction"]);
+  });
+
+  it("dedupes two candidates on the same dependency+target into a single fetch call", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify([]), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    // Two different advisories on the same dependency, both fixed at the
+    // same version — same signal key, should fetch once, not twice.
+    const { db } = makeMockDb({
+      repoRow: REPO_ROW,
+      candidateRows: [
+        {
+          dependency: makeDependencyRow(),
+          advisory: makeAdvisoryRow({ id: "adv-1", osvId: "GHSA-aaaa" }),
+        },
+        {
+          dependency: makeDependencyRow(),
+          advisory: makeAdvisoryRow({ id: "adv-2", osvId: "GHSA-bbbb" }),
+        },
+      ],
+      existingMissionRows: [null, null],
+      insertedMissionIds: ["mission-1", "mission-2"],
+    });
+    const writer = new MissionWriter(db);
+    const sourceRepoByPackage = new Map([["left-pad", { owner: "left-pad", name: "left-pad" }]]);
+    await writer.generateMissionsForRepo("repo-1", sourceRepoByPackage, null);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

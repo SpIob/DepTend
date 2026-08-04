@@ -261,6 +261,7 @@ function makeRegistryResult(packages: string[] = ["pkg-0", "pkg-1"]): NpmRegistr
         latestVersion: "2.0.0",
         isDeprecated: false,
         deprecationNote: null,
+        sourceRepo: null,
       },
     ]),
   );

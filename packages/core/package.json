@@ -75,6 +75,10 @@
       "import": "./dist/ingestor/github-meta.js",
       "types": "./dist/ingestor/github-meta.d.ts"
     },
+    "./ingestor/changelog-signals.js": {
+      "import": "./dist/ingestor/changelog-signals.js",
+      "types": "./dist/ingestor/changelog-signals.d.ts"
+    },
     "./scorer/mission-scorer.js": {
       "import": "./dist/scorer/mission-scorer.js",
       "types": "./dist/scorer/mission-scorer.d.ts"

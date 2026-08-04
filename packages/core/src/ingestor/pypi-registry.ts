@@ -2,12 +2,17 @@
  * PyPI Registry Metadata Fetcher
  *
  * For each parsed dependency, fetches project metadata from the PyPI JSON
- * API to populate the same two dependencies-table fields NpmRegistryFetcher
- * populates for npm:
+ * API to populate the same fields NpmRegistryFetcher populates for npm:
  *
  *   - latestVersion   — the current published version (e.g. "3.1.3")
  *   - isDeprecated    — always false for Phase 6 (see below)
  *   - deprecationNote — always null for Phase 6 (see below)
+ *
+ * ...plus one field NOT persisted to the DB — `sourceRepo`, best-effort
+ * resolved from info.project_urls/home_page (ADR 0029, Decision 1). PyPI
+ * has no fixed schema for project_urls key names, so this is genuinely
+ * best-effort — null more often than npm/Go's own resolution, by design,
+ * not a bug. See resolvePyPISourceRepo() below.
  *
  * API used: https://pypi.org/pypi/<project>/json
  * No authentication required for public packages. Confirmed case-insensitive
@@ -46,6 +51,7 @@
 
 import type { ParsedDependency } from "./interface.js";
 import type { PackageMetadata } from "./registry.js";
+import { parseSourceRepo, type SourceRepoRef } from "./source-repo.js";
 
 // ---------------------------------------------------------------------------
 // PyPI JSON API response shape (fields we care about only)
@@ -59,6 +65,13 @@ interface PyPIProjectJson {
   // would look redundant if this type only said `info?: {...}`.
   info?: {
     version?: string;
+    /**
+     * Free-text-keyed map, e.g. {"Source": "...", "Homepage": "..."} — no
+     * fixed key schema; PyPI project owners choose the labels. See
+     * resolvePyPISourceRepo() below.
+     */
+    project_urls?: unknown;
+    home_page?: unknown;
     [key: string]: unknown;
   } | null;
   [key: string]: unknown;
@@ -73,6 +86,51 @@ export interface PyPIRegistryFetchResult {
   metadata: Map<string, PackageMetadata>;
   /** Data-quality warnings to surface in the UI. */
   warnings: string[];
+}
+
+// ---------------------------------------------------------------------------
+// Source-repo resolution (ADR 0029) — best-effort, not guaranteed
+// ---------------------------------------------------------------------------
+
+/**
+ * project_urls keys with no fixed schema — PyPI project owners write their
+ * own labels ("Source", "Repository", "Code", "GitHub", "Changelog",
+ * "Homepage", ...). Values matching this pattern are tried first, since
+ * they're more likely to point at the actual repo than "Homepage" or
+ * "Documentation" would. Best-effort heuristic, not a spec — see ADR 0029
+ * Decision 1 (PyPI resolution is explicitly best-effort, unlike npm/Go).
+ */
+const LIKELY_SOURCE_KEY_RE = /source|repository|code|github/i;
+
+/**
+ * Resolves a PyPI project's own GitHub repo from info.project_urls (tried
+ * first, priority keys before the rest) and falls back to info.home_page.
+ * Returns null when nothing present resolves to a github.com URL — a real,
+ * expected outcome for a meaningful share of PyPI packages, not a bug.
+ */
+function resolvePyPISourceRepo(info: {
+  project_urls?: unknown;
+  home_page?: unknown;
+}): SourceRepoRef | null {
+  const projectUrls = info.project_urls;
+  if (typeof projectUrls === "object" && projectUrls !== null && !Array.isArray(projectUrls)) {
+    const entries = Object.entries(projectUrls as Record<string, unknown>);
+    const priority = entries.filter(([key]) => LIKELY_SOURCE_KEY_RE.test(key));
+    const rest = entries.filter(([key]) => !LIKELY_SOURCE_KEY_RE.test(key));
+
+    for (const [, value] of [...priority, ...rest]) {
+      if (typeof value === "string") {
+        const resolved = parseSourceRepo(value);
+        if (resolved !== null) return resolved;
+      }
+    }
+  }
+
+  if (typeof info.home_page === "string") {
+    return parseSourceRepo(info.home_page);
+  }
+
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -124,6 +182,7 @@ export class PyPIRegistryFetcher {
         // Always false/null for Phase 6 — see module docstring.
         isDeprecated: false,
         deprecationNote: null,
+        sourceRepo: result.sourceRepo,
       });
     }
 
@@ -222,12 +281,16 @@ export class PyPIRegistryFetcher {
 
     const latestVersion =
       typeof info.version === "string" && info.version.trim() !== "" ? info.version.trim() : null;
+    const sourceRepo = resolvePyPISourceRepo(info);
 
     if (latestVersion === null) {
       // Not a hard failure — the project exists but has no version field.
+      // project_urls/home_page (and therefore sourceRepo) are independent
+      // of version, so still resolved here rather than discarded.
       return {
         packageName,
         latestVersion: null,
+        sourceRepo,
         warning:
           `PyPI registry response for "${packageName}" has no version field. ` +
           `Latest version will be recorded as unknown.`,
@@ -237,6 +300,7 @@ export class PyPIRegistryFetcher {
     return {
       packageName,
       latestVersion,
+      sourceRepo,
       warning: undefined,
     };
   }
@@ -249,6 +313,7 @@ export class PyPIRegistryFetcher {
 interface FetchOneResult {
   packageName: string;
   latestVersion: string | null;
+  sourceRepo: SourceRepoRef | null;
   /** Set when a non-fatal data-quality issue occurred. */
   warning: string | undefined;
 }
@@ -257,6 +322,7 @@ function failedResult(packageName: string, warning: string): FetchOneResult {
   return {
     packageName,
     latestVersion: null,
+    sourceRepo: null,
     warning,
   };
 }

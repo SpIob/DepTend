@@ -21,9 +21,15 @@ function dep(
 }
 
 /** Build a minimal npm /latest response body */
-function npmLatest(version: string, deprecated?: string): Record<string, unknown> {
-  const body: Record<string, unknown> = { version, name: "pkg" };
+function npmLatest(
+  version: string | undefined,
+  deprecated?: string,
+  repository?: unknown,
+): Record<string, unknown> {
+  const body: Record<string, unknown> = { name: "pkg" };
+  if (version !== undefined) body.version = version;
   if (deprecated !== undefined) body.deprecated = deprecated;
+  if (repository !== undefined) body.repository = repository;
   return body;
 }
 
@@ -309,6 +315,103 @@ describe("NpmRegistryFetcher", () => {
       await customFetcher.fetchMetadata([dep("pkg")]);
 
       expect(capturedUrls[0]).toContain("my-registry.example.com");
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  describe("fetchMetadata — sourceRepo resolution (ADR 0029)", () => {
+    it("resolves sourceRepo from a plain string repository field", async () => {
+      vi.stubGlobal(
+        "fetch",
+        mockFetch({
+          [url("lodash")]: {
+            status: 200,
+            body: npmLatest("4.18.1", undefined, "lodash/lodash"),
+          },
+        }),
+      );
+
+      const result = await fetcher.fetchMetadata([dep("lodash")]);
+
+      expect(result.metadata.get("lodash")?.sourceRepo).toEqual({
+        owner: "lodash",
+        name: "lodash",
+      });
+    });
+
+    it("resolves sourceRepo from a {type, url} repository object", async () => {
+      vi.stubGlobal(
+        "fetch",
+        mockFetch({
+          [url("react")]: {
+            status: 200,
+            body: npmLatest("18.3.0", undefined, {
+              type: "git",
+              url: "git+https://github.com/facebook/react.git",
+            }),
+          },
+        }),
+      );
+
+      const result = await fetcher.fetchMetadata([dep("react")]);
+
+      expect(result.metadata.get("react")?.sourceRepo).toEqual({
+        owner: "facebook",
+        name: "react",
+      });
+    });
+
+    it("returns null sourceRepo when the field is absent", async () => {
+      vi.stubGlobal(
+        "fetch",
+        mockFetch({ [url("pkg")]: { status: 200, body: npmLatest("1.0.0") } }),
+      );
+
+      const result = await fetcher.fetchMetadata([dep("pkg")]);
+
+      expect(result.metadata.get("pkg")?.sourceRepo).toBeNull();
+    });
+
+    it("returns null sourceRepo when the field points off GitHub", async () => {
+      vi.stubGlobal(
+        "fetch",
+        mockFetch({
+          [url("pkg")]: {
+            status: 200,
+            body: npmLatest("1.0.0", undefined, "https://gitlab.com/owner/repo"),
+          },
+        }),
+      );
+
+      const result = await fetcher.fetchMetadata([dep("pkg")]);
+
+      expect(result.metadata.get("pkg")?.sourceRepo).toBeNull();
+    });
+
+    it("still resolves sourceRepo when the response has no version field", async () => {
+      vi.stubGlobal(
+        "fetch",
+        mockFetch({
+          [url("pkg")]: {
+            status: 200,
+            body: npmLatest(undefined, undefined, "owner/repo"),
+          },
+        }),
+      );
+
+      const result = await fetcher.fetchMetadata([dep("pkg")]);
+      const meta = result.metadata.get("pkg");
+
+      expect(meta?.latestVersion).toBeNull();
+      expect(meta?.sourceRepo).toEqual({ owner: "owner", name: "repo" });
+    });
+
+    it("returns null sourceRepo on a network failure", async () => {
+      vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("ECONNREFUSED")));
+
+      const result = await fetcher.fetchMetadata([dep("pkg")]);
+
+      expect(result.metadata.get("pkg")?.sourceRepo).toBeNull();
     });
   });
 });

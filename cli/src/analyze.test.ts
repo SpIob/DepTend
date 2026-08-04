@@ -537,4 +537,132 @@ describe("analyze", () => {
     expect(result.missions[0]?.advisory.osv_id).toBe("GHSA-newer-2222");
     expect(result.missions[1]?.advisory.osv_id).toBe("GHSA-older-1111");
   });
+
+  it("resolves real breaking-change signals end-to-end and clears breaking_change_signals_unavailable (ADR 0029)", async () => {
+    await writeFile(
+      join(repoDir, "package.json"),
+      JSON.stringify({ dependencies: { "vulnerable-pkg": "^1.0.0" } }),
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: string | URL | Request) => {
+        const url =
+          typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+
+        if (url.includes("api.github.com/repos/vulnerable-org/vulnerable-pkg/releases")) {
+          // Real pagination terminates once GitHub returns an empty page —
+          // this mock must do the same, or fetchReleaseSignals never sees
+          // an empty page and keeps re-requesting up to MAX_PAGES, each
+          // time re-collecting the same single release as a "new" one.
+          // "&page=1" (with the leading &), not "page=1" — "per_page=100"
+          // itself contains "page=1" as a substring, which silently
+          // matched every page and reproduced the exact bug this mock is
+          // supposed to prevent, on the very first attempt at writing it.
+          const isFirstPage = url.includes("&page=1");
+          return Promise.resolve(
+            new Response(
+              JSON.stringify(
+                isFirstPage
+                  ? [
+                      {
+                        tag_name: "v1.0.1",
+                        body: "BREAKING CHANGE: removed the deprecated foo() export.",
+                        prerelease: false,
+                        draft: false,
+                      },
+                    ]
+                  : [],
+              ),
+              { status: 200 },
+            ),
+          );
+        }
+        if (url.includes("api.github.com/repos/")) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                full_name: "owner/repo",
+                name: "repo",
+                owner: { login: "owner" },
+                default_branch: "main",
+                description: "A test repo",
+                stargazers_count: 100,
+                open_issues_count: 5,
+                topics: [],
+                homepage: null,
+              }),
+              { status: 200 },
+            ),
+          );
+        }
+        if (url.includes("api.osv.dev/v1/querybatch")) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                results: [{ vulns: [{ id: "GHSA-test-1234", modified: "2026-01-01T00:00:00Z" }] }],
+              }),
+              { status: 200 },
+            ),
+          );
+        }
+        if (url.includes("api.osv.dev/v1/vulns/")) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                id: "GHSA-test-1234",
+                modified: "2026-01-01T00:00:00Z",
+                published: "2025-12-01T00:00:00Z",
+                summary: "Test vulnerability in vulnerable-pkg",
+                severity: [{ type: "CVSS_V3", score: "9.8" }],
+                affected: [
+                  {
+                    package: { name: "vulnerable-pkg", ecosystem: "npm" },
+                    ranges: [{ type: "SEMVER", events: [{ introduced: "0" }, { fixed: "1.0.1" }] }],
+                  },
+                ],
+              }),
+              { status: 200 },
+            ),
+          );
+        }
+        if (url.includes("registry.npmjs.org/")) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                version: "1.0.1",
+                repository: "vulnerable-org/vulnerable-pkg",
+              }),
+              { status: 200 },
+            ),
+          );
+        }
+        throw new Error(`Unmocked fetch call in analyze.test.ts (ADR 0029): ${url}`);
+      }),
+    );
+
+    const result = await analyze({
+      repoPath: repoDir,
+      githubOwner: "owner",
+      githubName: "repo",
+      githubToken: null,
+    });
+
+    expect(result.missions).toHaveLength(1);
+    const mission = result.missions[0];
+    expect(mission?.scoring_inputs.effort.breaking_change_signals).toEqual([
+      "removed the deprecated foo() export.",
+    ]);
+    expect(mission?.scoring_inputs.effort.has_migration_guide).toBe(false);
+    expect(mission?.confidence_notes).not.toContain(
+      "Changelog and migration-guide data wasn't available for this dependency's own upstream repository, so the effort estimate is based on the semver version bump alone.",
+    );
+    // confidence itself stays "low" in this fixture — not because ADR
+    // 0029 didn't work, but because no_lock_file is *always* set on the
+    // CLI path (resolved_version is always null; no lock-file parsing
+    // exists yet, ADR 0007 §3) and downstream_dependents_unavailable is
+    // untouched by this ADR (ADR 0006, out of scope) — two independent,
+    // still-open gaps. The assertion above is what actually proves ADR
+    // 0029 worked: the specific note it targets is gone from the set,
+    // a real change from the always-present state that existed before it.
+  });
 });

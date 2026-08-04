@@ -320,4 +320,116 @@ describe("PyPIRegistryFetcher", () => {
       expect(capturedUrls[0]).toContain("my-pypi-mirror.example.com");
     });
   });
+
+  // -------------------------------------------------------------------------
+  describe("fetchMetadata — sourceRepo resolution (ADR 0029, best-effort)", () => {
+    it("resolves sourceRepo from a project_urls 'Source' entry", async () => {
+      vi.stubGlobal(
+        "fetch",
+        mockFetch({
+          [url("requests")]: {
+            status: 200,
+            body: pypiJson("2.32.3", {
+              project_urls: {
+                Homepage: "https://requests.readthedocs.io",
+                Source: "https://github.com/psf/requests",
+              },
+            }),
+          },
+        }),
+      );
+
+      const result = await fetcher.fetchMetadata([dep("requests")]);
+
+      expect(result.metadata.get("requests")?.sourceRepo).toEqual({
+        owner: "psf",
+        name: "requests",
+      });
+    });
+
+    it("prefers a source-like key over Homepage even when Homepage is listed first", async () => {
+      vi.stubGlobal(
+        "fetch",
+        mockFetch({
+          [url("pkg")]: {
+            status: 200,
+            body: pypiJson("1.0.0", {
+              project_urls: {
+                Homepage: "https://github.com/wrong/homepage-repo",
+                Repository: "https://github.com/right/repo",
+              },
+            }),
+          },
+        }),
+      );
+
+      const result = await fetcher.fetchMetadata([dep("pkg")]);
+
+      expect(result.metadata.get("pkg")?.sourceRepo).toEqual({ owner: "right", name: "repo" });
+    });
+
+    it("falls back to home_page when no project_urls value resolves", async () => {
+      vi.stubGlobal(
+        "fetch",
+        mockFetch({
+          [url("pkg")]: {
+            status: 200,
+            body: pypiJson("1.0.0", {
+              project_urls: { Homepage: "https://example.com" },
+              home_page: "https://github.com/owner/repo",
+            }),
+          },
+        }),
+      );
+
+      const result = await fetcher.fetchMetadata([dep("pkg")]);
+
+      expect(result.metadata.get("pkg")?.sourceRepo).toEqual({ owner: "owner", name: "repo" });
+    });
+
+    it("returns null sourceRepo when nothing present resolves to GitHub", async () => {
+      vi.stubGlobal(
+        "fetch",
+        mockFetch({
+          [url("pkg")]: {
+            status: 200,
+            body: pypiJson("1.0.0", {
+              project_urls: { Homepage: "https://example.com" },
+              home_page: "https://gitlab.com/owner/repo",
+            }),
+          },
+        }),
+      );
+
+      const result = await fetcher.fetchMetadata([dep("pkg")]);
+
+      expect(result.metadata.get("pkg")?.sourceRepo).toBeNull();
+    });
+
+    it("returns null sourceRepo when project_urls and home_page are both absent", async () => {
+      vi.stubGlobal("fetch", mockFetch({ [url("pkg")]: { status: 200, body: pypiJson("1.0.0") } }));
+
+      const result = await fetcher.fetchMetadata([dep("pkg")]);
+
+      expect(result.metadata.get("pkg")?.sourceRepo).toBeNull();
+    });
+
+    it("still resolves sourceRepo when the response has no version field", async () => {
+      vi.stubGlobal(
+        "fetch",
+        mockFetch({
+          [url("pkg")]: {
+            status: 200,
+            body: { info: { name: "pkg", home_page: "https://github.com/owner/repo" } },
+          },
+        }),
+      );
+
+      const result = await fetcher.fetchMetadata([dep("pkg")]);
+      const meta = result.metadata.get("pkg");
+
+      expect(meta?.latestVersion).toBeNull();
+      expect(meta?.sourceRepo).toEqual({ owner: "owner", name: "repo" });
+    });
+  });
 });

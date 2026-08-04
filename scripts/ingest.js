@@ -37,6 +37,11 @@
  * Phase 7 (ADR 0024): Go added as a third probed ecosystem (npm, then
  * PyPI, then Go) — same router, same "not stored" design, no changes to
  * either.
+ * ADR 0029 (Step 5): missionWriter.generateMissionsForRepo() now also
+ * receives sourceRepoByPackage — built straight from registryResult's
+ * already-fetched sourceRepo field, not a second registry round trip —
+ * so it can prefetch each candidate dependency's own breaking-change
+ * signals before its DB transaction opens.
  */
 
 import { Pool } from "@neondatabase/serverless";
@@ -277,6 +282,24 @@ async function ingestRepo(
     ).length;
     log("info", `[${label}] ${deprecatedCount} deprecated package(s) detected`);
 
+    // ADR 0029, Step 5: no second registry round trip — sourceRepo was
+    // already resolved (best-effort) as part of the fetchMetadata() call
+    // above, from data that call already received.
+    const sourceRepoByPackage = new Map(
+      [...registryResult.metadata.entries()].map(([packageName, meta]) => [
+        packageName,
+        meta.sourceRepo,
+      ]),
+    );
+    const resolvedSourceRepoCount = [...sourceRepoByPackage.values()].filter(
+      (ref) => ref !== null,
+    ).length;
+    log(
+      "info",
+      `[${label}] Resolved a GitHub source repo for ${resolvedSourceRepoCount} of ` +
+        `${sourceRepoByPackage.size} package(s)`,
+    );
+
     // 6. Write to database
     log("info", `[${label}] Writing to database`);
     const output = await writer.write({
@@ -305,7 +328,11 @@ async function ingestRepo(
     // purposes (ADR 0008 §5).
     try {
       log("info", `[${label}] Generating missions`);
-      const missionOutput = await missionWriter.generateMissionsForRepo(output.repoId);
+      const missionOutput = await missionWriter.generateMissionsForRepo(
+        output.repoId,
+        sourceRepoByPackage,
+        githubToken,
+      );
 
       log("info", `[${label}] Missions done`, {
         candidatesFound: missionOutput.candidatesFound,

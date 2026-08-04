@@ -288,4 +288,80 @@ describe("GoRegistryFetcher", () => {
       );
     });
   });
+
+  // -------------------------------------------------------------------------
+  describe("fetchMetadata — sourceRepo resolution (ADR 0029)", () => {
+    it("resolves sourceRepo directly from a github.com module path", async () => {
+      vi.stubGlobal(
+        "fetch",
+        mockFetch({ [url("github.com/gorilla/mux")]: { status: 200, body: goLatest("v1.8.1") } }),
+      );
+
+      const result = await fetcher.fetchMetadata([dep("github.com/gorilla/mux")]);
+
+      expect(result.metadata.get("github.com/gorilla/mux")?.sourceRepo).toEqual({
+        owner: "gorilla",
+        name: "mux",
+      });
+    });
+
+    it("drops a major-version suffix segment when resolving sourceRepo", async () => {
+      vi.stubGlobal(
+        "fetch",
+        mockFetch({
+          [url("github.com/owner/repo/v2")]: { status: 200, body: goLatest("v2.1.0") },
+        }),
+      );
+
+      const result = await fetcher.fetchMetadata([dep("github.com/owner/repo/v2")]);
+
+      expect(result.metadata.get("github.com/owner/repo/v2")?.sourceRepo).toEqual({
+        owner: "owner",
+        name: "repo",
+      });
+    });
+
+    it("returns null sourceRepo for a non-GitHub module path (golang.org/x/...)", async () => {
+      vi.stubGlobal(
+        "fetch",
+        mockFetch({ [url("golang.org/x/mod")]: { status: 200, body: goLatest("v0.17.0") } }),
+      );
+
+      const result = await fetcher.fetchMetadata([dep("golang.org/x/mod")]);
+
+      expect(result.metadata.get("golang.org/x/mod")?.sourceRepo).toBeNull();
+    });
+
+    it("returns null sourceRepo for a gopkg.in module path", async () => {
+      vi.stubGlobal(
+        "fetch",
+        mockFetch({ [url("gopkg.in/yaml.v3")]: { status: 200, body: goLatest("v3.0.1") } }),
+      );
+
+      const result = await fetcher.fetchMetadata([dep("gopkg.in/yaml.v3")]);
+
+      expect(result.metadata.get("gopkg.in/yaml.v3")?.sourceRepo).toBeNull();
+    });
+
+    it("still resolves sourceRepo on a 404 — derived from the path, not the response", async () => {
+      vi.stubGlobal("fetch", mockFetch({}));
+
+      const result = await fetcher.fetchMetadata([dep("github.com/owner/repo")]);
+      const meta = result.metadata.get("github.com/owner/repo");
+
+      expect(meta?.latestVersion).toBeNull();
+      expect(meta?.sourceRepo).toEqual({ owner: "owner", name: "repo" });
+    });
+
+    it("still resolves sourceRepo on a network failure", async () => {
+      vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("ECONNREFUSED")));
+
+      const result = await fetcher.fetchMetadata([dep("github.com/owner/repo")]);
+
+      expect(result.metadata.get("github.com/owner/repo")?.sourceRepo).toEqual({
+        owner: "owner",
+        name: "repo",
+      });
+    });
+  });
 });

@@ -11,6 +11,7 @@
  *
  * ADR: docs/adr/0007-mission-score-writing.md (mapping, confidence, scope)
  *      docs/adr/0006-scoring-algorithm.md (formulas)
+ *      docs/adr/0029-breaking-change-signals.md (effortSignals, Step 4)
  */
 
 import semver from "semver";
@@ -34,6 +35,15 @@ import type {
   EcosystemValueInputs,
   ImpactInputs,
 } from "../db/json-types.js";
+// Type-only, and deliberately the first-ever scorer -> ingestor import in
+// this codebase (previously zero cross-imports existed in either
+// direction). Sound direction, not a layering violation: scorer already
+// consumes ingestor-produced *data* (Dependency/Advisory/Repo are rows the
+// ingestor writes), so consuming an ingestor-defined *type* for
+// externally-prefetched signals follows the same data flow. See ADR 0029
+// Decision 2 — computeMissionScore() itself stays synchronous/pure; only
+// the type is imported here, no function from changelog-signals.ts.
+import type { EffortSignals } from "../ingestor/changelog-signals.js";
 import { DefaultImpactScorer } from "./impact.js";
 import { DefaultEffortScorer } from "./effort.js";
 import { DefaultEcosystemValueScorer } from "./ecosystem-value.js";
@@ -52,6 +62,17 @@ export interface MissionScoringContext {
   dependency: Dependency;
   advisory: Advisory;
   repo: Repo;
+  /**
+   * Prefetched breaking-change/migration-guide signals for this
+   * dependency's own upstream repo (ADR 0029) — undefined means "the
+   * caller never attempted this," treated identically to a resolved
+   * `source_available: false`. Always undefined before Step 5 wires the
+   * writer.ts prefetch in; buildEffortInputs()/deriveConfidenceFlags()
+   * both already handle its absence, so this addition doesn't break any
+   * existing caller (CLI's analyze.ts, scorer/writer.test.ts fixtures)
+   * before that step lands.
+   */
+  effortSignals?: EffortSignals;
 }
 
 export interface MissionScoreComputation {
@@ -77,6 +98,31 @@ function clamp(value: number, min: number, max: number): number {
 // ---------------------------------------------------------------------------
 
 /**
+ * Extracts a "current version" proxy from a declared semver range — the
+ * same floor inferSemverBump() below uses for its own bump-size estimate.
+ * Split out (rather than left inline, as it was through Step 4) so
+ * extractVersionFloor() can reuse it without duplicating the logic —
+ * mirrors extractPep440Floor()'s already-separate shape below.
+ */
+function extractSemverFloor(versionSpec: string): string | null {
+  // validRange never throws, unlike minVersion — use it as a safe gate.
+  // "*" (and "", which normalizes to "*") carries no real version
+  // information; treating it as 0.0.0 would fabricate a "major bump"
+  // signal for nearly every target. Better to say we don't know.
+  const normalizedRange = semver.validRange(versionSpec);
+  if (normalizedRange === null || normalizedRange === "*") {
+    return null;
+  }
+
+  try {
+    const currentProxy = semver.minVersion(versionSpec);
+    return currentProxy === null ? null : currentProxy.version;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Estimates the semver bump size from a declared range to a target version.
  * This is always an estimate, never a confirmed fact — resolved_version is
  * always null until lock file parsing lands (see ADR 0007, §3), so the
@@ -88,22 +134,8 @@ function inferSemverBump(versionSpec: string, targetVersion: string | null): Sem
     return "unknown";
   }
 
-  // validRange never throws, unlike minVersion — use it as a safe gate.
-  // "*" (and "", which normalizes to "*") carries no real version
-  // information; treating it as 0.0.0 would fabricate a "major bump"
-  // signal for nearly every target. Better to say we don't know.
-  const normalizedRange = semver.validRange(versionSpec);
-  if (normalizedRange === null || normalizedRange === "*") {
-    return "unknown";
-  }
-
-  let currentProxy: semver.SemVer | null;
-  try {
-    currentProxy = semver.minVersion(versionSpec);
-  } catch {
-    return "unknown";
-  }
-  if (currentProxy === null) {
+  const floor = extractSemverFloor(versionSpec);
+  if (floor === null) {
     return "unknown";
   }
 
@@ -112,7 +144,7 @@ function inferSemverBump(versionSpec: string, targetVersion: string | null): Sem
     return "unknown";
   }
 
-  const diff = semver.diff(currentProxy.version, coercedTarget.version);
+  const diff = semver.diff(floor, coercedTarget.version);
 
   switch (diff) {
     case "major":
@@ -280,6 +312,33 @@ const BUMP_INFERENCE_BY_ECOSYSTEM: Record<
   pypi: inferPep440Bump,
 };
 
+/**
+ * Same Record<Ecosystem, ...> shape as BUMP_INFERENCE_BY_ECOSYSTEM above,
+ * one level down — the floor half of each bump-inference function, reused
+ * (not duplicated) rather than each function's own internal logic.
+ */
+const FLOOR_EXTRACTION_BY_ECOSYSTEM: Record<Ecosystem, (versionSpec: string) => string | null> = {
+  npm: extractSemverFloor,
+  go: extractSemverFloor,
+  pypi: extractPep440Floor,
+};
+
+/**
+ * Extracts a "current version" proxy from a dependency's declared version
+ * spec, for the given ecosystem — the exact floor inferSemverBump()/
+ * inferPep440Bump() use internally for their own semver_bump estimate.
+ *
+ * Exported for writer.ts (ADR 0029, Step 5) to bound changelog-signals.ts's
+ * GitHub Releases pagination with the same estimate the effort label
+ * itself is already built on, rather than a second, possibly-inconsistent
+ * one. Not used anywhere else in this module — buildEffortInputs() calls
+ * the per-ecosystem bump-inference functions directly, which compute this
+ * same floor internally as one step of a larger calculation.
+ */
+export function extractVersionFloor(ecosystem: Ecosystem, versionSpec: string): string | null {
+  return FLOOR_EXTRACTION_BY_ECOSYSTEM[ecosystem](versionSpec);
+}
+
 function daysSince(date: Date | null): number | null {
   if (date === null) {
     return null;
@@ -311,9 +370,10 @@ export function buildEffortInputs(ctx: MissionScoringContext): EffortInputs {
 
   return {
     semver_bump: semverBump,
-    // No data source ingested yet — see ADR 0007, §5.
-    has_migration_guide: false,
-    breaking_change_signals: [],
+    // ADR 0029: real signal when the caller prefetched one; unchanged
+    // false/[] defaults (ADR 0007 §5) when it didn't or nothing resolved.
+    has_migration_guide: ctx.effortSignals?.has_migration_guide ?? false,
+    breaking_change_signals: ctx.effortSignals?.breaking_change_signals ?? [],
   };
 }
 
@@ -346,9 +406,23 @@ export function deriveConfidenceFlags(ctx: MissionScoringContext): ConfidenceFla
     flags.registry_metadata_incomplete = true;
   }
 
-  // Always true in Phase 2 — no data source ingested yet for either.
+  // downstream_dependents: still no data source (ADR 0006) — out of scope
+  // for ADR 0029, unconditional unlike the flag below.
   flags.downstream_dependents_unavailable = true;
-  flags.breaking_change_signals_unavailable = true;
+
+  // ADR 0029 Decision 4: conditional, not unconditional, as of Step 4.
+  // Set when the caller never attempted the prefetch (effortSignals
+  // absent — the pre-ADR-0029 behavior, and still true for every caller
+  // until Step 5 wires writer.ts's prefetch in) or genuinely couldn't
+  // resolve/reach the dependency's own repo (source_available: false,
+  // e.g. most PyPI dependencies — best-effort by design, ADR 0029
+  // Decision 1). A dependency whose repo *did* resolve and whose
+  // Releases *were* reachable correctly leaves this unset, even if zero
+  // breaking-change signals were actually found — "checked, found
+  // nothing" is real, higher-confidence information, not a gap.
+  if (!ctx.effortSignals?.source_available) {
+    flags.breaking_change_signals_unavailable = true;
+  }
 
   return flags;
 }
@@ -388,7 +462,7 @@ export function buildConfidenceNotes(flags: ConfidenceFlags): string[] {
   }
   if (flags.breaking_change_signals_unavailable === true) {
     notes.push(
-      "Changelog and migration-guide data isn't ingested yet, so the effort estimate is based on the semver version bump alone.",
+      "Changelog and migration-guide data wasn't available for this dependency's own upstream repository, so the effort estimate is based on the semver version bump alone.",
     );
   }
 

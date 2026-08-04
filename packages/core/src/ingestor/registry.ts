@@ -2,11 +2,17 @@
  * npm Registry Metadata Fetcher
  *
  * For each parsed dependency, fetches the `/latest` dist-tag from the npm
- * registry to populate two fields on the `dependencies` table:
+ * registry to populate three fields on the `dependencies` table:
  *
  *   - latestVersion   — the current published version (e.g. "4.18.1")
  *   - isDeprecated    — true when the package maintainer has marked it
  *   - deprecationNote — the deprecation message string, if present
+ *
+ * ...plus one field that is NOT persisted to the DB — `sourceRepo`, the
+ * package's own GitHub repo parsed from the `repository` field already in
+ * this same response (ADR 0029). It's recomputed fresh on every ingestion
+ * run, same as `detectEcosystem`, rather than stored — see ADR 0029
+ * Decision 1.
  *
  * API used: https://registry.npmjs.org/<package>/latest
  * No authentication required for public packages.
@@ -22,8 +28,8 @@
  *   processes repos strictly sequentially (`for (const repo of
  *   targetRepos) { await ingestRepo(...) }`), so registry fetches never
  *   overlap across repos regardless of how many are indexed — raising the
- *   repo cap (150 as of pre-launch prep, see ADR 0028; was 10 per ADR 0020)
- *   doesn't change this budget's math at all.
+ *   repo cap (10 as of the Phase 5 close-out, see ADR 0020) doesn't change
+ *   this budget's math at all.
  *
  * Phase 1 scope — intentionally out of scope:
  *   - Resolving version specs to concrete versions (requires lock file or
@@ -35,6 +41,7 @@
  */
 
 import type { ParsedDependency } from "./interface.js";
+import { parseNpmRepositoryField, type SourceRepoRef } from "./source-repo.js";
 
 // ---------------------------------------------------------------------------
 // npm registry API response shape (fields we care about only)
@@ -43,6 +50,8 @@ import type { ParsedDependency } from "./interface.js";
 interface NpmPackageLatest {
   version?: string;
   deprecated?: string;
+  /** String or {type, url} — shape unwrapped by parseNpmRepositoryField(). */
+  repository?: unknown;
   [key: string]: unknown;
 }
 
@@ -59,6 +68,13 @@ export interface PackageMetadata {
   isDeprecated: boolean;
   /** The deprecation message, or null when not deprecated. */
   deprecationNote: string | null;
+  /**
+   * The package's own GitHub repo, resolved from registry metadata — null
+   * when the registry lookup failed, the field was absent, or it pointed
+   * somewhere other than github.com. Used by changelog-signals.ts (ADR
+   * 0029) to fetch that repo's own release notes, not this repo's.
+   */
+  sourceRepo: SourceRepoRef | null;
 }
 
 export interface NpmRegistryFetchResult {
@@ -116,6 +132,7 @@ export class NpmRegistryFetcher {
         latestVersion: result.latestVersion,
         isDeprecated: result.isDeprecated,
         deprecationNote: result.deprecationNote,
+        sourceRepo: result.sourceRepo,
       });
     }
 
@@ -203,17 +220,21 @@ export class NpmRegistryFetcher {
     }
 
     const pkg = body as NpmPackageLatest;
+    const sourceRepo = parseNpmRepositoryField(pkg.repository);
 
     const latestVersion =
       typeof pkg.version === "string" && pkg.version.trim() !== "" ? pkg.version.trim() : null;
 
     if (latestVersion === null) {
       // Not a hard failure — the package exists but has no version field.
+      // repository (and therefore sourceRepo) is independent of version,
+      // so it's still resolved here rather than discarded.
       return {
         packageName,
         latestVersion: null,
         isDeprecated: false,
         deprecationNote: null,
+        sourceRepo,
         warning:
           `npm registry response for "${packageName}" has no version field. ` +
           `Latest version will be recorded as unknown.`,
@@ -231,6 +252,7 @@ export class NpmRegistryFetcher {
       latestVersion,
       isDeprecated: deprecationNote !== null,
       deprecationNote,
+      sourceRepo,
       warning: undefined,
     };
   }
@@ -245,6 +267,7 @@ interface FetchOneResult {
   latestVersion: string | null;
   isDeprecated: boolean;
   deprecationNote: string | null;
+  sourceRepo: SourceRepoRef | null;
   /** Set when a non-fatal data-quality issue occurred. */
   warning: string | undefined;
 }
@@ -255,6 +278,7 @@ function failedResult(packageName: string, warning: string): FetchOneResult {
     latestVersion: null,
     isDeprecated: false,
     deprecationNote: null,
+    sourceRepo: null,
     warning,
   };
 }

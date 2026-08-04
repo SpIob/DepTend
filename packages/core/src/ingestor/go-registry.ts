@@ -2,12 +2,18 @@
  * Go Module Proxy Registry Metadata Fetcher
  *
  * For each parsed dependency, fetches latest-version metadata from the Go
- * module proxy to populate the same two dependencies-table fields
- * NpmRegistryFetcher/PyPIRegistryFetcher populate:
+ * module proxy to populate the same fields NpmRegistryFetcher/
+ * PyPIRegistryFetcher populate:
  *
  *   - latestVersion   — the current published version (e.g. "v1.9.0")
  *   - isDeprecated    — always false for Phase 7 (see below)
  *   - deprecationNote — always null for Phase 7 (see below)
+ *
+ * ...plus one field NOT persisted to the DB — `sourceRepo`, resolved
+ * directly from the module path itself (ADR 0029), not from any response
+ * field. Go module paths conventionally are a domain + owner + repo (e.g.
+ * "github.com/gorilla/mux"), so no registry round trip is even needed for
+ * this one — see parseSourceRepo() in source-repo.ts.
  *
  * API used: https://proxy.golang.org/<escaped-module-path>/@latest
  * No authentication required for public modules. No new runtime
@@ -59,6 +65,7 @@
 
 import type { ParsedDependency } from "./interface.js";
 import type { PackageMetadata } from "./registry.js";
+import { parseSourceRepo, type SourceRepoRef } from "./source-repo.js";
 
 // ---------------------------------------------------------------------------
 // Go module proxy @latest response shape (fields we care about only)
@@ -160,6 +167,7 @@ export class GoRegistryFetcher {
         // Always false/null for Phase 7 — see module docstring.
         isDeprecated: false,
         deprecationNote: null,
+        sourceRepo: result.sourceRepo,
       });
     }
 
@@ -204,6 +212,12 @@ export class GoRegistryFetcher {
   private async fetchOne(packageName: string): Promise<FetchOneResult> {
     const url = `${this.registryBase}/${encodeGoModulePath(packageName)}/@latest`;
 
+    // Unlike npm/PyPI, this needs no response data at all — the module
+    // path itself typically *is* the repo location (e.g.
+    // "github.com/gorilla/mux"). Resolved independent of the fetch below
+    // so it's still present even on a network failure or 404.
+    const sourceRepo = parseSourceRepo(packageName);
+
     let response: Response;
     try {
       response = await fetch(url);
@@ -211,6 +225,7 @@ export class GoRegistryFetcher {
       return failedResult(
         packageName,
         `Network error fetching Go module metadata for "${packageName}": ${String(err)}`,
+        sourceRepo,
       );
     }
 
@@ -219,6 +234,7 @@ export class GoRegistryFetcher {
         packageName,
         `Module "${packageName}" not found in the Go module proxy (404). ` +
           `It may be unpublished, private, or the module path may be incorrect.`,
+        sourceRepo,
       );
     }
 
@@ -226,6 +242,7 @@ export class GoRegistryFetcher {
       return failedResult(
         packageName,
         `Unexpected HTTP ${String(response.status)} fetching Go module metadata for "${packageName}".`,
+        sourceRepo,
       );
     }
 
@@ -236,6 +253,7 @@ export class GoRegistryFetcher {
       return failedResult(
         packageName,
         `Failed to parse Go module proxy response for "${packageName}": ${String(err)}`,
+        sourceRepo,
       );
     }
 
@@ -243,6 +261,7 @@ export class GoRegistryFetcher {
       return failedResult(
         packageName,
         `Go module proxy returned an unexpected response shape for "${packageName}".`,
+        sourceRepo,
       );
     }
 
@@ -259,6 +278,7 @@ export class GoRegistryFetcher {
       return {
         packageName,
         latestVersion: null,
+        sourceRepo,
         warning:
           `Go module proxy response for "${packageName}" has no Version field. ` +
           `Latest version will be recorded as unknown.`,
@@ -268,6 +288,7 @@ export class GoRegistryFetcher {
     return {
       packageName,
       latestVersion,
+      sourceRepo,
       warning: undefined,
     };
   }
@@ -280,14 +301,20 @@ export class GoRegistryFetcher {
 interface FetchOneResult {
   packageName: string;
   latestVersion: string | null;
+  sourceRepo: SourceRepoRef | null;
   /** Set when a non-fatal data-quality issue occurred. */
   warning: string | undefined;
 }
 
-function failedResult(packageName: string, warning: string): FetchOneResult {
+function failedResult(
+  packageName: string,
+  warning: string,
+  sourceRepo: SourceRepoRef | null = null,
+): FetchOneResult {
   return {
     packageName,
     latestVersion: null,
+    sourceRepo,
     warning,
   };
 }

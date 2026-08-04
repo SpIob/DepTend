@@ -15,8 +15,19 @@
  * MissionScoringContext — as of ADR 0011, schema.ts is the sole row-type
  * source, so no read-boundary conversion function is needed here anymore.
  *
+ * ADR 0029 (Step 5): generateMissionsForRepo() now optionally prefetches
+ * breaking-change signals for every candidate BEFORE db.transaction()
+ * opens — network calls to arbitrary third-party GitHub repos can't
+ * happen inside that transaction (ADR 0009's own reasoning for switching
+ * to neon-serverless applies here too: don't hold a Neon connection open
+ * across slow external I/O). sourceRepoByPackage/githubToken are both
+ * optional so this stays fully backward compatible: omit them and every
+ * candidate's ctx.effortSignals is undefined, identical to pre-Step-5
+ * behavior.
+ *
  * ADR: docs/adr/0008-mission-db-writer.md
  *      docs/adr/0011-schema-as-single-type-source.md
+ *      docs/adr/0029-breaking-change-signals.md
  */
 
 import { and, eq, sql } from "drizzle-orm";
@@ -28,13 +39,28 @@ import {
   missions,
   missionScores,
   repos,
+  type Advisory,
+  type Dependency,
 } from "../db/schema.js";
 import {
   computeMissionScore,
+  extractVersionFloor,
   type MissionScoreComputation,
   type MissionScoringContext,
 } from "./mission-scorer.js";
 import { generateMissionCopy } from "./mission-copy.js";
+// Scorer -> ingestor, same direction (and same reasoning) as
+// mission-scorer.ts's own EffortSignals type import — writer.ts is the
+// glue point ADR 0029 Decision 2 names explicitly: it already imports
+// mission-scorer.ts, so it's the natural place to resolve the floor and
+// call the prefetch, rather than adding a new cross-layer edge anywhere
+// else.
+import {
+  prefetchEffortSignals,
+  type EffortSignalRequest,
+  type EffortSignals,
+} from "../ingestor/changelog-signals.js";
+import type { SourceRepoRef } from "../ingestor/source-repo.js";
 
 // ---------------------------------------------------------------------------
 // Public API types
@@ -58,15 +84,38 @@ type DbOrTx = AnyNeonDb | AnyNeonTx;
 // MissionWriter
 // ---------------------------------------------------------------------------
 
+/**
+ * Same key shape prefetchEffortSignalsForCandidates() builds requests
+ * under and generateMissionsForRepo()'s per-candidate loop looks results
+ * up by — kept as one function so the two can never drift apart. "null"
+ * is a safe sentinel here (not a real npm/PyPI/Go version string) rather
+ * than String(null) === "null" being an accident.
+ */
+function buildSignalKey(dependencyId: string, targetVersion: string | null): string {
+  return `${dependencyId}:${targetVersion ?? "null"}`;
+}
+
 export class MissionWriter {
   constructor(private readonly db: AnyNeonDb) {}
 
   /**
    * Generates/refreshes vulnerability_fix missions for every is_affected
    * dependency_advisories row belonging to this repo. All-or-nothing per
-   * repo: wrapped in a single transaction.
+   * repo: the DB writes are wrapped in a single transaction.
+   *
+   * sourceRepoByPackage and githubToken are both optional (ADR 0029, Step
+   * 5) — omit them (or call with just repoId, as every pre-Step-5 caller
+   * still does) and every candidate's ctx.effortSignals stays undefined,
+   * identical to the old unconditional false/[] behavior. Pass
+   * sourceRepoByPackage (keyed by package name, built from the registry
+   * fetcher's already-in-memory result — see scripts/ingest.js) to
+   * actually resolve real signals.
    */
-  async generateMissionsForRepo(repoId: string): Promise<GenerateMissionsOutput> {
+  async generateMissionsForRepo(
+    repoId: string,
+    sourceRepoByPackage?: Map<string, SourceRepoRef | null>,
+    githubToken?: string | null,
+  ): Promise<GenerateMissionsOutput> {
     const repoRows = await this.db.select().from(repos).where(eq(repos.id, repoId));
     const repoRow = repoRows[0];
     if (repoRow === undefined) {
@@ -80,15 +129,37 @@ export class MissionWriter {
       .innerJoin(advisories, eq(dependencyAdvisories.advisoryId, advisories.id))
       .where(and(eq(dependencies.repoId, repoId), eq(dependencyAdvisories.isAffected, true)));
 
+    // ADR 0029, Step 5: prefetch BEFORE the transaction opens — see the
+    // module docstring for why this can't happen inside it. Undefined
+    // sourceRepoByPackage short-circuits to an empty map with zero
+    // network calls, not just zero resolved signals — the whole point of
+    // an optional parameter is that omitting it costs nothing.
+    const effortSignalsByKey =
+      sourceRepoByPackage === undefined
+        ? new Map<string, EffortSignals>()
+        : await this.prefetchEffortSignalsForCandidates(
+            candidateRows,
+            sourceRepoByPackage,
+            githubToken ?? null,
+          );
+
     let created = 0;
     let updated = 0;
 
     await this.db.transaction(async (tx) => {
       for (const row of candidateRows) {
+        const targetVersion = row.advisory.fixedVersion ?? row.dependency.latestVersion;
+        const signals = effortSignalsByKey.get(buildSignalKey(row.dependency.id, targetVersion));
+        // exactOptionalPropertyTypes: effortSignals?: EffortSignals means
+        // "may be absent," not "may be undefined" — Map.get()'s
+        // `T | undefined` return can't be assigned directly. Spreading
+        // conditionally omits the key entirely when there's nothing to
+        // report, rather than setting it to undefined.
         const ctx: MissionScoringContext = {
           dependency: row.dependency,
           advisory: row.advisory,
           repo: repoRow,
+          ...(signals !== undefined && { effortSignals: signals }),
         };
 
         const score = computeMissionScore(ctx);
@@ -114,6 +185,32 @@ export class MissionWriter {
     });
 
     return { created, updated, candidatesFound: candidateRows.length };
+  }
+
+  /**
+   * Builds one EffortSignalRequest per candidate — sourceRepo looked up by
+   * package name, currentFloor derived via mission-scorer.ts's own
+   * extractVersionFloor() (the exact floor semver_bump/pep440_bump already
+   * use, not a second, possibly-inconsistent estimate) — and resolves them
+   * all through changelog-signals.ts's bounded-concurrency batch fetch.
+   */
+  private async prefetchEffortSignalsForCandidates(
+    candidateRows: { dependency: Dependency; advisory: Advisory }[],
+    sourceRepoByPackage: Map<string, SourceRepoRef | null>,
+    githubToken: string | null,
+  ): Promise<Map<string, EffortSignals>> {
+    const requests: EffortSignalRequest[] = candidateRows.map((row) => {
+      const targetVersion = row.advisory.fixedVersion ?? row.dependency.latestVersion;
+      return {
+        key: buildSignalKey(row.dependency.id, targetVersion),
+        sourceRepo: sourceRepoByPackage.get(row.dependency.packageName) ?? null,
+        ecosystem: row.dependency.ecosystem,
+        currentFloor: extractVersionFloor(row.dependency.ecosystem, row.dependency.versionSpec),
+        targetVersion,
+      };
+    });
+
+    return prefetchEffortSignals(requests, githubToken);
   }
 
   // ---------------------------------------------------------------------------

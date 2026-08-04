@@ -16,6 +16,7 @@ import {
   deriveConfidence,
   buildConfidenceNotes,
   computeMissionScore,
+  extractVersionFloor,
   SCORING_VERSION,
   type MissionScoringContext,
 } from "./mission-scorer.js";
@@ -224,8 +225,50 @@ describe("buildEffortInputs", () => {
     expect(inputs.semver_bump).toBe("unknown");
   });
 
-  it("stubs has_migration_guide as false and breaking_change_signals as empty (ADR 0007 §5)", () => {
+  it("defaults to has_migration_guide: false and breaking_change_signals: [] when effortSignals is absent (ADR 0007 §5 / ADR 0029)", () => {
     const inputs = buildEffortInputs(makeContext());
+    expect(inputs.has_migration_guide).toBe(false);
+    expect(inputs.breaking_change_signals).toEqual([]);
+  });
+
+  it("uses prefetched effortSignals when present (ADR 0029)", () => {
+    const inputs = buildEffortInputs(
+      makeContext({
+        effortSignals: {
+          has_migration_guide: true,
+          breaking_change_signals: ["removed the old API"],
+          source_available: true,
+        },
+      }),
+    );
+    expect(inputs.has_migration_guide).toBe(true);
+    expect(inputs.breaking_change_signals).toEqual(["removed the old API"]);
+  });
+
+  it("falls back to false/[] when effortSignals resolved but found nothing (ADR 0029)", () => {
+    const inputs = buildEffortInputs(
+      makeContext({
+        effortSignals: {
+          has_migration_guide: false,
+          breaking_change_signals: [],
+          source_available: true,
+        },
+      }),
+    );
+    expect(inputs.has_migration_guide).toBe(false);
+    expect(inputs.breaking_change_signals).toEqual([]);
+  });
+
+  it("falls back to false/[] when effortSignals reflects an unavailable source (ADR 0029)", () => {
+    const inputs = buildEffortInputs(
+      makeContext({
+        effortSignals: {
+          has_migration_guide: false,
+          breaking_change_signals: [],
+          source_available: false,
+        },
+      }),
+    );
     expect(inputs.has_migration_guide).toBe(false);
     expect(inputs.breaking_change_signals).toEqual([]);
   });
@@ -427,6 +470,36 @@ describe("buildEcosystemValueInputs", () => {
 // deriveConfidenceFlags
 // ---------------------------------------------------------------------------
 
+describe("extractVersionFloor (ADR 0029)", () => {
+  it("returns the same floor npm's own bump inference uses, for npm", () => {
+    expect(extractVersionFloor("npm", "^4.17.0")).toBe("4.17.0");
+  });
+
+  it("returns the same floor for go (real SemVer, same function as npm)", () => {
+    expect(extractVersionFloor("go", "^1.8.0")).toBe("1.8.0");
+  });
+
+  it('returns null for an unconstrained npm range ("*")', () => {
+    expect(extractVersionFloor("npm", "*")).toBeNull();
+  });
+
+  it("returns null for an invalid npm range", () => {
+    expect(extractVersionFloor("npm", "not-a-range")).toBeNull();
+  });
+
+  it("returns the same floor pep440's own bump inference uses, for pypi", () => {
+    expect(extractVersionFloor("pypi", ">=2.25,<3")).toBe("2.25");
+  });
+
+  it('returns null for an unconstrained pypi specifier ("*")', () => {
+    expect(extractVersionFloor("pypi", "*")).toBeNull();
+  });
+
+  it("returns null for a pypi specifier with no lower-bound clause", () => {
+    expect(extractVersionFloor("pypi", "<5.4")).toBeNull();
+  });
+});
+
 describe("deriveConfidenceFlags", () => {
   it("sets no_lock_file from dependency.resolved_version, not lock_file_present (ADR 0007 §3)", () => {
     const withResolved = deriveConfidenceFlags(
@@ -460,7 +533,7 @@ describe("deriveConfidenceFlags", () => {
     expect(flags.registry_metadata_incomplete).toBe(true);
   });
 
-  it("always sets downstream_dependents_unavailable and breaking_change_signals_unavailable (ADR 0007 §5)", () => {
+  it("sets both downstream_dependents_unavailable and breaking_change_signals_unavailable when effortSignals is absent (ADR 0007 §5 / ADR 0029)", () => {
     const flags = deriveConfidenceFlags(
       makeContext({
         dependency: makeDependency({ resolvedVersion: "1.2.3", latestVersion: "1.4.0" }),
@@ -471,7 +544,47 @@ describe("deriveConfidenceFlags", () => {
     expect(flags.breaking_change_signals_unavailable).toBe(true);
   });
 
-  it("produces exactly the two structural flags for an otherwise-complete context, never zero", () => {
+  it("still sets breaking_change_signals_unavailable when effortSignals resolved but source_available is false (ADR 0029)", () => {
+    const flags = deriveConfidenceFlags(
+      makeContext({
+        effortSignals: {
+          has_migration_guide: false,
+          breaking_change_signals: [],
+          source_available: false,
+        },
+      }),
+    );
+    expect(flags.breaking_change_signals_unavailable).toBe(true);
+  });
+
+  it("does NOT set breaking_change_signals_unavailable when effortSignals resolved with source_available: true (ADR 0029)", () => {
+    const flags = deriveConfidenceFlags(
+      makeContext({
+        effortSignals: {
+          has_migration_guide: false,
+          breaking_change_signals: [],
+          source_available: true,
+        },
+      }),
+    );
+    expect(flags.breaking_change_signals_unavailable).toBeUndefined();
+  });
+
+  it("clearing breaking_change_signals_unavailable does not touch downstream_dependents_unavailable (ADR 0029 scope)", () => {
+    const flags = deriveConfidenceFlags(
+      makeContext({
+        effortSignals: {
+          has_migration_guide: false,
+          breaking_change_signals: [],
+          source_available: true,
+        },
+      }),
+    );
+    // Still unconditional — ADR 0006's gap is untouched by ADR 0029.
+    expect(flags.downstream_dependents_unavailable).toBe(true);
+  });
+
+  it("produces exactly the two structural flags for an otherwise-complete context when effortSignals is absent, never zero", () => {
     const flags = deriveConfidenceFlags(
       makeContext({
         dependency: makeDependency({ resolvedVersion: "1.2.3", latestVersion: "1.4.0" }),
@@ -480,6 +593,23 @@ describe("deriveConfidenceFlags", () => {
     );
     const flagCount = Object.values(flags).filter((v) => v === true).length;
     expect(flagCount).toBe(2);
+  });
+
+  it("drops to exactly one structural flag once a source_available effortSignals resolves (ADR 0029)", () => {
+    const flags = deriveConfidenceFlags(
+      makeContext({
+        dependency: makeDependency({ resolvedVersion: "1.2.3", latestVersion: "1.4.0" }),
+        advisory: makeAdvisory({ cvssScore: 9.0, fixedVersion: "1.2.4" }),
+        effortSignals: {
+          has_migration_guide: false,
+          breaking_change_signals: [],
+          source_available: true,
+        },
+      }),
+    );
+    const flagCount = Object.values(flags).filter((v) => v === true).length;
+    expect(flagCount).toBe(1);
+    expect(deriveConfidence(flags)).toBe("medium");
   });
 });
 
