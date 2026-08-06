@@ -1,6 +1,6 @@
 # ADR 0029 — Sourcing `has_migration_guide` / `breaking_change_signals` via GitHub Releases
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-08-03
 
 ---

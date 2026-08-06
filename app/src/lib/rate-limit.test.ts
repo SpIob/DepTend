@@ -104,6 +104,46 @@ describe("createRateLimiter", () => {
   });
 });
 
+describe("block logging (added 2026-08-06)", () => {
+  it("logs a single console.warn with the label on block, and not before", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const check = createRateLimiter(1, 5000, "test-label");
+
+    check("user-a");
+    expect(warnSpy).not.toHaveBeenCalled();
+
+    check("user-a");
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy.mock.calls[0]?.[0]).toContain("label=test-label");
+    expect(warnSpy.mock.calls[0]?.[0]).toContain("key=user-a");
+
+    warnSpy.mockRestore();
+  });
+
+  it("does not log anything for requests that stay under the limit", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const check = createRateLimiter(3, 5000, "test-label");
+
+    check("user-b");
+    check("user-b");
+    check("user-b");
+    expect(warnSpy).not.toHaveBeenCalled();
+
+    warnSpy.mockRestore();
+  });
+
+  it("defaults to label='rate-limit' when none is passed", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const check = createRateLimiter(1, 5000);
+
+    check("user-c");
+    check("user-c");
+    expect(warnSpy.mock.calls[0]?.[0]).toContain("label=rate-limit");
+
+    warnSpy.mockRestore();
+  });
+});
+
 describe("checkRepoSubmissionLimit", () => {
   it("allows 5 submissions per hour then blocks the 6th", () => {
     const key = `repo-test-${crypto.randomUUID()}`;
