@@ -19,9 +19,12 @@ import {
   getRepoByOwnerAndName,
   parseGithubUrl,
   submitRepo,
+  withdrawOwnRepo,
   type SubmitRepoParams,
 } from "./repos.js";
 import type { Repo } from "./schema.js";
+
+type WithdrawRepoDb = Parameters<typeof withdrawOwnRepo>[0];
 
 // ---------------------------------------------------------------------------
 // Mock DB
@@ -309,5 +312,74 @@ describe("getRepoByOwnerAndName", () => {
     const result = await getRepoByOwnerAndName(db, "octocat", "does-not-exist");
 
     expect(result).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// withdrawOwnRepo
+//
+// Same delete().where().returning() + optional recheck select().from()
+// .where().limit(1) shape as missions.test.ts's update()/recheck mock —
+// swapped for delete() since withdrawOwnRepo has nothing to .set().
+// ---------------------------------------------------------------------------
+
+describe("withdrawOwnRepo", () => {
+  interface WithdrawMockOptions {
+    /** Rows returned by delete().where().returning() — empty simulates no match. */
+    deleteResponse: unknown[];
+    /** Rows returned by the recheck select — only consumed if deleteResponse is empty. */
+    recheckResponse: unknown[];
+  }
+
+  function makeWithdrawMockDb(options: WithdrawMockOptions): WithdrawRepoDb {
+    const db = {
+      delete: (): unknown => ({
+        where: () => ({
+          returning: () => Promise.resolve(options.deleteResponse),
+        }),
+      }),
+      select: (): unknown => ({
+        from: () => fromResult(options.recheckResponse),
+      }),
+    };
+    return db as unknown as WithdrawRepoDb;
+  }
+
+  it("returns withdrawn when a matching pending/skipped row owned by the caller is deleted", async () => {
+    const db = makeWithdrawMockDb({ deleteResponse: [{ id: "repo-1" }], recheckResponse: [] });
+
+    const result = await withdrawOwnRepo(db, "repo-1", "octocat");
+
+    expect(result).toBe("withdrawn");
+  });
+
+  it("returns not_found when the repo doesn't exist at all", async () => {
+    const db = makeWithdrawMockDb({ deleteResponse: [], recheckResponse: [] });
+
+    const result = await withdrawOwnRepo(db, "repo-1", "octocat");
+
+    expect(result).toBe("not_found");
+  });
+
+  it("returns not_your_submission when the repo exists but was submitted by someone else", async () => {
+    const db = makeWithdrawMockDb({
+      deleteResponse: [],
+      recheckResponse: [{ submittedBy: "someone-else" }],
+    });
+
+    const result = await withdrawOwnRepo(db, "repo-1", "octocat");
+
+    expect(result).toBe("not_your_submission");
+  });
+
+  it("returns already_indexed when the caller's own repo exists but is past pending/skipped", async () => {
+    const db = makeWithdrawMockDb({
+      deleteResponse: [],
+      recheckResponse: [{ submittedBy: "octocat" }],
+    });
+
+    const result = await withdrawOwnRepo(db, "repo-1", "octocat");
+
+    expect(result).toBe("already_indexed");
   });
 });

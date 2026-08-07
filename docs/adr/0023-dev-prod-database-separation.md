@@ -56,3 +56,48 @@ That dispatch is a real, remote GitHub Actions run. It always executes against t
 **Fix:** leave `GH_DISPATCH_TOKEN`/`GH_REPO` unset in local `.env.local`. `triggerIngestion()` already treats a missing token/repo as a graceful no-op (`{ ok: false }`, best-effort by original design), so local submission now just creates the row in `dev` and reports "will be processed on the next scheduled run" — inaccurate in the sense that no cron reads the `dev` branch, but harmless. Ingest a locally-submitted repo the way the CLI/manual path was always meant to be used: `node --env-file=.env.local scripts/ingest.js --repo-id <uuid> --triggered-by manual`, run entirely locally against the dev branch, no GitHub Actions involved. `GH_DISPATCH_TOKEN`/`GH_REPO` stay set only in Vercel's Production environment, where the submitter's DB and the workflow's DB are correctly the same branch.
 
 No code change needed for this either — same as the rest of this ADR, purely a local `.env.local` configuration correction. `.env.example` and the README's local dev steps were updated in the same pass.
+
+## Addendum (2026-08-06) — a runbook for the still-open cleanup, not the cleanup itself
+
+Roadmap's own Now-list still carries this ADR's "existing polluted data" cleanup as unresolved, alongside a reminder that this ADR's core claim (local submissions invisible to production) hasn't been independently re-verified by Mico either. Neither of those is something that can be closed from here: this project's own network access has no path to the real Neon console, and — more importantly — deciding which rows are "was throwaway local testing" versus "a real, intentionally-kept fixture repo" is exactly the judgment call this ADR's original text already said it has to be, not something to automate. What follows is a reviewable identification query plus a guarded delete template, so that judgment call is easy to make and safe to act on — not an attempt to make it here.
+
+**Cascade chain re-confirmed directly against the live `schema.ts`**, not just trusted from this ADR's original prose: `dependencies.repo_id`, `missions.repo_id`, `ingestion_runs.repo_id`, and `repo_bookmarks.repo_id` (added since this ADR was written, ADR 0027) all carry `onDelete: "cascade"` back to `repos.id`; `dependency_advisories` and `mission_scores` cascade in turn from `dependencies`/`missions`. `advisories` has no `repo_id` at all — it's global, shared by `osv_id` across every repo that happens to depend on the same vulnerable package — so a repo delete correctly leaves it untouched. A single `DELETE FROM repos WHERE id IN (...)` is the complete operation; nothing needs a second pass.
+
+**Step 1 — identify, read-only:**
+
+```sql
+SELECT
+  r.id,
+  r.github_url,
+  r.submitted_by,
+  r.created_at,
+  r.ingestion_status,
+  COUNT(m.id) AS mission_count
+FROM repos r
+LEFT JOIN missions m ON m.repo_id = r.id
+GROUP BY r.id
+ORDER BY r.created_at ASC;
+```
+
+Rows older than **2026-07-25** (this ADR's own date) are the real candidates — everything from that date forward was submitted after the branch split existed, so it's either a genuine post-split submission or one of the deliberately-seeded launch repos (Marketing_Plan.md's Week 0 seeding happened July 30, after the cutoff).
+
+**Known false positives to leave alone even if old** — this project's own standing verification fixtures, referenced by name across multiple ADRs and still actively reused, not pollution: anything named `deptend-test-fixture`, `deptend-pypi-test-fixture`, `deptend-nullrepo-test-fixture`, or `SpIob/StockWatch` (Phase 4's CLI-vs-dashboard cross-validation repo). A name match isn't a substitute for actually looking at the row, but it's a reason to slow down before including one in step 2.
+
+**Step 2 — delete, only after step 1's output has been read and specific UUIDs chosen by hand:**
+
+```sql
+BEGIN;
+
+DELETE FROM repos WHERE id IN (
+  '00000000-0000-0000-0000-000000000000' -- replace with real UUIDs from step 1
+);
+
+-- Check the reported row count matches the number of UUIDs listed above
+-- before committing.
+
+COMMIT; -- or ROLLBACK if anything looks off
+```
+
+Deliberately never a date- or pattern-based `WHERE`, even though one would be shorter — an explicit `IN (...)` list is the only form where "did I just delete the wrong thing" is checkable before it's irreversible.
+
+This closes the "no tool exists to do this safely" gap. It does not close the item itself — running Step 1, doing the actual reading, and choosing what belongs in Step 2 is still Mico's call, same as this ADR said on the day it was written.
