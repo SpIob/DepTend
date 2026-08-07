@@ -1,0 +1,58 @@
+import { NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import { getDb } from "@/lib/db";
+import { withdrawOwnRepo } from "@deptend/core/db/repos.js";
+import { isValidUuid } from "@deptend/core/db/validation.js";
+import { checkMissionActionLimit } from "@/lib/rate-limit";
+
+export async function POST(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> },
+): Promise<Response> {
+  const session = await getServerSession(authOptions);
+  const login = session?.user?.login;
+  if (login === undefined) {
+    return NextResponse.json(
+      { error: "Sign in with GitHub to withdraw a repo submission." },
+      { status: 401 },
+    );
+  }
+
+  // Same shared pool as claim/unclaim/bookmark/unbookmark (ADR 0027) — a
+  // rare, self-correcting action, not worth its own dedicated bucket.
+  const rateLimit = checkMissionActionLimit(login);
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { error: "Too many actions. Try again shortly." },
+      { status: 429, headers: { "Retry-After": String(rateLimit.retryAfterSeconds) } },
+    );
+  }
+
+  const { id } = await params;
+  if (!isValidUuid(id)) {
+    return NextResponse.json({ error: "Invalid repo id." }, { status: 400 });
+  }
+
+  const outcome = await withdrawOwnRepo(getDb(), id, login);
+
+  switch (outcome) {
+    case "withdrawn":
+      return NextResponse.json({ message: "Submission withdrawn." }, { status: 200 });
+    case "not_found":
+      return NextResponse.json({ error: "Repo not found." }, { status: 404 });
+    case "not_your_submission":
+      return NextResponse.json(
+        { error: "Only the person who submitted this repo can withdraw it." },
+        { status: 403 },
+      );
+    case "already_indexed":
+      return NextResponse.json(
+        {
+          error:
+            "This repo has already been indexed and may carry real missions — it can no longer be self-withdrawn.",
+        },
+        { status: 409 },
+      );
+  }
+}

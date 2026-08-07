@@ -51,6 +51,22 @@
       "import": "./dist/ingestor/local-go.js",
       "types": "./dist/ingestor/local-go.d.ts"
     },
+    "./ingestor/npm.js": {
+      "import": "./dist/ingestor/npm.js",
+      "types": "./dist/ingestor/npm.d.ts"
+    },
+    "./ingestor/pypi.js": {
+      "import": "./dist/ingestor/pypi.js",
+      "types": "./dist/ingestor/pypi.d.ts"
+    },
+    "./ingestor/go.js": {
+      "import": "./dist/ingestor/go.js",
+      "types": "./dist/ingestor/go.d.ts"
+    },
+    "./ingestor/manifest-check.js": {
+      "import": "./dist/ingestor/manifest-check.js",
+      "types": "./dist/ingestor/manifest-check.d.ts"
+    },
     "./ingestor/osv.js": {
       "import": "./dist/ingestor/osv.js",
       "types": "./dist/ingestor/osv.d.ts"

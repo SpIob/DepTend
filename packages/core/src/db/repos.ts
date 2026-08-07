@@ -7,7 +7,7 @@
  * from ADR 0012.
  */
 
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { repos, type Repo } from "./schema.js";
 import type { ReadonlyDb } from "./queries.js";
 
@@ -134,4 +134,55 @@ export async function submitRepo(
   }
 
   return { outcome: "created", repo: inserted };
+}
+
+export type WithdrawRepoOutcome =
+  "withdrawn" | "not_found" | "not_your_submission" | "already_indexed";
+
+/**
+ * Deletes a repo the caller submitted themselves — but only while it's
+ * still unindexed ("pending" or "skipped"). Once a repo reaches "complete"
+ * it may carry real missions other people can see or claim, and is no
+ * longer just "their" submission to walk back; "running" is deliberately
+ * excluded too, to avoid deleting a row out from under an in-flight
+ * ingestion job. A "failed" repo is left to resolvePending()'s existing
+ * automatic retry rather than added here (Roadmap Now #4, Option B).
+ *
+ * Same shape as unclaimMission()/unbookmarkRepo(): a single guarded
+ * DELETE...WHERE (no transaction needed — neon-http doesn't support one,
+ * ADR 0009, and a single guarded statement is already atomic), with a
+ * follow-up SELECT only when the delete matches zero rows, to distinguish
+ * "doesn't exist" from "exists but isn't yours / isn't withdrawable" —
+ * the same distinction unclaimMission() draws for not_claimed_by_you.
+ */
+export async function withdrawOwnRepo(
+  db: ReadonlyDb,
+  repoId: string,
+  requestingUser: string,
+): Promise<WithdrawRepoOutcome> {
+  const [deleted] = await db
+    .delete(repos)
+    .where(
+      and(
+        eq(repos.id, repoId),
+        eq(repos.submittedBy, requestingUser),
+        inArray(repos.ingestionStatus, ["pending", "skipped"]),
+      ),
+    )
+    .returning({ id: repos.id });
+
+  if (deleted !== undefined) {
+    return "withdrawn";
+  }
+
+  const [existing] = await db
+    .select({ submittedBy: repos.submittedBy })
+    .from(repos)
+    .where(eq(repos.id, repoId))
+    .limit(1);
+
+  if (existing === undefined) {
+    return "not_found";
+  }
+  return existing.submittedBy === requestingUser ? "already_indexed" : "not_your_submission";
 }

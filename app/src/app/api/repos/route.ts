@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { parseGithubUrl, submitRepo } from "@deptend/core/db/repos.js";
+import { checkSubmittableRepo } from "@deptend/core/ingestor/manifest-check.js";
 import { triggerIngestion } from "@/lib/github-dispatch";
 import { checkRepoSubmissionLimit } from "@/lib/rate-limit";
 
@@ -48,6 +49,34 @@ export async function POST(request: Request): Promise<Response> {
       { error: "That doesn't look like a public GitHub repo URL (github.com/owner/repo)." },
       { status: 400 },
     );
+  }
+
+  // Manifest pre-check (Roadmap "Now #4", Option A) — reject before a row
+  // (and a cap slot) is created at all, rather than letting a repo with no
+  // analyzable manifest quietly land as ingestionStatus: "skipped" later.
+  //
+  // Reuses GITHUB_TOKEN — already in .env.example for exactly this purpose
+  // ("avoid 60 req/hr rate limit"), already used by scripts/ingest.js and
+  // the CLI for the identical fetchGitHubRepoMeta call. Not previously
+  // read anywhere in /app, though, so the real, honest decision point
+  // isn't "invent a token" — it's whether GITHUB_TOKEN is actually set as
+  // a Vercel env var (distinct from GitHub Actions' own auto-injected
+  // GITHUB_TOKEN, which only exists inside Actions runs and was never
+  // available here). If it isn't set in Vercel, this runs unauthenticated
+  // (60 req/hr, shared globally across all of /app's traffic, not
+  // per-user) — flagged here, not silently assumed either way.
+  // GH_DISPATCH_TOKEN is deliberately NOT used for this: it's a
+  // fine-grained PAT scoped to this project's own repo for
+  // workflow_dispatch, and fine-grained PATs 403 on repos outside their
+  // grant list even when the target repo is public.
+  const manifestCheck = await checkSubmittableRepo(
+    parsed.owner,
+    parsed.name,
+    process.env.GITHUB_TOKEN ?? null,
+  );
+  if (!manifestCheck.ok) {
+    const status = manifestCheck.reason === "no_manifest" ? 400 : 503;
+    return NextResponse.json({ error: manifestCheck.message }, { status });
   }
 
   const maxRepos = Number.parseInt(process.env.NEXT_PUBLIC_MAX_REPOS ?? "150", 10);

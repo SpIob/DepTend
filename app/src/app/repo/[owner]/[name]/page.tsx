@@ -12,6 +12,7 @@ import { MissionBoard } from "@/components/mission-board";
 import { parseMissionBoardQuery } from "@/lib/mission-board-query";
 import { AuthStatus } from "@/components/auth-status";
 import { BookmarkToggle } from "@/components/bookmark-toggle";
+import { WithdrawButton } from "@/components/withdraw-button";
 import { EcosystemBadge } from "@/components/ecosystem-badge";
 import { ingestionStatusNote } from "@/lib/ingestion-status";
 
@@ -127,7 +128,14 @@ export default async function RepoPage({
       </header>
 
       {statusNote !== null ? (
-        <EmptyState note={statusNote} />
+        <>
+          <EmptyState note={statusNote} />
+          <WithdrawButton
+            repoId={repo.id}
+            submittedBy={repo.submittedBy}
+            ingestionStatus={repo.ingestionStatus}
+          />
+        </>
       ) : missions.length === 0 ? (
         <EmptyState note={null} />
       ) : (
