@@ -8,7 +8,7 @@
  */
 
 import { and, eq, inArray, sql } from "drizzle-orm";
-import { repos, type Repo } from "./schema.js";
+import { repos, type IngestionStatus, type Repo } from "./schema.js";
 import type { ReadonlyDb } from "./queries.js";
 
 export interface ParsedGithubUrl {
@@ -137,7 +137,12 @@ export async function submitRepo(
 }
 
 export type WithdrawRepoOutcome =
-  "withdrawn" | "not_found" | "not_your_submission" | "already_indexed";
+  | "withdrawn"
+  | "not_found"
+  | "not_your_submission"
+  | "ingestion_in_progress"
+  | "ingestion_failed_will_retry"
+  | "already_indexed";
 
 /**
  * Deletes a repo the caller submitted themselves — but only while it's
@@ -152,8 +157,18 @@ export type WithdrawRepoOutcome =
  * DELETE...WHERE (no transaction needed — neon-http doesn't support one,
  * ADR 0009, and a single guarded statement is already atomic), with a
  * follow-up SELECT only when the delete matches zero rows, to distinguish
- * "doesn't exist" from "exists but isn't yours / isn't withdrawable" —
- * the same distinction unclaimMission() draws for not_claimed_by_you.
+ * "doesn't exist" from "exists but isn't yours / isn't withdrawable".
+ *
+ * Unlike unclaimMission()'s single not_claimed_by_you bucket — which is
+ * correct there because the caller's remedy really is identical either
+ * way ("nothing to unclaim on their behalf") — the three non-withdrawable
+ * statuses here don't share one remedy, so they aren't collapsed into one
+ * outcome: "running" resolves itself shortly, "failed" is retried
+ * automatically by resolvePending() with no action needed, and "complete"
+ * is genuinely permanent. Collapsing them previously meant a "running" or
+ * "failed" repo got told "already indexed — can no longer be
+ * self-withdrawn," which is false for both: neither has been indexed, and
+ * neither is a dead end.
  */
 export async function withdrawOwnRepo(
   db: ReadonlyDb,
@@ -176,7 +191,7 @@ export async function withdrawOwnRepo(
   }
 
   const [existing] = await db
-    .select({ submittedBy: repos.submittedBy })
+    .select({ submittedBy: repos.submittedBy, ingestionStatus: repos.ingestionStatus })
     .from(repos)
     .where(eq(repos.id, repoId))
     .limit(1);
@@ -184,5 +199,36 @@ export async function withdrawOwnRepo(
   if (existing === undefined) {
     return "not_found";
   }
-  return existing.submittedBy === requestingUser ? "already_indexed" : "not_your_submission";
+  if (existing.submittedBy !== requestingUser) {
+    return "not_your_submission";
+  }
+  return statusToOutcome(existing.ingestionStatus);
+}
+
+/**
+ * Maps the caller's own non-withdrawable repo to the outcome that
+ * describes *why* — see the "unlike unclaimMission()" note above. Only
+ * reachable for a status the guarded DELETE didn't already handle, i.e.
+ * anything other than "pending"/"skipped"; those two are still listed
+ * explicitly (falling back to the safest, most conservative outcome)
+ * rather than left for a default branch, so this stays exhaustive and a
+ * future ingestion_status value can't silently fall through unnoticed.
+ */
+function statusToOutcome(status: IngestionStatus): WithdrawRepoOutcome {
+  switch (status) {
+    case "running":
+      return "ingestion_in_progress";
+    case "failed":
+      return "ingestion_failed_will_retry";
+    case "complete":
+      return "already_indexed";
+    case "pending":
+    case "skipped":
+      // Unreachable in practice — the guarded DELETE above already
+      // covers both. Reaching this would mean the row's status changed
+      // between the DELETE and this SELECT; "already_indexed" is the
+      // safest default (a firm "no" rather than implying a wait/retry
+      // that may not be coming).
+      return "already_indexed";
+  }
 }

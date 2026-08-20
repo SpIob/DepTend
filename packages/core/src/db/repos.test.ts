@@ -372,14 +372,36 @@ describe("withdrawOwnRepo", () => {
     expect(result).toBe("not_your_submission");
   });
 
-  it("returns already_indexed when the caller's own repo exists but is past pending/skipped", async () => {
+  it("returns already_indexed when the caller's own repo is complete", async () => {
     const db = makeWithdrawMockDb({
       deleteResponse: [],
-      recheckResponse: [{ submittedBy: "octocat" }],
+      recheckResponse: [{ submittedBy: "octocat", ingestionStatus: "complete" }],
     });
 
     const result = await withdrawOwnRepo(db, "repo-1", "octocat");
 
     expect(result).toBe("already_indexed");
+  });
+
+  it("returns ingestion_in_progress, not already_indexed, when the caller's own repo is running", async () => {
+    const db = makeWithdrawMockDb({
+      deleteResponse: [],
+      recheckResponse: [{ submittedBy: "octocat", ingestionStatus: "running" }],
+    });
+
+    const result = await withdrawOwnRepo(db, "repo-1", "octocat");
+
+    expect(result).toBe("ingestion_in_progress");
+  });
+
+  it("returns ingestion_failed_will_retry, not already_indexed, when the caller's own repo failed", async () => {
+    const db = makeWithdrawMockDb({
+      deleteResponse: [],
+      recheckResponse: [{ submittedBy: "octocat", ingestionStatus: "failed" }],
+    });
+
+    const result = await withdrawOwnRepo(db, "repo-1", "octocat");
+
+    expect(result).toBe("ingestion_failed_will_retry");
   });
 });

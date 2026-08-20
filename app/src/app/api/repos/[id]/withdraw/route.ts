@@ -46,6 +46,22 @@ export async function POST(
         { error: "Only the person who submitted this repo can withdraw it." },
         { status: 403 },
       );
+    case "ingestion_in_progress":
+      return NextResponse.json(
+        {
+          error:
+            "This repo is being ingested right now and can't be withdrawn mid-run — try again once it finishes.",
+        },
+        { status: 409 },
+      );
+    case "ingestion_failed_will_retry":
+      return NextResponse.json(
+        {
+          error:
+            "This submission failed and will be retried automatically on the next ingestion run — it can't be withdrawn while a retry is pending.",
+        },
+        { status: 409 },
+      );
     case "already_indexed":
       return NextResponse.json(
         {
