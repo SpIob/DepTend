@@ -202,6 +202,8 @@ DepTend is live and under active development — new features and fixes ship reg
 
 This is currently a solo-maintained project without a formal contribution process yet. Looking for a way to help without maintaining anything yourself? The [rescue board](#the-rescue-board) is the fastest way in — claim an open mission on any indexed repo. Issues and discussion are welcome via the GitHub repo's issue tracker (also used as the project's task board — no external project management tool, per the project's zero-budget/solo-dev principles).
 
+**Documentation convention:** [`CHANGELOG.md`](CHANGELOG.md) is the condensed, skimmable index of what shipped and when — full reasoning, alternatives considered, and retroactive fixes live in the corresponding [ADR(s)](docs/adr/) instead of being duplicated there. Any change that writes a new ADR under the project's own standing rule (schema change, scoring-algorithm change, or another major user/dev-facing change) gets a matching one- or two-line `CHANGELOG.md` entry in the same commit or PR — added to the current "Post-Phase N" / `[Unreleased]` section at the top, not backfilled later. This keeps the changelog from drifting the way `docs/data-model/README.md` did.
+
 ## License
 
 MIT — see [`LICENSE`](LICENSE).
