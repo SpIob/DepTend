@@ -1,6 +1,6 @@
 # ADR 0032 — Sourcing `downstream_dependents` via libraries.io
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-08-22
 
 ---

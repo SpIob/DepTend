@@ -1,6 +1,6 @@
 # ADR 0031: Server-side filtering and pagination for the board-wide mission listing
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-22
 - **Related:** ADR 0017 (ranking tie-break bucketing), ADR 0018 (final tie-break), ADR 0027
   (repo directory / per-repo boards), ADR 0025 (rate limiting), known-issues list in AGENTS.md

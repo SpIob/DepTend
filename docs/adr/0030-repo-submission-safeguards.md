@@ -1,6 +1,6 @@
 # ADR 0030 — Repo-Submission Safeguards: Manifest Pre-Check and Self-Service Withdrawal
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-08-07
 **Phase:** none — standalone, post-plan session work (Roadmap "Now #4")
 
