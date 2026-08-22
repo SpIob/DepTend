@@ -25,9 +25,17 @@
  * candidate's ctx.effortSignals is undefined, identical to pre-Step-5
  * behavior.
  *
+ * ADR 0032: the same prefetch-before-transaction shape now also covers
+ * downstream_dependents — one paced libraries.io call for the analyzed
+ * repo's own published package(s) (max across a monorepo's links), gated
+ * on an optional librariesIoApiKey. Omit it and every candidate's
+ * ctx.downstreamDependents stays absent: identical to pre-ADR-0032
+ * behavior.
+ *
  * ADR: docs/adr/0008-mission-db-writer.md
  *      docs/adr/0011-schema-as-single-type-source.md
  *      docs/adr/0029-breaking-change-signals.md
+ *      docs/adr/0032-downstream-dependents.md
  */
 
 import { and, eq, sql } from "drizzle-orm";
@@ -61,6 +69,7 @@ import {
   type EffortSignals,
 } from "../ingestor/changelog-signals.js";
 import type { SourceRepoRef } from "../ingestor/source-repo.js";
+import { fetchDownstreamDependents } from "../ingestor/downstream-dependents.js";
 
 // ---------------------------------------------------------------------------
 // Public API types
@@ -71,6 +80,8 @@ export interface GenerateMissionsOutput {
   updated: number;
   /** is_affected dependency_advisories rows found for this repo — for logging */
   candidatesFound: number;
+  /** Non-fatal downstream-dependents lookup observations (ADR 0032) — for logging */
+  warnings: string[];
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -103,18 +114,19 @@ export class MissionWriter {
    * dependency_advisories row belonging to this repo. All-or-nothing per
    * repo: the DB writes are wrapped in a single transaction.
    *
-   * sourceRepoByPackage and githubToken are both optional (ADR 0029, Step
-   * 5) — omit them (or call with just repoId, as every pre-Step-5 caller
-   * still does) and every candidate's ctx.effortSignals stays undefined,
-   * identical to the old unconditional false/[] behavior. Pass
-   * sourceRepoByPackage (keyed by package name, built from the registry
-   * fetcher's already-in-memory result — see scripts/ingest.js) to
-   * actually resolve real signals.
+   * sourceRepoByPackage, githubToken, and librariesIoApiKey are all
+   * optional (ADR 0029 Step 5 / ADR 0032) — omit them (or call with just
+   * repoId, as pre-Step-5 callers still do) and every candidate's
+   * ctx.effortSignals stays undefined and every ctx.downstreamDependents
+   * stays absent: identical to the old unconditional false/[] + null +
+   * both-flags-set behavior. Pass librariesIoApiKey to actually resolve
+   * downstream_dependents for this repo's own published package.
    */
   async generateMissionsForRepo(
     repoId: string,
     sourceRepoByPackage?: Map<string, SourceRepoRef | null>,
     githubToken?: string | null,
+    librariesIoApiKey?: string | null,
   ): Promise<GenerateMissionsOutput> {
     const repoRows = await this.db.select().from(repos).where(eq(repos.id, repoId));
     const repoRow = repoRows[0];
@@ -143,6 +155,23 @@ export class MissionWriter {
             githubToken ?? null,
           );
 
+    // ADR 0032: one paced libraries.io listing (1–5 requests) for the
+    // analyzed repo's own published package(s) — also before the
+    // transaction opens, same reasoning as above. Skipped entirely with
+    // zero network calls when no key was passed or when there are no
+    // candidates to score; any failure inside fetchDownstreamDependents
+    // is non-fatal by contract and surfaces as warnings instead.
+    let downstreamDependents: number | undefined;
+    let downstreamWarnings: string[] = [];
+    if (librariesIoApiKey != null && candidateRows.length > 0) {
+      const dependentsResult = await fetchDownstreamDependents(
+        { owner: repoRow.owner, name: repoRow.name },
+        librariesIoApiKey,
+      );
+      downstreamDependents = dependentsResult.count ?? undefined;
+      downstreamWarnings = dependentsResult.warnings;
+    }
+
     let created = 0;
     let updated = 0;
 
@@ -160,6 +189,7 @@ export class MissionWriter {
           advisory: row.advisory,
           repo: repoRow,
           ...(signals !== undefined && { effortSignals: signals }),
+          ...(downstreamDependents !== undefined && { downstreamDependents }),
         };
 
         const score = computeMissionScore(ctx);
@@ -184,7 +214,12 @@ export class MissionWriter {
       }
     });
 
-    return { created, updated, candidatesFound: candidateRows.length };
+    return {
+      created,
+      updated,
+      candidatesFound: candidateRows.length,
+      warnings: downstreamWarnings,
+    };
   }
 
   /**

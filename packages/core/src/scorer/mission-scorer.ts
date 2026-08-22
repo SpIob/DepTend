@@ -12,6 +12,7 @@
  * ADR: docs/adr/0007-mission-score-writing.md (mapping, confidence, scope)
  *      docs/adr/0006-scoring-algorithm.md (formulas)
  *      docs/adr/0029-breaking-change-signals.md (effortSignals, Step 4)
+ *      docs/adr/0032-downstream-dependents.md (downstreamDependents)
  */
 
 import semver from "semver";
@@ -73,6 +74,17 @@ export interface MissionScoringContext {
    * before that step lands.
    */
   effortSignals?: EffortSignals;
+  /**
+   * Prefetched downstream-dependent count for the *analyzed repo's* own
+   * published package(s) (ADR 0032) — undefined means "the caller never
+   * attempted it," or attempted and couldn't resolve a published package
+   * (no key, unknown to libraries.io, fetch failed). Both keep
+   * downstream_dependents null and downstream_dependents_unavailable set,
+   * identical to pre-ADR-0032 behavior. A present value — including a
+   * genuine 0 — is real, checked data: the flag clears and the ecosystem
+   * value scorer's with-downstream weighting applies.
+   */
+  downstreamDependents?: number;
 }
 
 export interface MissionScoreComputation {
@@ -381,8 +393,9 @@ export function buildEcosystemValueInputs(ctx: MissionScoringContext): Ecosystem
   return {
     repo_stars: ctx.repo.stars,
     open_issues_count: ctx.repo.openIssuesCount,
-    // No data source ingested yet — see ADR 0006.
-    downstream_dependents: null,
+    // ADR 0032: real count when the caller prefetched one (including a
+    // genuine 0); unchanged null default when it didn't or nothing resolved.
+    downstream_dependents: ctx.downstreamDependents ?? null,
   };
 }
 
@@ -406,9 +419,17 @@ export function deriveConfidenceFlags(ctx: MissionScoringContext): ConfidenceFla
     flags.registry_metadata_incomplete = true;
   }
 
-  // downstream_dependents: still no data source (ADR 0006) — out of scope
-  // for ADR 0029, unconditional unlike the flag below.
-  flags.downstream_dependents_unavailable = true;
+  // ADR 0032: conditional, not unconditional. Set when the caller never
+  // attempted the prefetch (downstreamDependents absent — the pre-ADR-0032
+  // behavior, and still true for the CLI, which has no API keys by design)
+  // or genuinely couldn't resolve the analyzed repo's published package
+  // via libraries.io. A repo whose package *did* resolve correctly leaves
+  // this unset even when the count is a genuine 0 — "checked, found
+  // nothing" is real, higher-confidence information, not a gap (same
+  // philosophy as ADR 0029 Decision 4).
+  if (ctx.downstreamDependents === undefined) {
+    flags.downstream_dependents_unavailable = true;
+  }
 
   // ADR 0029 Decision 4: conditional, not unconditional, as of Step 4.
   // Set when the caller never attempted the prefetch (effortSignals
@@ -457,7 +478,7 @@ export function buildConfidenceNotes(flags: ConfidenceFlags): string[] {
   }
   if (flags.downstream_dependents_unavailable === true) {
     notes.push(
-      "The number of packages that depend on this one isn't tracked yet, so ecosystem value is based on stars and issue activity only.",
+      "The number of packages depending on this repo's published package couldn't be checked, so ecosystem value is based on stars and issue activity only.",
     );
   }
   if (flags.breaking_change_signals_unavailable === true) {

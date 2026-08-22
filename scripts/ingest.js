@@ -17,9 +17,13 @@
  *                   the repo if not already present (optional)
  *
  * Environment variables:
- *   DATABASE_URL    Required. Pooled Neon connection string (PgBouncer).
- *   GITHUB_TOKEN    Optional but strongly recommended. Raises the GitHub API
- *                   rate limit from 60 to 5,000 requests/hour.
+ *   DATABASE_URL           Required. Pooled Neon connection string (PgBouncer).
+ *   GITHUB_TOKEN           Optional but strongly recommended. Raises the GitHub API
+ *                          rate limit from 60 to 5,000 requests/hour.
+ *   LIBRARIES_IO_API_KEY   Optional. Free-tier libraries.io key — enables the
+ *                          downstream_dependents prefetch (ADR 0032). Without
+ *                          it, downstream_dependents stays null on every
+ *                          mission and its confidence flag stays set.
  *
  * Exit codes:
  *   0  All targeted repos processed successfully (warnings are non-fatal).
@@ -42,6 +46,9 @@
  * already-fetched sourceRepo field, not a second registry round trip —
  * so it can prefetch each candidate dependency's own breaking-change
  * signals before its DB transaction opens.
+ * ADR 0032: it also receives LIBRARIES_IO_API_KEY, prefetching the
+ * analyzed repo's downstream_dependents count the same way — one paced
+ * call per repo, before the transaction, best-effort.
  */
 
 import { Pool } from "@neondatabase/serverless";
@@ -91,6 +98,15 @@ async function main() {
       "warn",
       "GITHUB_TOKEN is not set. GitHub API calls will be unauthenticated " +
         "(60 req/hr limit). Set GITHUB_TOKEN to raise the limit to 5,000 req/hr.",
+    );
+  }
+
+  const librariesIoApiKey = process.env["LIBRARIES_IO_API_KEY"] ?? null;
+  if (!librariesIoApiKey) {
+    log(
+      "warn",
+      "LIBRARIES_IO_API_KEY is not set. downstream_dependents will stay unavailable " +
+        "(flag set) on every mission this run (ADR 0032).",
     );
   }
 
@@ -332,7 +348,12 @@ async function ingestRepo(
         output.repoId,
         sourceRepoByPackage,
         githubToken,
+        librariesIoApiKey,
       );
+
+      if (missionOutput.warnings.length > 0) {
+        logWarnings(label, missionOutput.warnings);
+      }
 
       log("info", `[${label}] Missions done`, {
         candidatesFound: missionOutput.candidatesFound,

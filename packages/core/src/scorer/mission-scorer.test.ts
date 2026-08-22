@@ -464,6 +464,16 @@ describe("buildEcosystemValueInputs", () => {
     expect(inputs.open_issues_count).toBe(17);
     expect(inputs.downstream_dependents).toBeNull();
   });
+
+  it("carries a prefetched downstream_dependents count through (ADR 0032)", () => {
+    const inputs = buildEcosystemValueInputs(makeContext({ downstreamDependents: 4320 }));
+    expect(inputs.downstream_dependents).toBe(4320);
+  });
+
+  it("carries a genuine 0 through as 0, not null (ADR 0032)", () => {
+    const inputs = buildEcosystemValueInputs(makeContext({ downstreamDependents: 0 }));
+    expect(inputs.downstream_dependents).toBe(0);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -533,7 +543,7 @@ describe("deriveConfidenceFlags", () => {
     expect(flags.registry_metadata_incomplete).toBe(true);
   });
 
-  it("sets both downstream_dependents_unavailable and breaking_change_signals_unavailable when effortSignals is absent (ADR 0007 §5 / ADR 0029)", () => {
+  it("sets both downstream_dependents_unavailable and breaking_change_signals_unavailable when both prefetches are absent (ADR 0007 §5 / ADR 0029 / ADR 0032)", () => {
     const flags = deriveConfidenceFlags(
       makeContext({
         dependency: makeDependency({ resolvedVersion: "1.2.3", latestVersion: "1.4.0" }),
@@ -570,7 +580,7 @@ describe("deriveConfidenceFlags", () => {
     expect(flags.breaking_change_signals_unavailable).toBeUndefined();
   });
 
-  it("clearing breaking_change_signals_unavailable does not touch downstream_dependents_unavailable (ADR 0029 scope)", () => {
+  it("clearing breaking_change_signals_unavailable does not clear downstream_dependents_unavailable while the count is absent (ADR 0029 scope)", () => {
     const flags = deriveConfidenceFlags(
       makeContext({
         effortSignals: {
@@ -580,8 +590,34 @@ describe("deriveConfidenceFlags", () => {
         },
       }),
     );
-    // Still unconditional — ADR 0006's gap is untouched by ADR 0029.
+    // Still set — downstreamDependents itself is absent (ADR 0032), so
+    // resolving effortSignals alone doesn't close ADR 0006's gap.
     expect(flags.downstream_dependents_unavailable).toBe(true);
+  });
+
+  it("clears downstream_dependents_unavailable once a downstreamDependents count resolves, including a genuine 0 (ADR 0032)", () => {
+    const resolved = deriveConfidenceFlags(makeContext({ downstreamDependents: 4320 }));
+    const genuineZero = deriveConfidenceFlags(makeContext({ downstreamDependents: 0 }));
+    expect(resolved.downstream_dependents_unavailable).toBeUndefined();
+    expect(genuineZero.downstream_dependents_unavailable).toBeUndefined();
+  });
+
+  it("reaches zero flags — and thus high confidence — when both prefetches resolve for an otherwise-complete context (ADR 0029 + ADR 0032)", () => {
+    const flags = deriveConfidenceFlags(
+      makeContext({
+        dependency: makeDependency({ resolvedVersion: "1.2.3", latestVersion: "1.4.0" }),
+        advisory: makeAdvisory({ cvssScore: 9.0, fixedVersion: "1.2.4" }),
+        effortSignals: {
+          has_migration_guide: false,
+          breaking_change_signals: [],
+          source_available: true,
+        },
+        downstreamDependents: 250,
+      }),
+    );
+    const flagCount = Object.values(flags).filter((v) => v === true).length;
+    expect(flagCount).toBe(0);
+    expect(deriveConfidence(flags)).toBe("high");
   });
 
   it("produces exactly the two structural flags for an otherwise-complete context when effortSignals is absent, never zero", () => {
@@ -630,7 +666,7 @@ describe("deriveConfidence", () => {
     expect(deriveConfidence({ cvss_score_missing: true, fixed_version_unknown: true })).toBe("low");
   });
 
-  it("confirms every Phase 2 mission is low confidence, given the two always-on flags (ADR 0007 §5)", () => {
+  it("confirms a mission with both prefetches absent is low confidence, given the two structural flags (ADR 0007 §5, post-ADR-0032)", () => {
     const flags = deriveConfidenceFlags(
       makeContext({
         dependency: makeDependency({ resolvedVersion: "1.2.3", latestVersion: "1.4.0" }),
@@ -683,6 +719,23 @@ describe("computeMissionScore", () => {
     const result = computeMissionScore(makeContext());
     expect(result.confidence).toBe("low");
     expect(result.confidence_notes.length).toBeGreaterThan(0);
+  });
+
+  it("reaches high confidence and carries the real count when both prefetches resolve (ADR 0029 + ADR 0032)", () => {
+    const ctx = makeContext({
+      dependency: makeDependency({ resolvedVersion: "1.2.3", latestVersion: "1.4.0" }),
+      advisory: makeAdvisory({ cvssScore: 9.0, fixedVersion: "1.2.4" }),
+      effortSignals: {
+        has_migration_guide: false,
+        breaking_change_signals: [],
+        source_available: true,
+      },
+      downstreamDependents: 250,
+    });
+    const result = computeMissionScore(ctx);
+    expect(result.confidence).toBe("high");
+    expect(result.confidence_notes).toEqual([]);
+    expect(result.ecosystem_value_inputs.downstream_dependents).toBe(250);
   });
 
   it("carries the exact inputs used through to the result, for auditability", () => {

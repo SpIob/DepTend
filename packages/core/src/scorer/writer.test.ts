@@ -12,6 +12,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { getTableName, type Table } from "drizzle-orm";
 import { MissionWriter } from "./writer.js";
 import { missions, missionScores } from "../db/schema.js";
+import { resetDownstreamDependentsPacing } from "../ingestor/downstream-dependents.js";
 
 type WriterDb = ConstructorParameters<typeof MissionWriter>[0];
 
@@ -224,7 +225,7 @@ describe("MissionWriter.generateMissionsForRepo", () => {
     const writer = new MissionWriter(db);
     const result = await writer.generateMissionsForRepo("repo-1");
 
-    expect(result).toEqual({ created: 0, updated: 0, candidatesFound: 0 });
+    expect(result).toEqual({ created: 0, updated: 0, candidatesFound: 0, warnings: [] });
     expect(calls.transactionCalled).toBe(true);
   });
 
@@ -238,7 +239,7 @@ describe("MissionWriter.generateMissionsForRepo", () => {
     const writer = new MissionWriter(db);
     const result = await writer.generateMissionsForRepo("repo-1");
 
-    expect(result).toEqual({ created: 1, updated: 0, candidatesFound: 1 });
+    expect(result).toEqual({ created: 1, updated: 0, candidatesFound: 1, warnings: [] });
     expect(calls.inserts).toContain(getTableName(missions));
     expect(calls.inserts).toContain(getTableName(missionScores));
     expect(calls.updates).not.toContain(getTableName(missions));
@@ -253,7 +254,7 @@ describe("MissionWriter.generateMissionsForRepo", () => {
     const writer = new MissionWriter(db);
     const result = await writer.generateMissionsForRepo("repo-1");
 
-    expect(result).toEqual({ created: 0, updated: 1, candidatesFound: 1 });
+    expect(result).toEqual({ created: 0, updated: 1, candidatesFound: 1, warnings: [] });
     expect(calls.updates).toContain(getTableName(missions));
     expect(calls.inserts).not.toContain(getTableName(missions));
     // mission_scores is always written via insert().onConflictDoUpdate(),
@@ -280,7 +281,7 @@ describe("MissionWriter.generateMissionsForRepo", () => {
     const writer = new MissionWriter(db);
     const result = await writer.generateMissionsForRepo("repo-1");
 
-    expect(result).toEqual({ created: 1, updated: 1, candidatesFound: 2 });
+    expect(result).toEqual({ created: 1, updated: 1, candidatesFound: 2, warnings: [] });
     expect(calls.inserts.filter((name) => name === getTableName(missions))).toHaveLength(1);
     expect(calls.updates.filter((name) => name === getTableName(missions))).toHaveLength(1);
     expect(calls.inserts.filter((name) => name === getTableName(missionScores))).toHaveLength(2);
@@ -454,5 +455,153 @@ describe("MissionWriter.generateMissionsForRepo — effortSignals prefetch (ADR 
     await writer.generateMissionsForRepo("repo-1", sourceRepoByPackage, null);
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ADR 0032 — downstream_dependents prefetch integration
+// ---------------------------------------------------------------------------
+
+describe("MissionWriter.generateMissionsForRepo — downstreamDependents prefetch (ADR 0032)", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    resetDownstreamDependentsPacing();
+  });
+
+  it("makes zero libraries.io calls and writes the pre-ADR-0032 defaults when no key is passed", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { db, calls } = makeMockDb({
+      repoRow: REPO_ROW,
+      candidateRows: [{ dependency: makeDependencyRow(), advisory: makeAdvisoryRow() }],
+      existingMissionRows: [null],
+      insertedMissionIds: ["mission-1"],
+    });
+    const writer = new MissionWriter(db);
+    const result = await writer.generateMissionsForRepo("repo-1");
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    const scoreValues = calls.insertedScoreValues[0] as {
+      ecosystemValueInputs: { downstream_dependents: number | null };
+      confidenceFlags: Record<string, boolean>;
+    };
+    expect(scoreValues.ecosystemValueInputs.downstream_dependents).toBeNull();
+    expect(scoreValues.confidenceFlags.downstream_dependents_unavailable).toBe(true);
+    expect(result.warnings).toEqual([]);
+  });
+
+  it("threads a resolved count through to the written mission_scores row and clears the flag", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify([{ name: "example-pkg", dependents_count: 4320 }]), {
+        status: 200,
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { db, calls } = makeMockDb({
+      repoRow: REPO_ROW,
+      candidateRows: [{ dependency: makeDependencyRow(), advisory: makeAdvisoryRow() }],
+      existingMissionRows: [null],
+      insertedMissionIds: ["mission-1"],
+    });
+    const writer = new MissionWriter(db);
+    const result = await writer.generateMissionsForRepo("repo-1", undefined, null, "lio-key");
+
+    const scoreValues = calls.insertedScoreValues[0] as {
+      ecosystemValueInputs: { downstream_dependents: number | null };
+      confidenceFlags: Record<string, boolean>;
+    };
+    expect(scoreValues.ecosystemValueInputs.downstream_dependents).toBe(4320);
+    expect(scoreValues.confidenceFlags.downstream_dependents_unavailable).toBeUndefined();
+    expect(result.warnings).toEqual([]);
+    const [url] = fetchMock.mock.calls[0] as unknown[] as [string];
+    // The analyzed repo's own coordinates, not any dependency's.
+    expect(url).toBe(
+      "https://libraries.io/api/github/example/example/projects?api_key=lio-key&per_page=100&page=1",
+    );
+  });
+
+  it("stores a genuine 0 and clears the flag — checked, found nothing", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(JSON.stringify([{ name: "pkg", dependents_count: 0 }]), { status: 200 }),
+        ),
+    );
+
+    const { db, calls } = makeMockDb({
+      repoRow: REPO_ROW,
+      candidateRows: [{ dependency: makeDependencyRow(), advisory: makeAdvisoryRow() }],
+      existingMissionRows: [null],
+      insertedMissionIds: ["mission-1"],
+    });
+    const writer = new MissionWriter(db);
+    await writer.generateMissionsForRepo("repo-1", undefined, null, "lio-key");
+
+    const scoreValues = calls.insertedScoreValues[0] as {
+      ecosystemValueInputs: { downstream_dependents: number | null };
+      confidenceFlags: Record<string, boolean>;
+    };
+    expect(scoreValues.ecosystemValueInputs.downstream_dependents).toBe(0);
+    expect(scoreValues.confidenceFlags.downstream_dependents_unavailable).toBeUndefined();
+  });
+
+  it("keeps the flag set and surfaces a warning when the lookup fails", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 500 })));
+
+    const { db, calls } = makeMockDb({
+      repoRow: REPO_ROW,
+      candidateRows: [{ dependency: makeDependencyRow(), advisory: makeAdvisoryRow() }],
+      existingMissionRows: [null],
+      insertedMissionIds: ["mission-1"],
+    });
+    const writer = new MissionWriter(db);
+    const result = await writer.generateMissionsForRepo("repo-1", undefined, null, "lio-key");
+
+    const scoreValues = calls.insertedScoreValues[0] as {
+      ecosystemValueInputs: { downstream_dependents: number | null };
+      confidenceFlags: Record<string, boolean>;
+    };
+    expect(scoreValues.ecosystemValueInputs.downstream_dependents).toBeNull();
+    expect(scoreValues.confidenceFlags.downstream_dependents_unavailable).toBe(true);
+    expect(result.warnings).toHaveLength(1);
+  });
+
+  it("makes no libraries.io call when the repo has zero candidates, even with a key", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { db } = makeMockDb({ repoRow: REPO_ROW, candidateRows: [] });
+    const writer = new MissionWriter(db);
+    const result = await writer.generateMissionsForRepo("repo-1", undefined, null, "lio-key");
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(result.warnings).toEqual([]);
+  });
+
+  it("prefetches before opening the transaction, not inside it", async () => {
+    const callOrder: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(() => {
+        callOrder.push("libraries-io-fetch");
+        return new Response(JSON.stringify([{ dependents_count: 5 }]), { status: 200 });
+      }),
+    );
+
+    const { db } = makeMockDb({
+      repoRow: REPO_ROW,
+      candidateRows: [{ dependency: makeDependencyRow(), advisory: makeAdvisoryRow() }],
+      existingMissionRows: [null],
+      insertedMissionIds: ["mission-1"],
+      callOrder,
+    });
+    const writer = new MissionWriter(db);
+    await writer.generateMissionsForRepo("repo-1", undefined, null, "lio-key");
+
+    expect(callOrder).toEqual(["libraries-io-fetch", "transaction"]);
   });
 });

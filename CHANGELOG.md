@@ -12,6 +12,13 @@ All notable changes to deptend.dev, condensed to one entry per phase.
 
 ## [Unreleased]
 
+**Downstream dependents sourced via libraries.io** — `ADR 0032` (Proposed, not yet live-verified)
+
+### Added
+
+- `EcosystemValueInputs.downstream_dependents` is now real data for repos whose published package(s) libraries.io can link: one paced API call per analyzed repo per ingestion run (max count across monorepo links), gated on a new free-tier `LIBRARIES_IO_API_KEY` (Actions secret + `.env.local`). The confidence flag is now conditional — a resolved count, including a genuine 0, clears it. Repos that resolve drop to a single structural flag (`no_lock_file`) and reach **`medium` confidence for the first time since Phase 2**; everything else stays honestly `null` + flagged. CLI output is unchanged (no keys in the CLI by design).
+- Correction to this log's own record: the ADR 0029 entry below claims missions could "reach medium" after that change; against source they couldn't — `downstream_dependents_unavailable` was the second of two always-set flags until this ADR.
+
 **Server-side pagination for the mission board + repo hardening** — `ADR 0031` (Proposed, not yet live-verified)
 
 ### Added

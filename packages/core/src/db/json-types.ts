@@ -37,8 +37,10 @@ export interface EcosystemValueInputs {
   open_issues_count: number;
   /**
    * Number of packages that depend on this repo's published package, if known.
-   * Not populated as of Phase 2 (ADR 0006) — no free data source identified yet.
-   * EcosystemValueScorer must treat null as "exclude and renormalize", never as 0.
+   * Sourced from libraries.io as of ADR 0032; null when the repo has no
+   * resolvable published package or the lookup failed (never defaulted to 0 —
+   * ADR 0006). EcosystemValueScorer must treat null as "exclude and
+   * renormalize", never as 0.
    */
   downstream_dependents: number | null;
 }
@@ -56,7 +58,7 @@ export interface ConfidenceFlags {
   cvss_score_missing?: boolean;
   fixed_version_unknown?: boolean;
   registry_metadata_incomplete?: boolean;
-  /** Set when downstream_dependents is null — see ADR 0006 */
+  /** Set when downstream_dependents is null — see ADR 0006; conditional since ADR 0032 */
   downstream_dependents_unavailable?: boolean;
   /** Set when has_migration_guide / breaking_change_signals have no data source — see ADR 0007 */
   breaking_change_signals_unavailable?: boolean;
