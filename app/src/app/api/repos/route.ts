@@ -75,8 +75,23 @@ export async function POST(request: Request): Promise<Response> {
     process.env.GITHUB_TOKEN ?? null,
   );
   if (!manifestCheck.ok) {
-    const status = manifestCheck.reason === "no_manifest" ? 400 : 503;
-    return NextResponse.json({ error: manifestCheck.message }, { status });
+    switch (manifestCheck.reason) {
+      case "no_manifest":
+        return NextResponse.json({ error: manifestCheck.message }, { status: 400 });
+      case "not_found":
+        // The repo itself doesn't exist, is private, or was typo'd — a
+        // problem with the request, not a transient failure on our end.
+        // This is the exact case ADR 0030's "byproduct" note describes.
+        // 503 ("try again later") was actively misleading here: retrying
+        // does nothing for a repo that was never there to begin with.
+        return NextResponse.json({ error: manifestCheck.message }, { status: 404 });
+      case "rate_limited":
+      case "verification_failed":
+        // Genuinely transient — our own call to the GitHub API hit a rate
+        // limit or failed unexpectedly. "Try again later" is the correct
+        // instruction here, unlike the not_found case above.
+        return NextResponse.json({ error: manifestCheck.message }, { status: 503 });
+    }
   }
 
   const maxRepos = Number.parseInt(process.env.NEXT_PUBLIC_MAX_REPOS ?? "150", 10);
