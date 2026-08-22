@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { signIn, useSession } from "next-auth/react";
+import { useRouter } from "next/navigation";
 import type { EffortLabel, MissionStatus, ScoreConfidence } from "@deptend/core/db/schema.js";
 import type { MissionWithScore } from "@deptend/core";
 import { SeverityMark, severityBarClass } from "./severity-mark";
@@ -52,9 +53,11 @@ function extractErrorMessage(data: unknown): string | null {
 /**
  * Claim/unclaim UI for one mission — a self-contained fetch + request-state
  * component, same pattern as SubmitRepoForm. Only rendered content changes
- * based on mission.status and the signed-in user's login; the parent
- * (MissionBoard) is told about a successful mutation via onStatusChange so
- * its copy of the mission list stays in sync without a full page reload.
+ * based on mission.status and the signed-in user's login. After a successful
+ * mutation the parent is told via onStatusChange so a parent-owned copy of
+ * the mission list stays in sync without a full page reload; when no parent
+ * copy exists (the server-rendered paginated board, ADR 0031), a
+ * router.refresh() re-syncs the card from the database instead.
  */
 function ClaimAction({
   missionId,
@@ -65,9 +68,10 @@ function ClaimAction({
   missionId: string;
   status: MissionStatus;
   claimedBy: string | null;
-  onStatusChange: (missionId: string, patch: MissionClaimPatch) => void;
+  onStatusChange?: ((missionId: string, patch: MissionClaimPatch) => void) | undefined;
 }): React.JSX.Element {
   const { data: session } = useSession();
+  const router = useRouter();
   const [request, setRequest] = useState<ClaimRequestState>({ kind: "idle" });
   const login = session?.user?.login;
 
@@ -84,7 +88,11 @@ function ClaimAction({
         return;
       }
       setRequest({ kind: "idle" });
-      onStatusChange(missionId, patch);
+      if (onStatusChange !== undefined) {
+        onStatusChange(missionId, patch);
+      } else {
+        router.refresh();
+      }
     } catch {
       setRequest({ kind: "error", message: "Network error — try again." });
     }
@@ -177,7 +185,11 @@ export function MissionCard({
   onStatusChange,
 }: {
   mission: MissionWithScore;
-  onStatusChange: (missionId: string, patch: MissionClaimPatch) => void;
+  /**
+   * Optional so server-rendered boards can omit it — see ClaimAction's
+   * docstring: absent means claim/unclaim re-syncs via router.refresh().
+   */
+  onStatusChange?: ((missionId: string, patch: MissionClaimPatch) => void) | undefined;
 }): React.JSX.Element {
   const { score, advisory, dependency, repo } = mission;
   const severity = advisory?.severity ?? "unknown";

@@ -43,5 +43,14 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
+      # packages/core and cli's root typecheck excludes test files by
+      # tsconfig scope; this second pass covers them (AGENTS.md §6 step 6).
+      # It has independently caught required-field and exactOptionalPropertyTypes
+      # violations that steps 1–5 couldn't see, so it runs in CI, not just locally.
+      - name: Typecheck test files
+        run: |
+          pnpm --filter @deptend/core typecheck:tests
+          pnpm --filter cli typecheck:tests
+
       - name: Test
         run: pnpm test

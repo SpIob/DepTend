@@ -19,6 +19,8 @@ repos
   │        │
   │        └─── mission_scores (one mission → one score)
   │
+  ├─── repo_bookmarks (one repo → many user bookmarks)
+  │
   └─── ingestion_runs (one repo → many runs, append-only)
 ```
 
@@ -195,6 +197,23 @@ Append-only audit log. Rows are never updated or deleted.
 
 ---
 
+### `repo_bookmarks`
+
+Per-user repo bookmarks (ADR 0027). `user_login` stores the GitHub login directly — same
+pattern as `missions.claimed_by` / `repos.submitted_by`; no separate users table exists.
+
+| Column       | Type            | Notes                                |
+| ------------ | --------------- | ------------------------------------ |
+| `id`         | uuid PK         | gen_random_uuid()                    |
+| `repo_id`    | uuid FK → repos | CASCADE on delete                    |
+| `user_login` | text            | GitHub login of the bookmarking user |
+| `created_at` | timestamptz     |                                      |
+
+UNIQUE constraint on `(user_login, repo_id)` — leads with `user_login`, since "list this
+user's bookmarks" (the repo directory's read pattern) is the primary access path.
+
+---
+
 ## Enum reference
 
 | Enum               | Values                                                            |
@@ -220,3 +239,4 @@ Append-only audit log. Rows are never updated or deleted.
 | 0.1.2   | 2026-07-22 | ADR 0021 (migration `0001`): `'skipped'` added to `ingestion_status`, distinct from `'complete'`/`'failed'`; plus 3 pre-existing `SET DEFAULT` drift fixes on `mission_scores`' jsonb columns           |
 | 0.1.3   | 2026-07-25 | ADR 0022 (migration `0002`): `'pypi'` added to `ecosystem`. No `repos.ecosystem` column — ecosystem is decided per-ingestion by `detectEcosystem`, recorded per-row on `dependencies`/`advisories` only |
 | 0.1.4   | 2026-07-25 | ADR 0024 (migration `0003`): `'go'` added to `ecosystem`, same pattern as 0.1.3                                                                                                                         |
+| 0.1.5   | 2026-07-30 | ADR 0027 (migration `0004`): `repo_bookmarks` table added — per-user repo bookmarks for the directory/browse view, unique `(user_login, repo_id)`; no DDL change to existing tables                     |

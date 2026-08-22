@@ -72,3 +72,18 @@ Full clean five-check loop (`typecheck` → `test` → `build` → `lint --max-w
 - A real submission confirming the byproduct fix (private/nonexistent repo now rejected) actually works against the live GitHub API, not just the mocked test fixtures.
 - A real withdrawal, confirming the row and its cap slot are actually gone from the live board afterward.
 - Whether `GITHUB_TOKEN` is actually set in Vercel today, and if not, a decision on whether to add it.
+
+---
+
+## Correction (found before live verification, not a new ADR)
+
+`POST /api/repos`'s original status-code mapping collapsed three of `checkSubmittableRepo`'s four failure reasons onto a single `503`, keeping only `no_manifest` at `400`. That put the exact case this ADR's own "byproduct" note calls out — a private, deleted, or typo'd repo — behind a `503 Service Unavailable`, which tells a client "retry later" when retrying can never help; the repo isn't going to appear. Fixed to an exhaustive `switch` over `manifestCheck.reason`, matching the outcome-`switch` idiom `withdraw/route.ts` (Decision B, this same ADR) already established:
+
+| Reason                | Status            | Why                                                                                         |
+| --------------------- | ----------------- | ------------------------------------------------------------------------------------------- |
+| `no_manifest`         | 400               | Unchanged — a problem with the repo's content, not its existence.                           |
+| `not_found`           | **404** (was 503) | The repo doesn't exist, is private, or was typo'd — a request problem, not a transient one. |
+| `rate_limited`        | 503               | Unchanged — our own call to GitHub's API hit a rate limit; genuinely transient.             |
+| `verification_failed` | 503               | Unchanged — an unexpected error verifying the repo; genuinely transient.                    |
+
+No test coverage added at the route level, consistent with this ADR's own verification note above (`checkSubmittableRepo`'s reason categorization is already covered in `manifest-check.test.ts`; route-level status-code wiring for every other route in this project is verified live, not with route-level unit tests). Full five-check loop re-run clean after the fix.

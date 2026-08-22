@@ -1,34 +1,43 @@
 /**
- * Mission list queries — thin wrapper around @deptend/core's
- * getOpenMissionsWithScores/getBoardMissionsWithScores/getIndexedRepoCount/
- * getTotalRepoCount, bound to /app's own db client. See
- * packages/core/src/db/queries.ts for why the actual Drizzle query logic
- * lives there instead of here.
+ * Mission list queries — thin wrappers around @deptend/core's
+ * getBoardMissionsWithScoresPage/getIndexedRepoCount/getTotalRepoCount,
+ * bound to /app's own db client. See packages/core/src/db/queries.ts for
+ * why the actual Drizzle query logic lives there instead of here.
  */
 
 import { getBookmarkedRepoIds as coreGetBookmarkedRepoIds } from "@deptend/core/db/bookmarks.js";
 import {
-  getBoardMissionsWithScores,
+  BOARD_PAGE_SIZE,
+  getBoardMissionsWithScoresPage as coreGetBoardMissionsWithScoresPage,
   getIndexedRepoCount as coreGetIndexedRepoCount,
-  getOpenMissionsWithScores,
   getRepoEcosystems as coreGetRepoEcosystems,
   getRepoMissionsWithScores as coreGetRepoMissionsWithScores,
   getReposWithMissionSummary as coreGetReposWithMissionSummary,
   getSkippedRepos as coreGetSkippedRepos,
   getTotalRepoCount as coreGetTotalRepoCount,
+  type BoardFilters,
+  type BoardPage,
   type SkippedRepo,
 } from "@deptend/core/db/queries.js";
 import { getRepoByOwnerAndName as coreGetRepoByOwnerAndName } from "@deptend/core/db/repos.js";
 import type { Ecosystem, MissionWithScore, Repo, RepoWithMissionSummary } from "@deptend/core";
 import { getDb } from "../db";
 
-export async function getOpenMissions(): Promise<MissionWithScore[]> {
-  return getOpenMissionsWithScores(getDb());
-}
+export type { BoardFilters, BoardPage };
+export { BOARD_PAGE_SIZE };
 
-/** Open + claimed missions — what the Phase 5 public rescue board renders. */
-export async function getBoardMissions(): Promise<MissionWithScore[]> {
-  return getBoardMissionsWithScores(getDb());
+/**
+ * One page of the board-wide listing (ADR 0031) — filters and sort applied
+ * server-side, page selected by 1-based `page` against BOARD_PAGE_SIZE.
+ */
+export async function getBoardMissionsPage(
+  filters: BoardFilters,
+  page: number,
+): Promise<BoardPage> {
+  return coreGetBoardMissionsWithScoresPage(getDb(), filters, {
+    limit: BOARD_PAGE_SIZE,
+    offset: (page - 1) * BOARD_PAGE_SIZE,
+  });
 }
 
 export async function getIndexedRepoCount(): Promise<number> {

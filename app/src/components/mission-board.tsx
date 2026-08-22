@@ -6,6 +6,7 @@ import type { Ecosystem, EffortLabel, Severity } from "@deptend/core/db/schema.j
 import type { MissionWithScore } from "@deptend/core";
 import {
   parseSortParam,
+  SORT_LABELS,
   SORT_MODES,
   type MissionBoardQuery,
   type SortMode,
@@ -15,12 +16,6 @@ import { MissionFilterBar } from "./mission-filter-bar";
 import { MissionSearchInput } from "./mission-search";
 
 export type { MissionBoardQuery };
-
-const SORT_LABELS: Record<SortMode, string> = {
-  priority: "Highest impact first",
-  "quick-wins": "Quickest wins first",
-  newest: "Newest advisory first",
-};
 
 // Lower number sorts first under "quick-wins" — trivial fixes surface before
 // high-effort ones.

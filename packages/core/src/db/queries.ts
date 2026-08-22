@@ -24,12 +24,12 @@
  * ever compiled by one program, sidesteps it entirely.
  */
 
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, sql, type SQL } from "drizzle-orm";
 import { drizzle, type NeonHttpDatabase } from "drizzle-orm/neon-http";
 import { neon } from "@neondatabase/serverless";
 import * as schema from "./schema.js";
 import { advisories, dependencies, missions, missionScores, repos } from "./schema.js";
-import type { MissionStatus } from "./schema.js";
+import type { Ecosystem, EffortLabel, MissionStatus, Severity } from "./schema.js";
 import { rankMissions, type RankableMission } from "../scorer/ranking.js";
 import {
   EMPTY_REPO_MISSION_COUNTS,
@@ -40,6 +40,53 @@ import {
 import { getBookmarkedRepoIds } from "./bookmarks.js";
 
 export type ReadonlyDb = NeonHttpDatabase<typeof schema>;
+
+/**
+ * The five-table join behind every mission-listing read here: missions with
+ * score, advisory, dependency, and owning repo attached. Shared by
+ * getMissionsWithScoresByStatus() (fetch-everything-then-rank-in-JS) and
+ * getBoardMissionsWithScoresPage() (SQL-side filter/order/paginate) so the
+ * two paths can't drift apart.
+ *
+ * The return type is Drizzle's chained query builder, whose branded generics
+ * are not practically writable by hand — same family of typed-linting
+ * friction ADR 0012 documents for cross-tsconfig checking. The inferred
+ * type is still fully checked at every call site.
+ */
+// eslint-disable-next-line @typescript-eslint/explicit-function-return-type
+function missionJoinRows(db: ReadonlyDb) {
+  return db
+    .select({
+      mission: missions,
+      score: missionScores,
+      advisory: advisories,
+      dependency: dependencies,
+      repo: repos,
+    })
+    .from(missions)
+    .innerJoin(missionScores, eq(missionScores.missionId, missions.id))
+    .innerJoin(repos, eq(missions.repoId, repos.id))
+    .leftJoin(advisories, eq(missions.advisoryId, advisories.id))
+    .leftJoin(dependencies, eq(missions.dependencyId, dependencies.id));
+}
+
+interface MissionJoinRow {
+  mission: typeof missions.$inferSelect;
+  score: typeof missionScores.$inferSelect;
+  advisory: typeof advisories.$inferSelect | null;
+  dependency: typeof dependencies.$inferSelect | null;
+  repo: typeof repos.$inferSelect;
+}
+
+function toMissionWithScore(row: MissionJoinRow): MissionWithScore {
+  return {
+    ...row.mission,
+    score: row.score,
+    advisory: row.advisory,
+    dependency: row.dependency,
+    repo: row.repo,
+  };
+}
 
 /**
  * Builds a read-only (neon-http, no transactions) DB client. Callers pass
@@ -63,52 +110,34 @@ async function getMissionsWithScoresByStatus(
   statuses: readonly MissionStatus[],
   repoId?: string,
 ): Promise<MissionWithScore[]> {
-  const rows = await db
-    .select({
-      mission: missions,
-      score: missionScores,
-      advisory: advisories,
-      dependency: dependencies,
-      repo: repos,
-    })
-    .from(missions)
-    .innerJoin(missionScores, eq(missionScores.missionId, missions.id))
-    .innerJoin(repos, eq(missions.repoId, repos.id))
-    .leftJoin(advisories, eq(missions.advisoryId, advisories.id))
-    .leftJoin(dependencies, eq(missions.dependencyId, dependencies.id))
-    .where(
-      repoId === undefined
-        ? inArray(missions.status, statuses)
-        : and(inArray(missions.status, statuses), eq(missions.repoId, repoId)),
-    );
-
-  const withScores: MissionWithScore[] = rows.map((row) => ({
-    ...row.mission,
-    score: row.score,
-    advisory: row.advisory,
-    dependency: row.dependency,
-    repo: row.repo,
-  }));
+  const rows = await missionJoinRows(db).where(
+    repoId === undefined
+      ? inArray(missions.status, statuses)
+      : and(inArray(missions.status, statuses), eq(missions.repoId, repoId)),
+  );
 
   const ranked = rankMissions(
-    withScores.map((mission): RankableMission & { mission: MissionWithScore } => ({
-      mission,
-      // Not mission.createdAt — see ADR 0018. Missions from the same
-      // ingestion run share one transaction-scoped Postgres now(), so
-      // createdAt doesn't actually discriminate between them.
-      tie_break: {
-        published_at: mission.advisory?.publishedAt ?? null,
-        // mission.advisory is nullable (future non-advisory mission types
-        // per Phase 2 scope) — fall back to the mission's own id, which is
-        // always present and unique, same role osv_id plays when there is
-        // an advisory.
-        osv_id: mission.advisory?.osvId ?? mission.id,
-      },
-      score: {
-        composite_score: mission.score.compositeScore,
-        effort_label: mission.score.effortLabel,
-      },
-    })),
+    rows.map((row): RankableMission & { mission: MissionWithScore } => {
+      const mission = toMissionWithScore(row);
+      return {
+        mission,
+        // Not mission.createdAt — see ADR 0018. Missions from the same
+        // ingestion run share one transaction-scoped Postgres now(), so
+        // createdAt doesn't actually discriminate between them.
+        tie_break: {
+          published_at: mission.advisory?.publishedAt ?? null,
+          // mission.advisory is nullable (future non-advisory mission types
+          // per Phase 2 scope) — fall back to the mission's own id, which is
+          // always present and unique, same role osv_id plays when there is
+          // an advisory.
+          osv_id: mission.advisory?.osvId ?? mission.id,
+        },
+        score: {
+          composite_score: mission.score.compositeScore,
+          effort_label: mission.score.effortLabel,
+        },
+      };
+    }),
   );
 
   return ranked.map((r) => r.mission);
@@ -151,13 +180,258 @@ export async function getRepoMissionsWithScores(
   return getMissionsWithScoresByStatus(db, ["open", "claimed"], repoId);
 }
 
+// ---------------------------------------------------------------------------
+// Paginated mission board (ADR 0031)
+//
+// The board-wide /missions listing used to fetch every open+claimed mission
+// and filter/search/sort/rank it in the browser (the functions above). That
+// made the DB query, the HTTP payload, and the client's working set all grow
+// linearly with total missions — the "unbounded DB query" known issue. This
+// section moves filtering, ordering, and pagination into SQL for that one
+// page; the per-repo page keeps the fetch-everything path above, where cost
+// is already bounded by a single repo.
+//
+// Ordering parity note: "priority" here is the same ranking key sequence as
+// scorer/ranking.ts's rankMissions() (tier bucket → effort → published_at →
+// unique id), just evaluated by Postgres instead of Array#sort so LIMIT/
+// OFFSET can page through it. ADR 0017 (bucketing) and ADR 0018 (published_at
+// + osv_id tie-breaks) define the keys — nothing about them changed here.
+// One deliberate nuance: the absolute final fallback uses Postgres' default
+// collation rather than localeCompare, which only matters when two advisories
+// share tier, effort, AND exact published_at — the requirement is a stable,
+// deterministic order across pages, which both provide.
+// ---------------------------------------------------------------------------
+
+/** Rows per page of the board-wide /missions listing. */
+export const BOARD_PAGE_SIZE = 50;
+
+export type BoardSortMode = "priority" | "quick-wins" | "newest";
+
+export interface BoardFilters {
+  /** Substring matched against title, package name, owner/name, and OSV id. */
+  q: string;
+  severities: readonly Severity[];
+  ecosystems: readonly Ecosystem[];
+  efforts: readonly EffortLabel[];
+  sort: BoardSortMode;
+}
+
+/**
+ * Per-axis result counts for the filter chips. Each axis counts rows
+ * matching every *other* active axis (plus q) but not itself — same
+ * semantics the client-side board computed, so a chip still answers
+ * "how many results if I also picked this."
+ */
+export interface BoardFacets {
+  severity: Partial<Record<Severity, number>>;
+  ecosystem: Partial<Record<Ecosystem, number>>;
+  effort: Partial<Record<EffortLabel, number>>;
+}
+
+export interface BoardPage {
+  missions: MissionWithScore[];
+  /** Total open+claimed missions matching all filters (not just this page). */
+  total: number;
+  facets: BoardFacets;
+}
+
+/** SQL mirror of mission-board.tsx's severityOf(): advisory severity or "unknown". */
+const BOARD_SEVERITY_EXPR = sql<string>`COALESCE(${advisories.severity}::text, 'unknown')`;
+
+/**
+ * SQL mirror of mission-board.tsx's ecosystemOf(): dependency's ecosystem,
+ * falling back to the advisory's, else NULL (a row with neither never
+ * matches a non-empty ecosystem filter — IN() excludes NULLs, matching the
+ * client's matchesSet()).
+ */
+const BOARD_ECOSYSTEM_EXPR = sql<string>`COALESCE(${dependencies.ecosystem}::text, ${advisories.ecosystem}::text)`;
+
+const BOARD_EFFORT_EXPR = sql<string>`${missionScores.effortLabel}::text`;
+
+/** SQL mirror of ranking.ts's effortRank(). */
+const BOARD_EFFORT_RANK_EXPR = sql<number>`CASE ${missionScores.effortLabel} WHEN 'trivial' THEN 0 WHEN 'low' THEN 1 WHEN 'medium' THEN 2 WHEN 'high' THEN 3 END`;
+
+/** SQL mirror of ranking.ts's compositeTier() (same 0.5-wide buckets). */
+const BOARD_TIER_EXPR = sql<number>`FLOOR(${missionScores.compositeScore} / 0.5)`;
+
+/** Newest known vulnerability first; NULL sorts last (ranking.ts's -Infinity). */
+const BOARD_PUBLISHED_DESC = sql`${advisories.publishedAt} DESC NULLS LAST`;
+
+/** Absolute, always-present final fallback (ranking.ts's osv_id ?? mission id). */
+const BOARD_UNIQUE_ASC = sql`COALESCE(${advisories.osvId}, ${missions.id}) ASC`;
+
+function boardInSet(expr: SQL, values: readonly string[]): SQL {
+  return sql`${expr} IN (${sql.join(
+    values.map((value) => sql`${value}`),
+    sql`, `,
+  )})`;
+}
+
+/**
+ * LIKE-pattern escape so a search for e.g. "100%" matches the literal
+ * string, mirroring the client's String.includes() semantics.
+ */
+function ilikePattern(q: string): string {
+  return `%${q.replace(/([\\%_])/g, "\\$1")}%`;
+}
+
+interface BoardConditionParts {
+  /** Status scope — always applied. */
+  status: SQL;
+  q: SQL | undefined;
+  severity: SQL | undefined;
+  ecosystem: SQL | undefined;
+  effort: SQL | undefined;
+}
+
+function buildBoardConditionParts(filters: BoardFilters): BoardConditionParts {
+  const parts: BoardConditionParts = {
+    status: inArray(missions.status, ["open", "claimed"]),
+    q: undefined,
+    severity: undefined,
+    ecosystem: undefined,
+    effort: undefined,
+  };
+
+  const q = filters.q.trim();
+  if (q !== "") {
+    const pattern = ilikePattern(q);
+    parts.q = sql`(
+      COALESCE(${missions.title}, '') ILIKE ${pattern} ESCAPE '\\'
+      OR COALESCE(${dependencies.packageName}, '') ILIKE ${pattern} ESCAPE '\\'
+      OR (${repos.owner} || '/' || ${repos.name}) ILIKE ${pattern} ESCAPE '\\'
+      OR COALESCE(${advisories.osvId}, '') ILIKE ${pattern} ESCAPE '\\'
+    )`;
+  }
+
+  if (filters.severities.length > 0) {
+    parts.severity = boardInSet(BOARD_SEVERITY_EXPR, filters.severities);
+  }
+  if (filters.ecosystems.length > 0) {
+    parts.ecosystem = boardInSet(BOARD_ECOSYSTEM_EXPR, filters.ecosystems);
+  }
+  if (filters.efforts.length > 0) {
+    parts.effort = boardInSet(BOARD_EFFORT_EXPR, filters.efforts);
+  }
+
+  return parts;
+}
+
+function boardOrderBy(sort: BoardSortMode): SQL[] {
+  switch (sort) {
+    case "priority":
+      // rankMissions()' exact key sequence, evaluated by Postgres.
+      return [
+        sql`${BOARD_TIER_EXPR} DESC`,
+        sql`${BOARD_EFFORT_RANK_EXPR} ASC`,
+        BOARD_PUBLISHED_DESC,
+        BOARD_UNIQUE_ASC,
+      ];
+    case "quick-wins":
+      return [
+        sql`${BOARD_EFFORT_RANK_EXPR} ASC`,
+        sql`${missionScores.compositeScore} DESC`,
+        BOARD_UNIQUE_ASC,
+      ];
+    case "newest":
+      return [BOARD_PUBLISHED_DESC, BOARD_UNIQUE_ASC];
+  }
+}
+
+interface CountRow {
+  key: string | null;
+  count: number;
+}
+
+function tallyCounts<T extends string>(rows: readonly CountRow[]): Partial<Record<T, number>> {
+  const out: Partial<Record<T, number>> = {};
+  for (const row of rows) {
+    if (row.key === null) {
+      continue; // mirrors countBy()'s skip of null-keyed missions
+    }
+    out[row.key as T] = (out[row.key as T] ?? 0) + row.count;
+  }
+  return out;
+}
+
+/**
+ * One page of the board-wide /missions listing (ADR 0031): open+claimed
+ * missions matching the given filters, ordered server-side, plus the
+ * unpaginated total and per-axis facet counts the filter UI needs. The
+ * four auxiliary counts run in parallel over the same join; each is an
+ * aggregate over at most (repo cap × severities) groups, not a full
+ * payload query.
+ */
+export async function getBoardMissionsWithScoresPage(
+  db: ReadonlyDb,
+  filters: BoardFilters,
+  options: { limit?: number; offset?: number } = {},
+): Promise<BoardPage> {
+  const limit = Math.max(1, options.limit ?? BOARD_PAGE_SIZE);
+  const offset = Math.max(0, options.offset ?? 0);
+  const parts = buildBoardConditionParts(filters);
+
+  const [rows, totalRows, severityRows, ecosystemRows, effortRows] = await Promise.all([
+    missionJoinRows(db)
+      .where(and(parts.status, parts.q, parts.severity, parts.ecosystem, parts.effort))
+      .orderBy(...boardOrderBy(filters.sort))
+      .limit(limit)
+      .offset(offset),
+    db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(missions)
+      .innerJoin(missionScores, eq(missionScores.missionId, missions.id))
+      .innerJoin(repos, eq(missions.repoId, repos.id))
+      .leftJoin(advisories, eq(missions.advisoryId, advisories.id))
+      .leftJoin(dependencies, eq(missions.dependencyId, dependencies.id))
+      .where(and(parts.status, parts.q, parts.severity, parts.ecosystem, parts.effort)),
+    db
+      .select({ key: BOARD_SEVERITY_EXPR, count: sql<number>`count(*)::int` })
+      .from(missions)
+      .innerJoin(missionScores, eq(missionScores.missionId, missions.id))
+      .innerJoin(repos, eq(missions.repoId, repos.id))
+      .leftJoin(advisories, eq(missions.advisoryId, advisories.id))
+      .leftJoin(dependencies, eq(missions.dependencyId, dependencies.id))
+      .where(and(parts.status, parts.q, parts.ecosystem, parts.effort))
+      .groupBy(BOARD_SEVERITY_EXPR),
+    db
+      .select({ key: BOARD_ECOSYSTEM_EXPR, count: sql<number>`count(*)::int` })
+      .from(missions)
+      .innerJoin(missionScores, eq(missionScores.missionId, missions.id))
+      .innerJoin(repos, eq(missions.repoId, repos.id))
+      .leftJoin(advisories, eq(missions.advisoryId, advisories.id))
+      .leftJoin(dependencies, eq(missions.dependencyId, dependencies.id))
+      .where(and(parts.status, parts.q, parts.severity, parts.effort))
+      .groupBy(BOARD_ECOSYSTEM_EXPR),
+    db
+      .select({ key: BOARD_EFFORT_EXPR, count: sql<number>`count(*)::int` })
+      .from(missions)
+      .innerJoin(missionScores, eq(missionScores.missionId, missions.id))
+      .innerJoin(repos, eq(missions.repoId, repos.id))
+      .leftJoin(advisories, eq(missions.advisoryId, advisories.id))
+      .leftJoin(dependencies, eq(missions.dependencyId, dependencies.id))
+      .where(and(parts.status, parts.q, parts.severity, parts.ecosystem))
+      .groupBy(BOARD_EFFORT_EXPR),
+  ]);
+
+  return {
+    missions: rows.map(toMissionWithScore),
+    total: totalRows[0]?.count ?? 0,
+    facets: {
+      severity: tallyCounts<Severity>(severityRows),
+      ecosystem: tallyCounts<Ecosystem>(ecosystemRows),
+      effort: tallyCounts<EffortLabel>(effortRows),
+    },
+  };
+}
+
 /** Count of repos that have completed at least one ingestion run. */
 export async function getIndexedRepoCount(db: ReadonlyDb): Promise<number> {
   const rows = await db
-    .select({ id: repos.id })
+    .select({ count: sql<number>`count(*)::int` })
     .from(repos)
     .where(eq(repos.ingestionStatus, "complete"));
-  return rows.length;
+  return rows[0]?.count ?? 0;
 }
 
 /**
@@ -168,8 +442,8 @@ export async function getIndexedRepoCount(db: ReadonlyDb): Promise<number> {
  * processed" stat, not the submission cap.
  */
 export async function getTotalRepoCount(db: ReadonlyDb): Promise<number> {
-  const rows = await db.select({ id: repos.id }).from(repos);
-  return rows.length;
+  const rows = await db.select({ count: sql<number>`count(*)::int` }).from(repos);
+  return rows[0]?.count ?? 0;
 }
 
 export interface SkippedRepo {

@@ -1,7 +1,14 @@
 import Link from "next/link";
-import { getBoardMissions, getIndexedRepoCount, getSkippedRepos } from "@/lib/queries/missions";
-import { MissionBoard } from "@/components/mission-board";
-import { parseMissionBoardQuery } from "@/lib/mission-board-query";
+import { redirect } from "next/navigation";
+import {
+  getBoardMissionsPage,
+  getIndexedRepoCount,
+  getSkippedRepos,
+  BOARD_PAGE_SIZE,
+  type BoardFilters,
+} from "@/lib/queries/missions";
+import { PaginatedMissionBoard } from "@/components/paginated-mission-board";
+import { buildMissionBoardHref, parseMissionBoardQuery } from "@/lib/mission-board-query";
 import { AuthStatus } from "@/components/auth-status";
 
 // Next 15 can hand a param multiple values (`?severity=high&severity=low`);
@@ -29,30 +36,59 @@ function EmptyState(): React.JSX.Element {
  * Every open/claimed mission across every indexed repo, one flat list —
  * what "/" rendered before ADR 0027 moved the default landing page to a
  * repo directory. Kept here for anyone who wants a single cross-repo feed
- * instead of drilling into one repo at a time; costs nothing to keep
- * since nothing about MissionBoard/MissionFilterBar/MissionCard changed —
- * they still just render whatever mission array they're handed.
+ * instead of drilling into one repo at a time.
+ *
+ * Since ADR 0031 this page is server-filtered and paginated: filters, sort,
+ * and page number all live in the URL, drive SQL-side LIMIT/OFFSET in
+ * packages/core/src/db/queries.ts, and come back down as at most
+ * BOARD_PAGE_SIZE full missions plus facet counts — instead of the whole
+ * board's payload the old client-side-filtered version shipped.
  */
 export default async function AllMissionsPage({
   searchParams,
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }): Promise<React.JSX.Element> {
-  const [missions, repoCount, skippedRepos, rawParams] = await Promise.all([
-    getBoardMissions(),
-    getIndexedRepoCount(),
-    getSkippedRepos(),
-    searchParams,
-  ]);
-
-  const initialQuery = parseMissionBoardQuery({
+  const rawParams = await searchParams;
+  const query = parseMissionBoardQuery({
     q: firstValue(rawParams.q),
     severity: firstValue(rawParams.severity),
     ecosystem: firstValue(rawParams.ecosystem),
     effort: firstValue(rawParams.effort),
     sort: firstValue(rawParams.sort),
     group: firstValue(rawParams.group),
+    page: firstValue(rawParams.page),
   });
+
+  const filters: BoardFilters = {
+    q: query.q,
+    severities: Array.from(query.severity),
+    ecosystems: Array.from(query.ecosystem),
+    efforts: Array.from(query.effort),
+    sort: query.sort,
+  };
+
+  // Repo count and skipped list only feed the header stats; they don't
+  // depend on the board's filters, so all three reads run together.
+  const [board, repoCount, skippedRepos] = await Promise.all([
+    getBoardMissionsPage(filters, query.page),
+    getIndexedRepoCount(),
+    getSkippedRepos(),
+  ]);
+
+  // Canonicalize an out-of-range page (deep link past the end, or a filter
+  // change that shrank the result set under a stale ?page=) instead of
+  // rendering a blank page with no way forward.
+  const pageCount = Math.max(1, Math.ceil(board.total / BOARD_PAGE_SIZE));
+  if (query.page > pageCount) {
+    redirect(buildMissionBoardHref("/missions", { ...query, page: pageCount }));
+  }
+
+  const hasFilters =
+    query.severity.size > 0 ||
+    query.ecosystem.size > 0 ||
+    query.effort.size > 0 ||
+    query.q.trim() !== "";
 
   return (
     <main className="mx-auto flex max-w-3xl flex-col gap-8 px-4 py-8 sm:px-6 sm:py-12">
@@ -100,10 +136,20 @@ export default async function AllMissionsPage({
         </p>
       </header>
 
-      {missions.length === 0 ? (
+      {board.total === 0 && !hasFilters ? (
         <EmptyState />
       ) : (
-        <MissionBoard missions={missions} initialQuery={initialQuery} />
+        <PaginatedMissionBoard
+          key={buildMissionBoardHref("/missions", query)}
+          missions={board.missions}
+          total={board.total}
+          facets={board.facets}
+          pageSize={BOARD_PAGE_SIZE}
+          page={query.page}
+          pageCount={pageCount}
+          initialQuery={query}
+          basePath="/missions"
+        />
       )}
     </main>
   );

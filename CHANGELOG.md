@@ -12,6 +12,23 @@ All notable changes to deptend.dev, condensed to one entry per phase.
 
 ## [Unreleased]
 
+**Server-side pagination for the mission board + repo hardening** — `ADR 0031` (Proposed, not yet live-verified)
+
+### Added
+
+- `/missions` is now server-filtered, -sorted, and -paginated (50/page): filters and sort live in the URL and run as SQL against core's new `getBoardMissionsWithScoresPage`, which also returns per-axis facet counts — replacing the version that shipped every open+claimed mission to the browser for client-side filtering. Per-repo boards are unchanged. Ordering mirrors `rankMissions()`'s ADR 0017/0018 key sequence in SQL.
+- Route-level test suites for all six mutating API endpoints (`repos` submit incl. the full manifest pre-check status mapping, claim/unclaim, bookmark/unbookmark, withdraw) — closing the "near-zero `/app` route coverage" gap.
+- Next.js error boundaries: route-segment `error.tsx`, root `global-error.tsx`, and a styled `not-found.tsx` (previously a thrown render or unknown URL got Next's default screens).
+- The §6-step-6 `tsconfig.eslint.json` typechecks for `packages/core` and `cli` are wired into `ci.yml` as their own step.
+
+### Changed
+
+- `getIndexedRepoCount` / `getTotalRepoCount` use `count(*)` instead of loading every repo id into memory.
+
+### Fixed
+
+- The unbounded board query known issue: `/missions` DB read, payload, and client working set are now bounded per request regardless of total missions.
+
 **Repo submission safeguards** — `ADR 0030` (Proposed, not yet live-verified)
 
 ### Added
