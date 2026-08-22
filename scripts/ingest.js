@@ -191,6 +191,7 @@ async function main() {
         osvFetcher,
         registryFetchersByEcosystem,
         githubToken ?? null,
+        librariesIoApiKey,
         args.triggeredBy,
       );
       if (!success) failCount++;
@@ -227,6 +228,7 @@ async function ingestRepo(
   osvFetcher,
   registryFetchersByEcosystem,
   githubToken,
+  librariesIoApiKey,
   triggeredBy,
 ) {
   const label = repo.githubUrl ?? repo.url;
