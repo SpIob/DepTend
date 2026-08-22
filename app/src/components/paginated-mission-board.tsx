@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import Link from "next/link";
+import { useEffect, useState, useTransition } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import type { Ecosystem, EffortLabel, Severity } from "@deptend/core/db/schema.js";
 import type { BoardFacets } from "@deptend/core/db/queries.js";
@@ -22,10 +21,15 @@ import { MissionSearchInput } from "./mission-search";
  * The board-wide /missions listing (ADR 0031). Filtering, searching,
  * sorting, and pagination all happen server-side: this component renders
  * exactly one pre-filtered page handed to it by page.tsx and turns every
- * filter interaction into a URL change (chips and sort via
- * router.replace, pagination via <Link>), which re-runs the server query.
- * Search input is the one exception — it keeps instant local feedback and
- * debounces its navigation so typing doesn't fire a request per keystroke.
+ * filter interaction into a URL change (all via router.replace inside one
+ * shared transition), which re-runs the server query. Search input is the
+ * one exception — it keeps instant local feedback and debounces its
+ * navigation so typing doesn't fire a request per keystroke.
+ *
+ * The board is intentionally not keyed by its URL: a key would remount it
+ * on every navigation and drop the search input's focus mid-typing, so the
+ * component instead adopts each fresh missions array as it arrives (see
+ * the adjust-state block below) while user-owned state survives.
  *
  * The per-repo board keeps the older fully client-side MissionBoard; the
  * two share MissionCard, the search input's markup, and the URL query
@@ -62,28 +66,31 @@ const CHIP_ACTIVE_CLASS = "border-accent bg-accent text-white";
 const CHIP_IDLE_CLASS = "border-border text-ink-muted hover:text-ink hover:border-ink-muted";
 
 function FilterChip({
-  href,
+  onToggle,
   label,
   count,
   active,
+  disabled,
 }: {
-  href: string;
+  onToggle: () => void;
   label: string;
   count: number | undefined;
   active: boolean;
+  disabled: boolean;
 }): React.JSX.Element {
   return (
-    <Link
-      href={href}
-      replace
+    <button
+      type="button"
+      onClick={onToggle}
+      disabled={disabled}
       aria-pressed={active}
-      className={`rounded-sm border px-2.5 py-1 font-mono text-xs transition-colors ${
+      className={`rounded-sm border px-2.5 py-1 font-mono text-xs transition-colors disabled:opacity-50 ${
         active ? CHIP_ACTIVE_CLASS : CHIP_IDLE_CLASS
       }`}
     >
       {label}
       {count !== undefined ? ` (${count.toString()})` : ""}
-    </Link>
+    </button>
   );
 }
 
@@ -144,16 +151,36 @@ export function PaginatedMissionBoard({
 }): React.JSX.Element {
   const router = useRouter();
   const pathname = usePathname();
+  const [isPending, startTransition] = useTransition();
 
   const [missions, setMissions] = useState(initialMissions);
   const [search, setSearch] = useState(initialQuery.q);
   const [groupByRepo, setGroupByRepo] = useState(initialQuery.group);
+
+  // The board is deliberately NOT keyed by its URL (a key would remount it
+  // on every debounced search commit and drop the input's focus mid-typing).
+  // Instead, when the server hands back a fresh missions array, adopt it —
+  // the React-documented adjust-state-on-prop-change pattern. Local state
+  // that the user owns (search text, grouping) intentionally survives.
+  const [lastServerMissions, setLastServerMissions] = useState(initialMissions);
+  if (lastServerMissions !== initialMissions) {
+    setLastServerMissions(initialMissions);
+    setMissions(initialMissions);
+  }
 
   const isFiltered =
     initialQuery.severity.size > 0 ||
     initialQuery.ecosystem.size > 0 ||
     initialQuery.effort.size > 0 ||
     initialQuery.q.trim() !== "";
+
+  // Every board interaction funnels through here so one isPending flag can
+  // cover chips, sort, clear, pagination, and the debounced search commit.
+  function navigate(href: string): void {
+    startTransition(() => {
+      router.replace(href);
+    });
+  }
 
   // Builds a board URL from the server-rendered filter state plus per-call
   // overrides. Filter/sort changes deliberately pass no page: the serializer
@@ -179,7 +206,7 @@ export function PaginatedMissionBoard({
       return;
     }
     const handle = setTimeout(() => {
-      router.replace(buildHref({ q: search }));
+      navigate(buildHref({ q: search }));
     }, SEARCH_DEBOUNCE_MS);
     return (): void => {
       clearTimeout(handle);
@@ -225,10 +252,13 @@ export function PaginatedMissionBoard({
             {SEVERITY_OPTIONS.map((severity) => (
               <FilterChip
                 key={severity}
-                href={buildHref({ severity: toggledSet(initialQuery.severity, severity) })}
+                onToggle={() => {
+                  navigate(buildHref({ severity: toggledSet(initialQuery.severity, severity) }));
+                }}
                 label={SEVERITY_LABELS[severity]}
                 count={facets.severity[severity]}
                 active={initialQuery.severity.has(severity)}
+                disabled={isPending}
               />
             ))}
           </div>
@@ -239,10 +269,13 @@ export function PaginatedMissionBoard({
             {ECOSYSTEM_OPTIONS.map((ecosystem) => (
               <FilterChip
                 key={ecosystem}
-                href={buildHref({ ecosystem: toggledSet(initialQuery.ecosystem, ecosystem) })}
+                onToggle={() => {
+                  navigate(buildHref({ ecosystem: toggledSet(initialQuery.ecosystem, ecosystem) }));
+                }}
                 label={ECOSYSTEM_LABELS[ecosystem]}
                 count={facets.ecosystem[ecosystem]}
                 active={initialQuery.ecosystem.has(ecosystem)}
+                disabled={isPending}
               />
             ))}
           </div>
@@ -253,26 +286,34 @@ export function PaginatedMissionBoard({
             {EFFORT_OPTIONS.map((effort) => (
               <FilterChip
                 key={effort}
-                href={buildHref({ effort: toggledSet(initialQuery.effort, effort) })}
+                onToggle={() => {
+                  navigate(buildHref({ effort: toggledSet(initialQuery.effort, effort) }));
+                }}
                 label={EFFORT_LABELS[effort]}
                 count={facets.effort[effort]}
                 active={initialQuery.effort.has(effort)}
+                disabled={isPending}
               />
             ))}
           </div>
           {isFiltered && (
-            <Link
-              href={buildHref({
-                q: "",
-                severity: new Set(),
-                ecosystem: new Set(),
-                effort: new Set(),
-              })}
-              replace
-              className="text-accent hover:text-ink self-start font-mono text-xs underline decoration-dotted underline-offset-2"
+            <button
+              type="button"
+              onClick={() => {
+                navigate(
+                  buildHref({
+                    q: "",
+                    severity: new Set(),
+                    ecosystem: new Set(),
+                    effort: new Set(),
+                  }),
+                );
+              }}
+              disabled={isPending}
+              className="text-accent hover:text-ink self-start font-mono text-xs underline decoration-dotted underline-offset-2 disabled:opacity-50"
             >
               Clear filters
-            </Link>
+            </button>
           )}
         </div>
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -292,8 +333,9 @@ export function PaginatedMissionBoard({
             <select
               value={initialQuery.sort}
               onChange={(event) => {
-                router.replace(buildHref({ sort: event.target.value as SortMode }));
+                navigate(buildHref({ sort: event.target.value as SortMode }));
               }}
+              disabled={isPending}
               className="border-border bg-surface text-ink rounded-sm border px-2 py-1 font-mono text-xs"
             >
               {SORT_MODES.map((mode) => (
@@ -304,9 +346,14 @@ export function PaginatedMissionBoard({
             </select>
           </label>
         </div>
-        {(isFiltered || pageCount > 1) && (
+        {(isFiltered || pageCount > 1 || isPending) && (
           <p className="text-ink-muted font-mono text-xs">
             {rangeStart.toString()}–{rangeEnd.toString()} of {total.toString()} missions
+            {isPending && (
+              <span role="status" className="text-accent ml-3">
+                Updating…
+              </span>
+            )}
           </p>
         )}
       </div>
@@ -344,12 +391,16 @@ export function PaginatedMissionBoard({
       {pageCount > 1 && (
         <nav aria-label="Mission pages" className="flex items-center justify-between pt-2">
           {page > 1 ? (
-            <Link
-              href={buildHref({ page: page - 1 })}
-              className="border-border text-ink-muted hover:text-ink hover:border-ink-muted rounded-md border px-3 py-1.5 font-mono text-xs"
+            <button
+              type="button"
+              onClick={() => {
+                navigate(buildHref({ page: page - 1 }));
+              }}
+              disabled={isPending}
+              className="border-border text-ink-muted hover:text-ink hover:border-ink-muted rounded-md border px-3 py-1.5 font-mono text-xs disabled:opacity-50"
             >
               ← Previous
-            </Link>
+            </button>
           ) : (
             <span className="border-border text-ink-muted/50 rounded-md border px-3 py-1.5 font-mono text-xs">
               ← Previous
@@ -359,12 +410,16 @@ export function PaginatedMissionBoard({
             Page {page.toString()} of {pageCount.toString()}
           </span>
           {page < pageCount ? (
-            <Link
-              href={buildHref({ page: page + 1 })}
-              className="border-border text-ink-muted hover:text-ink hover:border-ink-muted rounded-md border px-3 py-1.5 font-mono text-xs"
+            <button
+              type="button"
+              onClick={() => {
+                navigate(buildHref({ page: page + 1 }));
+              }}
+              disabled={isPending}
+              className="border-border text-ink-muted hover:text-ink hover:border-ink-muted rounded-md border px-3 py-1.5 font-mono text-xs disabled:opacity-50"
             >
               Next →
-            </Link>
+            </button>
           ) : (
             <span className="border-border text-ink-muted/50 rounded-md border px-3 py-1.5 font-mono text-xs">
               Next →

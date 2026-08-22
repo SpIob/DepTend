@@ -1,4 +1,4 @@
-# deptend.dev — Data Model Reference
+# DepTend — Data Model Reference
 
 _Auto-sync this document with `packages/core/src/db/schema.ts` on every schema change. Column types below reflect the TypeScript-level types after ADR 0011 (`schema.ts` is the sole row-type source; JSONB payload shapes live in `packages/core/src/db/json-types.ts`)._
 
@@ -147,23 +147,25 @@ Ranked maintenance work items shown on the dashboard.
 
 One row per mission. Stores final scores AND all raw inputs for full auditability.
 
-| Column                   | Type                      | Notes                                            |
-| ------------------------ | ------------------------- | ------------------------------------------------ |
-| `id`                     | uuid PK                   |                                                  |
-| `mission_id`             | uuid FK → missions UNIQUE | One score per mission                            |
-| `impact_score`           | numeric(4,1)              | 0.0–10.0                                         |
-| `ecosystem_value_score`  | numeric(4,1)              | 0.0–10.0                                         |
-| `composite_score`        | numeric(4,1)              | `(impact × 0.60) + (ecosystem_value × 0.40)`     |
-| `effort_label`           | enum                      | `trivial \| low \| medium \| high`               |
-| `impact_inputs`          | jsonb                     | See `ImpactInputs` in `db/json-types.ts`         |
-| `ecosystem_value_inputs` | jsonb                     | See `EcosystemValueInputs` in `db/json-types.ts` |
-| `effort_inputs`          | jsonb                     | See `EffortInputs` in `db/json-types.ts`         |
-| `confidence`             | enum                      | `high \| medium \| low`                          |
-| `confidence_notes`       | text[]?                   | Human-readable confidence warnings               |
-| `confidence_flags`       | jsonb                     | Programmatic flags (e.g. `{no_lock_file: true}`) |
-| `scoring_version`        | text                      | Algorithm version that produced this row         |
-| `created_at`             | timestamptz               |                                                  |
-| `updated_at`             | timestamptz               |                                                  |
+| Column                   | Type                      | Notes                                                                                     |
+| ------------------------ | ------------------------- | ----------------------------------------------------------------------------------------- |
+| `id`                     | uuid PK                   |                                                                                           |
+| `mission_id`             | uuid FK → missions UNIQUE | One score per mission                                                                     |
+| `impact_score`           | numeric(4,1)              | 0.0–10.0                                                                                  |
+| `ecosystem_value_score`  | numeric(4,1)              | 0.0–10.0                                                                                  |
+| `composite_score`        | numeric(4,1)              | `(impact × 0.60) + (ecosystem_value × 0.40)`                                              |
+| `effort_label`           | enum                      | `trivial \| low \| medium \| high`                                                        |
+| `impact_inputs`          | jsonb                     | See `ImpactInputs` in `db/json-types.ts`                                                  |
+| `ecosystem_value_inputs` | jsonb                     | See `EcosystemValueInputs` in `db/json-types.ts`                                          |
+| `effort_inputs`          | jsonb                     | See `EffortInputs` in `db/json-types.ts`                                                  |
+| `confidence`             | enum                      | `high \| medium \| low`                                                                   |
+| `confidence_notes`       | text[]?                   | Human-readable confidence warnings                                                        |
+| `confidence_flags`       | jsonb                     | Programmatic flags (e.g. `{no_lock_file: true, downstream_dependents_unavailable: true}`) |
+| `scoring_version`        | text                      | Algorithm version that produced this row                                                  |
+| `created_at`             | timestamptz               |                                                                                           |
+| `updated_at`             | timestamptz               |                                                                                           |
+
+Confidence inputs come from two data sources wired up after this table was first written: `ecosystem_value_inputs.downstream_dependents` (libraries.io, [ADR 0032](../adr/0032-downstream-dependents.md)) and `effort_inputs.has_migration_guide` / `effort_inputs.breaking_change_signals` (GitHub Releases, [ADR 0029](../adr/0029-breaking-change-signals.md)). When a source can't resolve for a mission, the corresponding `_unavailable` flag is set in `confidence_flags` and the mission stays at lower confidence.
 
 **Composite score formula (v0.1):**
 

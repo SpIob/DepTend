@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to deptend.dev, condensed to one entry per phase.
+All notable changes to DepTend, condensed to one entry per phase.
 
 **Conventions used here:**
 
@@ -12,14 +12,31 @@ All notable changes to deptend.dev, condensed to one entry per phase.
 
 ## [Unreleased]
 
-**Downstream dependents sourced via libraries.io** — `ADR 0032` (Proposed, not yet live-verified)
+**Mission board focus fix, accessibility pass, security hardening, docs truth-check**
+
+### Fixed
+
+- `/missions` search no longer loses focus mid-typing: the board stopped remounting on every debounced search commit (it was keyed by its full URL), filter chips/clear/pagination became real buttons behind one shared transition — also fixing invalid `aria-pressed` on links — and an "Updating…" status shows while a filter/sort/search navigation runs.
+- Screen readers now hear async outcomes: `role="status"` regions on repo submission, bookmark, and withdrawal messages; `role="alert"` on claim/unclaim errors; a proper label on the submit-repo input; sign-in/out buttons ignore double-clicks.
+- Stale docs corrected against source: README's confidence explainer claimed every mission sits at `low` and that downstream-dependents/breaking-change signals weren't wired up (both false since ADRs 0029/0032); CHANGELOG entries and ADR footers still read "Proposed"/"draft" after the Accepted flip; `docs/data-model/README.md` gained the two post-launch scoring inputs and lost stale `deptend.dev` branding (README too); AGENTS.md §6/§13 notes updated to match the root typecheck script and ADR statuses.
+
+### Added
+
+- Loading skeletons for `/` and `/repo/[owner]/[name]` instead of blank screens during Neon reads. `/missions` deliberately gets none: a page-level skeleton would swap out the search input mid-navigation.
+- Ranking-parity unit suite for `db/queries.ts` (real Drizzle SQL against a fake transport): locks `getBoardMissionsWithScoresPage()`'s ORDER BY to `rankMissions()`'s key sequence, plus filter/facet/pagination/shaping behavior — the ADR 0031 lockstep tripwire previously lived only in manual testing.
+
+### Changed
+
+- Security hardening: `Content-Security-Policy-Report-Only` header added (an enforced policy needs nonce middleware — deferred until the report is clean), and `ingest.yml` routes `workflow_dispatch` inputs through `env:` instead of direct shell interpolation.
+
+**Downstream dependents sourced via libraries.io** — `ADR 0032`
 
 ### Added
 
 - `EcosystemValueInputs.downstream_dependents` is now real data for repos whose published package(s) libraries.io can link: one paced API call per analyzed repo per ingestion run (max count across monorepo links), gated on a new free-tier `LIBRARIES_IO_API_KEY` (Actions secret + `.env.local`). The confidence flag is now conditional — a resolved count, including a genuine 0, clears it. Repos that resolve drop to a single structural flag (`no_lock_file`) and reach **`medium` confidence for the first time since Phase 2**; everything else stays honestly `null` + flagged. CLI output is unchanged (no keys in the CLI by design).
 - Correction to this log's own record: the ADR 0029 entry below claims missions could "reach medium" after that change; against source they couldn't — `downstream_dependents_unavailable` was the second of two always-set flags until this ADR.
 
-**Server-side pagination for the mission board + repo hardening** — `ADR 0031` (Proposed, not yet live-verified)
+**Server-side pagination for the mission board + repo hardening** — `ADR 0031`
 
 ### Added
 
@@ -36,7 +53,7 @@ All notable changes to deptend.dev, condensed to one entry per phase.
 
 - The unbounded board query known issue: `/missions` DB read, payload, and client working set are now bounded per request regardless of total missions.
 
-**Repo submission safeguards** — `ADR 0030` (Proposed, not yet live-verified)
+**Repo submission safeguards** — `ADR 0030`
 
 ### Added
 
@@ -46,6 +63,12 @@ All notable changes to deptend.dev, condensed to one entry per phase.
 ### Fixed
 
 - `POST /api/repos` previously accepted a syntactically valid GitHub URL for a private, deleted, or nonexistent repo with no verification at all. The manifest pre-check's existence check closes this as a byproduct.
+
+**Dead export removal** — `ADR 0031` follow-up
+
+### Removed
+
+- `getBoardMissionsWithScores()` (`packages/core/src/db/queries.ts`): the fetch-everything board query that ADR 0031's server-paginated `getBoardMissionsWithScoresPage()` superseded kept zero callers after that change. Historical mentions in ADRs 0019/0023/0027 stay as written — they were accurate when recorded.
 
 ---
 

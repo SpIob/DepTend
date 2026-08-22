@@ -114,7 +114,11 @@ function ClaimAction({
         >
           {pending ? "Releasing…" : "Unclaim"}
         </button>
-        {errorMessage !== null && <p className="text-severity-critical text-xs">{errorMessage}</p>}
+        <div role="alert">
+          {errorMessage !== null && (
+            <p className="text-severity-critical text-xs">{errorMessage}</p>
+          )}
+        </div>
       </div>
     );
   }
@@ -155,7 +159,9 @@ function ClaimAction({
       >
         {pending ? "Claiming…" : "Claim this mission"}
       </button>
-      {errorMessage !== null && <p className="text-severity-critical text-xs">{errorMessage}</p>}
+      <div role="alert">
+        {errorMessage !== null && <p className="text-severity-critical text-xs">{errorMessage}</p>}
+      </div>
     </div>
   );
 }

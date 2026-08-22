@@ -99,11 +99,11 @@ export function createReadonlyDb(databaseUrl: string): ReadonlyDb {
 }
 
 /**
- * Shared implementation behind getOpenMissionsWithScores(),
- * getBoardMissionsWithScores(), and getRepoMissionsWithScores() below —
- * same join, same ranking; status filter always applies, repoId narrows
- * to one repo when passed (ADR 0027) and is left off entirely otherwise
- * so the board-wide callers are unchanged.
+ * Shared implementation behind getOpenMissionsWithScores() and
+ * getRepoMissionsWithScores() below — same join, same ranking; status
+ * filter always applies, repoId narrows to one repo when passed (ADR 0027)
+ * and is left off entirely otherwise so the board-wide callers are
+ * unchanged.
  */
 async function getMissionsWithScoresByStatus(
   db: ReadonlyDb,
@@ -156,20 +156,8 @@ export async function getOpenMissionsWithScores(db: ReadonlyDb): Promise<Mission
 }
 
 /**
- * Open + claimed missions, ranked the same way as
- * getOpenMissionsWithScores() above. This is what the Phase 5 public
- * rescue board renders: claimed missions stay visible (marked claimed,
- * not actionable by anyone but their claimant) so the board also answers
- * "what's already being worked on," not just "what's left." Resolved and
- * dismissed missions are excluded — no UI surfaces either state yet.
- */
-export async function getBoardMissionsWithScores(db: ReadonlyDb): Promise<MissionWithScore[]> {
-  return getMissionsWithScoresByStatus(db, ["open", "claimed"]);
-}
-
-/**
  * Open + claimed missions for one repo, ranked the same way as
- * getBoardMissionsWithScores() — the query behind /repo/[owner]/[name]
+ * getOpenMissionsWithScores() — the query behind /repo/[owner]/[name]
  * (ADR 0027). Scoped to a single repo_id so query cost and payload size
  * are bounded by one repo's mission count, not the whole board's.
  */
@@ -488,7 +476,7 @@ export async function getSkippedRepos(db: ReadonlyDb): Promise<SkippedRepo[]> {
 /**
  * One row per repo for the directory page (ADR 0027) — mission counts by
  * severity and the set of ecosystems present, without shipping every
- * mission's full payload the way getBoardMissionsWithScores() does.
+ * mission's full payload the way the fetch-everything queries above do.
  *
  * Deliberately four small, independently-bounded queries assembled in
  * application code rather than one mega-join: a single query joining

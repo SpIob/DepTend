@@ -122,4 +122,4 @@ A mission whose dependency has no resolvable GitHub repo (a real, expected outco
 
 ---
 
-_End of document — draft, pending Mico's confirmation before implementation begins._
+_End of document._

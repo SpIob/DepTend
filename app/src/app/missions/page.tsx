@@ -140,7 +140,6 @@ export default async function AllMissionsPage({
         <EmptyState />
       ) : (
         <PaginatedMissionBoard
-          key={buildMissionBoardHref("/missions", query)}
           missions={board.missions}
           total={board.total}
           facets={board.facets}

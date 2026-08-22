@@ -122,9 +122,11 @@ export function WithdrawButton({
           You submitted this — remove it?
         </button>
       )}
-      {errorMessage !== null && (
-        <p className="text-severity-critical text-[10px] leading-tight">{errorMessage}</p>
-      )}
+      <div role="status" aria-live="polite">
+        {errorMessage !== null && (
+          <p className="text-severity-critical text-[10px] leading-tight">{errorMessage}</p>
+        )}
+      </div>
     </div>
   );
 }

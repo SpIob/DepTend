@@ -94,4 +94,4 @@ if (ctx.downstreamDependents === undefined) {
 
 ---
 
-_End of document — draft, pending live verification (one real ingestion run with the key set) before flipping to Accepted._
+_End of document._

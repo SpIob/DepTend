@@ -1,9 +1,11 @@
 "use client";
 
+import { useState } from "react";
 import { signIn, signOut, useSession } from "next-auth/react";
 
 export function AuthStatus(): React.JSX.Element {
   const { data: session, status } = useSession();
+  const [busy, setBusy] = useState(false);
 
   if (status === "loading") {
     return <span className="text-ink-muted font-mono text-xs">…</span>;
@@ -15,8 +17,12 @@ export function AuthStatus(): React.JSX.Element {
         <span className="text-ink-muted">{session.user.login ?? session.user.name}</span>
         <button
           type="button"
-          onClick={() => void signOut()}
-          className="text-accent hover:text-ink underline decoration-dotted underline-offset-2"
+          disabled={busy}
+          onClick={() => {
+            setBusy(true);
+            void signOut();
+          }}
+          className="text-accent hover:text-ink underline decoration-dotted underline-offset-2 disabled:opacity-50"
         >
           Sign out
         </button>
@@ -27,8 +33,12 @@ export function AuthStatus(): React.JSX.Element {
   return (
     <button
       type="button"
-      onClick={() => void signIn("github")}
-      className="text-accent hover:text-ink font-mono text-xs underline decoration-dotted underline-offset-2"
+      disabled={busy}
+      onClick={() => {
+        setBusy(true);
+        void signIn("github");
+      }}
+      className="text-accent hover:text-ink font-mono text-xs underline decoration-dotted underline-offset-2 disabled:opacity-50"
     >
       Sign in with GitHub
     </button>

@@ -89,7 +89,11 @@ export function SubmitRepoForm({
       className="flex flex-col gap-2 sm:flex-row sm:items-start"
     >
       <div className="flex flex-1 flex-col gap-1">
+        <label htmlFor="repo-url" className="sr-only">
+          GitHub repository URL
+        </label>
         <input
+          id="repo-url"
           type="text"
           value={url}
           onChange={(event) => {
@@ -99,10 +103,12 @@ export function SubmitRepoForm({
           required
           className="border-border bg-surface text-ink placeholder:text-ink-muted focus-visible:outline-accent w-full rounded-sm border px-3 py-1.5 font-mono text-sm"
         />
-        {state.kind === "success" && <p className="text-severity-low text-xs">{state.message}</p>}
-        {state.kind === "error" && (
-          <p className="text-severity-critical text-xs">{state.message}</p>
-        )}
+        <div role="status" aria-live="polite">
+          {state.kind === "success" && <p className="text-severity-low text-xs">{state.message}</p>}
+          {state.kind === "error" && (
+            <p className="text-severity-critical text-xs">{state.message}</p>
+          )}
+        </div>
       </div>
       <button
         type="submit"

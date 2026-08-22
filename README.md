@@ -1,22 +1,22 @@
-# deptend.dev
+# DepTend
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Live dashboard](https://img.shields.io/badge/live-deptend.vercel.app-brightgreen)](https://deptend.vercel.app)
 [![GitHub stars](https://img.shields.io/github/stars/SpIob/DepTend?style=social)](https://github.com/SpIob/DepTend)
 
-**deptend.dev** converts a GitHub repository's dependency data into a prioritized, explainable list of maintenance missions. Instead of a flat vulnerability feed, it tells you what to fix next by combining security impact, ecosystem value, and estimated effort into a single ranked list, with every score's inputs one click away.
+**DepTend** converts a GitHub repository's dependency data into a prioritized, explainable list of maintenance missions. Instead of a flat vulnerability feed, it tells you what to fix next by combining security impact, ecosystem value, and estimated effort into a single ranked list, with every score's inputs one click away.
 
 **Live dashboard:** [deptend.vercel.app](https://deptend.vercel.app)
 
 https://github.com/user-attachments/assets/e044e4af-7c11-43d4-bf60-76e5c814275d
 
-deptend.dev mission board: a ranked, explainable list of maintenance missions
+DepTend mission board: a ranked, explainable list of maintenance missions
 
 ---
 
 ## Why this exists
 
-Open-source maintainers face a flood of alerts, dependency updates, and issues with no clear way to prioritize any of it. deptend.dev takes that same data and ranks it by what's actually worth doing next: maintenance-first, not vulnerability-first.
+Open-source maintainers face a flood of alerts, dependency updates, and issues with no clear way to prioritize any of it. DepTend takes that same data and ranks it by what's actually worth doing next: maintenance-first, not vulnerability-first.
 
 Three constraints are non-negotiable and shape every decision in this project:
 
@@ -75,7 +75,7 @@ composite_score = impact_score × 0.60 + ecosystem_value_score × 0.40
 
 Impact comes from the CVSS score when one's available, or a severity-based estimate otherwise. It's discounted for development dependencies, since they don't ship to end users, and for transitive dependencies.
 
-Ecosystem value is log-scaled repo stars and open issues, plus downstream dependents once that data source exists.
+Ecosystem value is log-scaled repo stars and open issues, plus downstream dependents when libraries.io can resolve them for the repo's published package.
 
 Effort is the semver bump size needed to reach the fixed version (patch/minor/major maps to trivial/low/.../high), refined by migration-guide data once that's ingested.
 
@@ -83,7 +83,7 @@ Missions are ranked by `composite_score`, bucketed into fixed-width tiers so nea
 
 Full detail: [`docs/adr/0006-scoring-algorithm.md`](docs/adr/0006-scoring-algorithm.md).
 
-> **On confidence right now:** every mission currently shows `low` confidence, by design and not as a bug. Two scoring inputs, downstream-dependents data and migration-guide/breaking-change signals, don't have a data source wired up yet, so the score stays deliberately conservative rather than implying more precision than the data supports. We're stating that plainly here instead of hiding it, consistent with the transparency principle above.
+> **On confidence right now:** most missions still show `low` confidence. Two scoring inputs, downstream-dependents data and migration-guide/breaking-change signals, now have data sources wired up ([ADR 0029](docs/adr/0029-breaking-change-signals.md) and [ADR 0032](docs/adr/0032-downstream-dependents.md)), and a repo whose inputs all resolve reaches `medium`. But the dependents lookup needs a `LIBRARIES_IO_API_KEY` on the ingestion run, and not every dependency's source repo can be identified, so many missions stay conservatively at `low` with the missing input flagged rather than guessed at.
 
 ## Ecosystem support
 
@@ -122,7 +122,7 @@ Every choice above is free at the tier this project uses. See [`docs/adr/`](docs
 ## Monorepo structure
 
 ```
-deptend.dev/
+DepTend/
 ├── app/              # Next.js frontend + API routes (the hosted dashboard)
 ├── cli/              # npx-runnable CLI companion
 ├── packages/core/     # @deptend/core: shared ingestion + scoring engine, used by both app/ and cli/
@@ -143,7 +143,7 @@ Requires Node.js ≥20 and [pnpm](https://pnpm.io/installation) ≥9 (this proje
 
    ```bash
    git clone https://github.com/SpIob/DepTend
-   cd deptend.dev
+   cd DepTend
    pnpm install
    ```
 
