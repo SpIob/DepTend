@@ -12,6 +12,21 @@ All notable changes to DepTend, condensed to one entry per phase.
 
 ## [Unreleased]
 
+**Read-path performance pass** — `ADR 0033`, `ADR 0034`
+
+### Added
+
+- `vercel.json` pins Next.js functions to `sin1`, alongside Neon (AP-Southeast-1) — the dashboard setting was already correct; now it can't drift.
+- `/missions` loading skeleton, matching the existing `/` and `/repo/*` ones. Reverses this log's earlier "deliberately gets none" note below: in-board filter/search navigations run inside a transition and keep the page mounted (the "Updating…" path), so the skeleton only mounts on entry to the route — exactly where the blank screen was.
+
+### Changed
+
+- Mission list payloads dropped every advisory column no consumer renders — `raw_data` (the verbatim OSV record), `details`, `affected_versions`, and five more — via a narrow projection in the shared five-table join. `MissionWithScore.advisory` is now an `AdvisorySummary`; ranking keys (`published_at`, `osv_id`) and everything "Why this score?" renders are untouched. Both boards ship visibly smaller flight data per row.
+- The board's total count and all three facet axes come out of one `count(*) FILTER (...)` statement instead of four parallel statements — one join scan per request instead of five over the same join. Facet semantics unchanged ("how many if I also picked this").
+- Shared reads cached under two tags (`missions`, `repos`) with a 60-second TTL: claims/bookmarks/submissions/withdrawals revalidate their tags on success and stay instant; ingestion-driven changes (written by the external Actions cron) appear within 60 seconds. Pages stay `force-dynamic`. Dates are revived after cache hits — `unstable_cache` serializes them to strings.
+- New index `idx_dependencies_repo_ecosystem` turns the homepage's full-table `SELECT DISTINCT repo_id, ecosystem FROM dependencies` into an index-only scan, closing the §13 known issue deferred since ADR 0031. Applied to dev; production gets it on the next deploy window's `drizzle-kit migrate`.
+- Per-repo board filtering memoized: search haystacks build once per mission list, not once per keystroke render.
+
 **Mission board focus fix, accessibility pass, security hardening, docs truth-check**
 
 ### Fixed
@@ -22,7 +37,7 @@ All notable changes to DepTend, condensed to one entry per phase.
 
 ### Added
 
-- Loading skeletons for `/` and `/repo/[owner]/[name]` instead of blank screens during Neon reads. `/missions` deliberately gets none: a page-level skeleton would swap out the search input mid-navigation.
+- Loading skeletons for `/` and `/repo/[owner]/[name]` instead of blank screens during Neon reads. `/missions` deliberately gets none: a page-level skeleton would swap out the search input mid-navigation. _(Superseded by the read-path performance pass above, which ships one after confirming mid-board navigations don't mount it.)_
 - Ranking-parity unit suite for `db/queries.ts` (real Drizzle SQL against a fake transport): locks `getBoardMissionsWithScoresPage()`'s ORDER BY to `rankMissions()`'s key sequence, plus filter/facet/pagination/shaping behavior — the ADR 0031 lockstep tripwire previously lived only in manual testing.
 
 ### Changed

@@ -36,7 +36,7 @@ import {
   type BoardFilters,
   type ReadonlyDb,
 } from "./queries.js";
-import { advisories, dependencies, missions, missionScores, repos } from "./schema.js";
+import { dependencies, missions, missionScores, repos } from "./schema.js";
 
 // ---------------------------------------------------------------------------
 // Fake transport
@@ -173,12 +173,40 @@ const REPO_VALUES: Record<string, unknown> = {
   updatedAt: NOW,
 };
 
+/**
+ * The advisory segment of a joined row, positional order matching
+ * queries.ts's advisoryListSelection — the driver maps rows against the
+ * SELECT list, so this must track it (see the projection test below).
+ */
+function advisoryListColumns(): unknown[] {
+  return [
+    ADVISORY_VALUES.id,
+    ADVISORY_VALUES.osvId,
+    ADVISORY_VALUES.source,
+    ADVISORY_VALUES.ecosystem,
+    ADVISORY_VALUES.severity,
+    ADVISORY_VALUES.fixedVersion,
+    ADVISORY_VALUES.publishedAt,
+  ];
+}
+
+/** Expected AdvisorySummary shape for ADVISORY_VALUES. */
+const ADVISORY_SUMMARY_EXPECTED = {
+  id: ADVISORY_VALUES.id,
+  osvId: ADVISORY_VALUES.osvId,
+  source: ADVISORY_VALUES.source,
+  ecosystem: ADVISORY_VALUES.ecosystem,
+  severity: ADVISORY_VALUES.severity,
+  fixedVersion: ADVISORY_VALUES.fixedVersion,
+  publishedAt: ADVISORY_VALUES.publishedAt,
+};
+
 /** One fully-populated five-table join row, in driver positional order. */
 function joinedRow(): unknown[] {
   return [
     ...flatten(missions, MISSION_VALUES),
     ...flatten(missionScores, SCORE_VALUES),
-    ...flatten(advisories, ADVISORY_VALUES),
+    ...advisoryListColumns(),
     ...flatten(dependencies, DEPENDENCY_VALUES),
     ...flatten(repos, REPO_VALUES),
   ];
@@ -192,19 +220,37 @@ const EMPTY_FILTERS: BoardFilters = {
   sort: "priority",
 };
 
-/** Default routing for the board query's five parallel statements. */
-function boardRouter(
-  overrides: Partial<Record<"page" | "total" | "sev" | "eco" | "effort", unknown[][]>>,
-): RowRouter {
+/**
+ * One row for the merged tally statement: [total, then one count column per
+ * known severity, ecosystem, and effort enum value] — 13 columns, in the
+ * same order queries.ts builds its select object.
+ */
+function tallyRow(overrides: Partial<Record<string, number>> = {}): unknown[] {
+  const values: Record<string, number> = {
+    total: 0,
+    severity_critical: 0,
+    severity_high: 0,
+    severity_medium: 0,
+    severity_low: 0,
+    severity_unknown: 0,
+    ecosystem_npm: 0,
+    ecosystem_pypi: 0,
+    ecosystem_go: 0,
+    effort_trivial: 0,
+    effort_low: 0,
+    effort_medium: 0,
+    effort_high: 0,
+    ...overrides,
+  };
+  return Object.values(values);
+}
+
+/** Default routing for the board query's two parallel statements. */
+function boardRouter(overrides: Partial<Record<"page" | "tally", unknown[][]>>): RowRouter {
   return (sql: string): unknown[][] => {
     if (sql.includes("limit ")) return overrides.page ?? [joinedRow()];
-    if (/group by/i.test(sql)) {
-      const selectList = sql.slice(sql.indexOf("select"), sql.indexOf(" from "));
-      if (/coalesce\("advisories"\."severity"/i.test(selectList)) return overrides.sev ?? [];
-      if (/coalesce\("dependencies"\."ecosystem"/i.test(selectList)) return overrides.eco ?? [];
-      return overrides.effort ?? [];
-    }
-    return overrides.total ?? [[3]];
+    if (sql.includes("count(*)")) return overrides.tally ?? [tallyRow({ total: 3 })];
+    return [];
   };
 }
 
@@ -288,7 +334,7 @@ describe("getBoardMissionsWithScoresPage filters", () => {
     expect(page.params).toContain(`%100\\%\\_x\\\\%`);
   });
 
-  it("binds set filters and keeps each facet's own axis out of that facet's WHERE", async () => {
+  it("binds set filters once on the merged tally, each axis's FILTER ignoring only its own axis", async () => {
     const filters: BoardFilters = {
       q: "lodash",
       severities: ["high", "critical"],
@@ -309,38 +355,54 @@ describe("getBoardMissionsWithScoresPage filters", () => {
       expect(page.params).toContain(value);
     }
 
-    const groupCalls = calls.filter((call) => /group by/i.test(call.sql));
-    expect(groupCalls).toHaveLength(3);
+    // Total + facets come out of ONE statement (a single join scan with
+    // count(*) FILTER columns), not four parallel statements.
+    const tallyCalls = calls.filter((call) => call.sql.includes("filter (where"));
+    expect(tallyCalls).toHaveLength(1);
+    const tally = bySql(calls, /filter \(where/);
 
-    const facetFor = (axis: RegExp): CapturedCall => {
-      const match = groupCalls.find((call) =>
-        axis.test(call.sql.slice(call.sql.indexOf("select"), call.sql.indexOf(" from "))),
-      );
-      if (match === undefined) {
-        throw new Error(`No facet call matched ${String(axis)}`);
+    // Every filter value is bound once on the shared statement.
+    for (const value of [
+      ...filters.severities,
+      ...filters.ecosystems,
+      ...filters.efforts,
+      "%lodash%",
+    ]) {
+      expect(tally.params).toContain(value);
+    }
+
+    // One FILTER column per known enum value plus the total:
+    // 5 severities + 3 ecosystems + 4 efforts + 1 total.
+    expect(tally.sql.match(/filter \(where/g)).toHaveLength(13);
+
+    // Each facet bucket is an equality against its own expression — the
+    // facet answers "how many rows are this severity under the other
+    // axes' filters", not a re-application of that axis's IN list.
+    const selectList = tally.sql.slice(tally.sql.indexOf("select"), tally.sql.indexOf(" from "));
+    expect(
+      selectList.match(/coalesce\("advisories"\."severity"::text, 'unknown'\) = /gi),
+    ).toHaveLength(5);
+    expect(
+      selectList.match(/coalesce\("dependencies"\."ecosystem"::text[^)]*\) = /gi),
+    ).toHaveLength(3);
+  });
+
+  it("ships the narrow advisory projection — no raw OSV blob or long-form fields", async () => {
+    const { db, calls } = makeDb(boardRouter({}));
+    await getBoardMissionsWithScoresPage(db, EMPTY_FILTERS);
+    await getRepoMissionsWithScores(db, "r-1");
+
+    for (const call of calls) {
+      if (!call.sql.includes('from "missions"') || call.sql.includes("count(*)")) {
+        continue; // only the payload join statements are under test
       }
-      return match;
-    };
-
-    const sev = facetFor(/coalesce\("advisories"\."severity"/i);
-    const eco = facetFor(/coalesce\("dependencies"\."ecosystem"/i);
-    const effort = facetFor(/"mission_scores"\."effort_label"/i);
-
-    // Severity facet counts rows matching every OTHER axis — its params must
-    // not bind the severity set, but must bind q, ecosystems, and efforts.
-    expect(sev.params).not.toContain("high");
-    expect(sev.params).not.toContain("critical");
-    expect(sev.params).toContain("%lodash%");
-    expect(sev.params).toContain("npm");
-    expect(sev.params).toContain("trivial");
-
-    expect(eco.params).not.toContain("npm");
-    expect(eco.params).toContain("high");
-    expect(eco.params).toContain("%lodash%");
-
-    expect(effort.params).not.toContain("trivial");
-    expect(effort.params).toContain("high");
-    expect(effort.params).toContain("npm");
+      expect(call.sql).toContain('"advisories"."osv_id"');
+      expect(call.sql).not.toContain('"advisories"."raw_data"');
+      expect(call.sql).not.toContain('"advisories"."details"');
+      expect(call.sql).not.toContain('"advisories"."affected_versions"');
+      expect(call.sql).not.toContain('"advisories"."summary"');
+      expect(call.sql).not.toContain('"advisories"."package_name"');
+    }
   });
 });
 
@@ -374,17 +436,18 @@ describe("getBoardMissionsWithScoresPage pagination", () => {
 });
 
 describe("getBoardMissionsWithScoresPage result shaping", () => {
-  it("maps the join row into MissionWithScore and tallies facets, skipping null keys", async () => {
+  it("maps the join row into MissionWithScore and reads facets off the merged tally", async () => {
     const { db } = makeDb(
       boardRouter({
-        total: [[3]],
-        sev: [
-          ["high", 2],
-          [null, 9],
-          ["low", 1],
+        tally: [
+          tallyRow({
+            total: 3,
+            severity_high: 2,
+            severity_low: 1,
+            ecosystem_npm: 3,
+            effort_low: 3,
+          }),
         ],
-        eco: [["npm", 3]],
-        effort: [["low", 3]],
       }),
     );
     const result = await getBoardMissionsWithScoresPage(db, EMPTY_FILTERS);
@@ -394,18 +457,39 @@ describe("getBoardMissionsWithScoresPage result shaping", () => {
       {
         ...MISSION_VALUES,
         score: SCORE_VALUES,
-        advisory: ADVISORY_VALUES,
+        advisory: ADVISORY_SUMMARY_EXPECTED,
         dependency: DEPENDENCY_VALUES,
         repo: REPO_VALUES,
       },
     ]);
+    // Zero-count buckets are omitted, matching the GROUP BY behavior the
+    // tally statement replaced (a chip with no rows shows no count).
     expect(result.facets.severity).toEqual({ high: 2, low: 1 });
     expect(result.facets.ecosystem).toEqual({ npm: 3 });
     expect(result.facets.effort).toEqual({ low: 3 });
   });
 
+  it("normalizes an all-null left-join advisory projection to null on the shaped row", async () => {
+    // A mission with no advisory_id joins nothing — the driver hands back
+    // NULLs for every selected advisory column, which must surface as
+    // advisory: null, not an object of nulls.
+    const { db } = makeDb(() => [
+      [
+        ...flatten(missions, MISSION_VALUES),
+        ...flatten(missionScores, SCORE_VALUES),
+        ...advisoryListColumns().map(() => null),
+        ...flatten(dependencies, DEPENDENCY_VALUES),
+        ...flatten(repos, REPO_VALUES),
+      ],
+    ]);
+    const result = await getOpenMissionsWithScores(db);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]?.advisory).toBeNull();
+  });
+
   it("returns zero total and empty facets when the board has no matching rows", async () => {
-    const { db } = makeDb(boardRouter({ page: [], total: [] }));
+    const { db } = makeDb(boardRouter({ page: [], tally: [tallyRow()] }));
     const result = await getBoardMissionsWithScoresPage(db, EMPTY_FILTERS);
 
     expect(result.total).toBe(0);
@@ -432,7 +516,7 @@ describe("getOpenMissionsWithScores / getRepoMissionsWithScores", () => {
           compositeScore: 9.9,
           effortLabel: "high",
         }),
-        ...flatten(advisories, ADVISORY_VALUES),
+        ...advisoryListColumns(),
         ...flatten(dependencies, DEPENDENCY_VALUES),
         ...flatten(repos, REPO_VALUES),
       ];

@@ -147,6 +147,12 @@ export const dependencies = pgTable(
       table.depType,
     ),
     index("idx_dependencies_repo_id").on(table.repoId),
+    // (repo_id, ecosystem) — serves SELECT DISTINCT repo_id, ecosystem FROM
+    // dependencies as an index-only scan. getRepoDirectoryBase() runs that
+    // distinct pair on every homepage render; previously it scanned the
+    // whole table with nothing to lean on (the deferred known issue from
+    // AGENTS.md §13, closed by ADR 0034).
+    index("idx_dependencies_repo_ecosystem").on(table.repoId, table.ecosystem),
     index("idx_dependencies_package_name").on(table.packageName),
     index("idx_dependencies_ecosystem").on(table.ecosystem),
   ],

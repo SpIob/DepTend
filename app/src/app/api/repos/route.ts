@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { getDb } from "@/lib/db";
@@ -123,6 +124,10 @@ export async function POST(request: Request): Promise<Response> {
   if (repo === null) {
     return NextResponse.json({ error: "Unexpected error creating repo." }, { status: 500 });
   }
+
+  // A new row changes the directory, the counts, and the cap check's
+  // denominator — all cached under the "repos" tag (ADR 0033).
+  revalidateTag("repos");
 
   const dispatch = await triggerIngestion(repo.id);
 

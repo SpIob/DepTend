@@ -28,11 +28,21 @@ import { and, eq, inArray, sql, type SQL } from "drizzle-orm";
 import { drizzle, type NeonHttpDatabase } from "drizzle-orm/neon-http";
 import { neon } from "@neondatabase/serverless";
 import * as schema from "./schema.js";
-import { advisories, dependencies, missions, missionScores, repos } from "./schema.js";
+import {
+  advisories,
+  dependencies,
+  ecosystemEnum,
+  effortLabelEnum,
+  missions,
+  missionScores,
+  repos,
+  severityEnum,
+} from "./schema.js";
 import type { Ecosystem, EffortLabel, MissionStatus, Severity } from "./schema.js";
 import { rankMissions, type RankableMission } from "../scorer/ranking.js";
 import {
   EMPTY_REPO_MISSION_COUNTS,
+  type AdvisorySummary,
   type MissionWithScore,
   type RepoMissionCounts,
   type RepoWithMissionSummary,
@@ -40,6 +50,22 @@ import {
 import { getBookmarkedRepoIds } from "./bookmarks.js";
 
 export type ReadonlyDb = NeonHttpDatabase<typeof schema>;
+
+/**
+ * Advisory columns the list rows actually ship (see AdvisorySummary in
+ * query-types.ts for what's left out and why). The key order here is the
+ * SELECT-list order the driver maps positional rows against — queries.test.ts's
+ * joinedRow() fixture must match it.
+ */
+const advisoryListSelection = {
+  id: advisories.id,
+  osvId: advisories.osvId,
+  source: advisories.source,
+  ecosystem: advisories.ecosystem,
+  severity: advisories.severity,
+  fixedVersion: advisories.fixedVersion,
+  publishedAt: advisories.publishedAt,
+};
 
 /**
  * The five-table join behind every mission-listing read here: missions with
@@ -59,7 +85,7 @@ function missionJoinRows(db: ReadonlyDb) {
     .select({
       mission: missions,
       score: missionScores,
-      advisory: advisories,
+      advisory: advisoryListSelection,
       dependency: dependencies,
       repo: repos,
     })
@@ -73,16 +99,24 @@ function missionJoinRows(db: ReadonlyDb) {
 interface MissionJoinRow {
   mission: typeof missions.$inferSelect;
   score: typeof missionScores.$inferSelect;
-  advisory: typeof advisories.$inferSelect | null;
+  /** Left-join projection — every field individually nullable, per Drizzle. */
+  advisory: { [K in keyof typeof advisoryListSelection]: unknown } | null;
   dependency: typeof dependencies.$inferSelect | null;
   repo: typeof repos.$inferSelect;
 }
 
 function toMissionWithScore(row: MissionJoinRow): MissionWithScore {
+  // A left-joined partial selection types every field as nullable, but at
+  // runtime the row is either a full advisory (id present ⇒ the join hit a
+  // real row, so each column holds its schema-declared value) or all-null.
+  // Normalizing to AdvisorySummary | null here keeps every downstream
+  // consumer's `advisory === null` / optional-chaining shape unchanged.
+  const advisory =
+    row.advisory !== null && row.advisory.id !== null ? (row.advisory as AdvisorySummary) : null;
   return {
     ...row.mission,
     score: row.score,
-    advisory: row.advisory,
+    advisory,
     dependency: row.dependency,
     repo: row.repo,
   };
@@ -326,29 +360,30 @@ function boardOrderBy(sort: BoardSortMode): SQL[] {
   }
 }
 
-interface CountRow {
-  key: string | null;
-  count: number;
-}
-
-function tallyCounts<T extends string>(rows: readonly CountRow[]): Partial<Record<T, number>> {
-  const out: Partial<Record<T, number>> = {};
-  for (const row of rows) {
-    if (row.key === null) {
-      continue; // mirrors countBy()'s skip of null-keyed missions
-    }
-    out[row.key as T] = (out[row.key as T] ?? 0) + row.count;
-  }
-  return out;
+/** SQL fragment for a WHERE slot that may have no conditions — `and()`
+ * returns undefined when every input is undefined, which can't interpolate. */
+function condSql(...conditions: (SQL | undefined)[]): SQL {
+  return and(...conditions) ?? sql`true`;
 }
 
 /**
  * One page of the board-wide /missions listing (ADR 0031): open+claimed
  * missions matching the given filters, ordered server-side, plus the
- * unpaginated total and per-axis facet counts the filter UI needs. The
- * four auxiliary counts run in parallel over the same join; each is an
- * aggregate over at most (repo cap × severities) groups, not a full
- * payload query.
+ * unpaginated total and per-axis facet counts the filter UI needs.
+ *
+ * The total and all three facets come out of ONE statement — a single join
+ * scan with count(*) FILTER (WHERE ...) columns — where ADR 0031's original
+ * implementation fanned out four (one count + three GROUP BYs). Safe to
+ * merge because severity/ecosystem/effort are closed enums: every facet
+ * bucket is a known column, so no dynamic GROUP BY is needed, and a FILTER
+ * comparison against a NULL ecosystem just excludes the row, matching the
+ * GROUP-BY-then-skip-null-keys behavior it replaced.
+ *
+ * Filter placement matters: the statement's outer WHERE stays at status+q,
+ * and each FILTER carries its own axis combination — every facet ignores
+ * its own axis's filter ("how many if I also picked this") while the total
+ * applies all of them. That keeps each aggregate counting from an
+ * appropriately-scoped row set without re-running the join per axis.
  */
 export async function getBoardMissionsWithScoresPage(
   db: ReadonlyDb,
@@ -359,56 +394,63 @@ export async function getBoardMissionsWithScoresPage(
   const offset = Math.max(0, options.offset ?? 0);
   const parts = buildBoardConditionParts(filters);
 
-  const [rows, totalRows, severityRows, ecosystemRows, effortRows] = await Promise.all([
+  const tallySelect: Record<string, SQL<number>> = {
+    total: sql`(count(*) filter (where ${condSql(parts.severity, parts.ecosystem, parts.effort)}))::int`,
+  };
+  // Column names are prefixed by axis because severity and effort share the
+  // values "low"/"medium"/"high" — severity_low vs effort_low must not collide.
+  for (const value of severityEnum.enumValues) {
+    tallySelect[`severity_${value}`] =
+      sql`(count(*) filter (where ${BOARD_SEVERITY_EXPR} = ${value} and ${condSql(parts.ecosystem, parts.effort)}))::int`;
+  }
+  for (const value of ecosystemEnum.enumValues) {
+    tallySelect[`ecosystem_${value}`] =
+      sql`(count(*) filter (where ${BOARD_ECOSYSTEM_EXPR} = ${value} and ${condSql(parts.severity, parts.effort)}))::int`;
+  }
+  for (const value of effortLabelEnum.enumValues) {
+    tallySelect[`effort_${value}`] =
+      sql`(count(*) filter (where ${BOARD_EFFORT_EXPR} = ${value} and ${condSql(parts.severity, parts.ecosystem)}))::int`;
+  }
+
+  const [rows, tallyRows] = await Promise.all([
     missionJoinRows(db)
       .where(and(parts.status, parts.q, parts.severity, parts.ecosystem, parts.effort))
       .orderBy(...boardOrderBy(filters.sort))
       .limit(limit)
       .offset(offset),
     db
-      .select({ count: sql<number>`count(*)::int` })
+      .select(tallySelect)
       .from(missions)
       .innerJoin(missionScores, eq(missionScores.missionId, missions.id))
       .innerJoin(repos, eq(missions.repoId, repos.id))
       .leftJoin(advisories, eq(missions.advisoryId, advisories.id))
       .leftJoin(dependencies, eq(missions.dependencyId, dependencies.id))
-      .where(and(parts.status, parts.q, parts.severity, parts.ecosystem, parts.effort)),
-    db
-      .select({ key: BOARD_SEVERITY_EXPR, count: sql<number>`count(*)::int` })
-      .from(missions)
-      .innerJoin(missionScores, eq(missionScores.missionId, missions.id))
-      .innerJoin(repos, eq(missions.repoId, repos.id))
-      .leftJoin(advisories, eq(missions.advisoryId, advisories.id))
-      .leftJoin(dependencies, eq(missions.dependencyId, dependencies.id))
-      .where(and(parts.status, parts.q, parts.ecosystem, parts.effort))
-      .groupBy(BOARD_SEVERITY_EXPR),
-    db
-      .select({ key: BOARD_ECOSYSTEM_EXPR, count: sql<number>`count(*)::int` })
-      .from(missions)
-      .innerJoin(missionScores, eq(missionScores.missionId, missions.id))
-      .innerJoin(repos, eq(missions.repoId, repos.id))
-      .leftJoin(advisories, eq(missions.advisoryId, advisories.id))
-      .leftJoin(dependencies, eq(missions.dependencyId, dependencies.id))
-      .where(and(parts.status, parts.q, parts.severity, parts.effort))
-      .groupBy(BOARD_ECOSYSTEM_EXPR),
-    db
-      .select({ key: BOARD_EFFORT_EXPR, count: sql<number>`count(*)::int` })
-      .from(missions)
-      .innerJoin(missionScores, eq(missionScores.missionId, missions.id))
-      .innerJoin(repos, eq(missions.repoId, repos.id))
-      .leftJoin(advisories, eq(missions.advisoryId, advisories.id))
-      .leftJoin(dependencies, eq(missions.dependencyId, dependencies.id))
-      .where(and(parts.status, parts.q, parts.severity, parts.ecosystem))
-      .groupBy(BOARD_EFFORT_EXPR),
+      .where(and(parts.status, parts.q)),
   ]);
+
+  const tally = tallyRows[0];
+
+  function tallyFacet<T extends string>(
+    values: readonly T[],
+    prefix: "severity" | "ecosystem" | "effort",
+  ): Partial<Record<T, number>> {
+    const out: Partial<Record<T, number>> = {};
+    for (const value of values) {
+      const count = tally?.[`${prefix}_${value}`] ?? 0;
+      if (count > 0) {
+        out[value] = count;
+      }
+    }
+    return out;
+  }
 
   return {
     missions: rows.map(toMissionWithScore),
-    total: totalRows[0]?.count ?? 0,
+    total: tally?.total ?? 0,
     facets: {
-      severity: tallyCounts<Severity>(severityRows),
-      ecosystem: tallyCounts<Ecosystem>(ecosystemRows),
-      effort: tallyCounts<EffortLabel>(effortRows),
+      severity: tallyFacet<Severity>(severityEnum.enumValues, "severity"),
+      ecosystem: tallyFacet<Ecosystem>(ecosystemEnum.enumValues, "ecosystem"),
+      effort: tallyFacet<EffortLabel>(effortLabelEnum.enumValues, "effort"),
     },
   };
 }
@@ -487,14 +529,12 @@ export async function getSkippedRepos(db: ReadonlyDb): Promise<SkippedRepo[]> {
  * comment about why these queries live in packages/core in the first
  * place: correctness and cost here matter more than a single round trip.
  *
- * userLogin is optional — omit it (e.g. a signed-out visitor) and every
- * row's isBookmarked is simply false, not a separate tri-state.
+ * isBookmarked is false on every row. This is the login-independent base
+ * /app caches under its "repos" tag (ADR 0033); getReposWithMissionSummary()
+ * overlays the viewer's bookmarks on top of it, uncached.
  */
-export async function getReposWithMissionSummary(
-  db: ReadonlyDb,
-  userLogin?: string,
-): Promise<RepoWithMissionSummary[]> {
-  const [repoRows, ecosystemRows, severityRows, bookmarkedRepoIds] = await Promise.all([
+export async function getRepoDirectoryBase(db: ReadonlyDb): Promise<RepoWithMissionSummary[]> {
+  const [repoRows, ecosystemRows, severityRows] = await Promise.all([
     db.select().from(repos),
     db
       .selectDistinct({ repoId: dependencies.repoId, ecosystem: dependencies.ecosystem })
@@ -509,9 +549,6 @@ export async function getReposWithMissionSummary(
       .innerJoin(advisories, eq(missions.advisoryId, advisories.id))
       .where(inArray(missions.status, ["open", "claimed"]))
       .groupBy(missions.repoId, advisories.severity),
-    userLogin === undefined
-      ? Promise.resolve(new Set<string>())
-      : getBookmarkedRepoIds(db, userLogin),
   ]);
 
   const ecosystemsByRepo = new Map<string, Set<schema.Ecosystem>>();
@@ -533,6 +570,25 @@ export async function getReposWithMissionSummary(
     ...repo,
     ecosystems: Array.from(ecosystemsByRepo.get(repo.id) ?? []),
     missionCounts: countsByRepo.get(repo.id) ?? EMPTY_REPO_MISSION_COUNTS,
-    isBookmarked: bookmarkedRepoIds.has(repo.id),
+    isBookmarked: false,
   }));
+}
+
+/**
+ * getRepoDirectoryBase() plus the viewer's bookmark flags. userLogin is
+ * optional — omit it (e.g. a signed-out visitor) and every row's
+ * isBookmarked is simply false, not a separate tri-state.
+ */
+export async function getReposWithMissionSummary(
+  db: ReadonlyDb,
+  userLogin?: string,
+): Promise<RepoWithMissionSummary[]> {
+  const repos = await getRepoDirectoryBase(db);
+  if (userLogin === undefined) {
+    return repos;
+  }
+  const bookmarkedRepoIds = await getBookmarkedRepoIds(db, userLogin);
+  return repos.map((repo) =>
+    bookmarkedRepoIds.has(repo.id) ? { ...repo, isBookmarked: true } : repo,
+  );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
 import type { Ecosystem, EffortLabel, Severity } from "@deptend/core/db/schema.js";
 import type { MissionWithScore } from "@deptend/core";
@@ -45,12 +45,10 @@ function repoKeyOf(mission: MissionWithScore): string {
   return `${mission.repo.owner}/${mission.repo.name}`;
 }
 
-function matchesSearch(mission: MissionWithScore, query: string): boolean {
-  const needle = query.trim().toLowerCase();
-  if (needle === "") {
-    return true;
-  }
-  const haystack = [
+/** The lowercase haystack a mission's search needle is matched against.
+ * Built once per mission (memoized below), not once per keystroke. */
+function haystackOf(mission: MissionWithScore): string {
+  return [
     mission.title,
     mission.dependency?.packageName ?? "",
     repoKeyOf(mission),
@@ -58,7 +56,6 @@ function matchesSearch(mission: MissionWithScore, query: string): boolean {
   ]
     .join(" ")
     .toLowerCase();
-  return haystack.includes(needle);
 }
 
 // `value` is typed `T | null` so this works uniformly for severity/effort
@@ -234,45 +231,69 @@ export function MissionBoard({
     setMissions((prev) => prev.map((m) => (m.id === missionId ? { ...m, ...patch } : m)));
   }
 
-  const searchMatched = missions.filter((mission) => matchesSearch(mission, searchQuery));
+  // Derived lists are memoized so a keystroke or chip toggle doesn't rescan
+  // every mission for every derived value. The haystack map is keyed by
+  // mission id and only rebuilt when the missions array itself changes.
+  const haystacksById = useMemo(
+    () => new Map(missions.map((mission) => [mission.id, haystackOf(mission)])),
+    [missions],
+  );
+
+  const searchMatched = useMemo(() => {
+    const needle = searchQuery.trim().toLowerCase();
+    if (needle === "") {
+      return missions;
+    }
+    return missions.filter((mission) => (haystacksById.get(mission.id) ?? "").includes(needle));
+  }, [missions, searchQuery, haystacksById]);
 
   // Each axis's chip counts are computed against every *other* active axis
   // (but not itself), so a count reflects "how many results if I also
   // picked this," not a static total that never moves.
-  const severityCounts = countBy(
-    searchMatched.filter(
-      (mission) =>
-        matchesSet(mission.score.effortLabel, selectedEfforts) &&
-        matchesSet(ecosystemOf(mission), selectedEcosystems),
-    ),
-    severityOf,
-  );
-  const ecosystemCounts = countBy(
-    searchMatched.filter(
-      (mission) =>
-        matchesSet(severityOf(mission), selectedSeverities) &&
-        matchesSet(mission.score.effortLabel, selectedEfforts),
-    ),
-    ecosystemOf,
-  );
-  const effortCounts = countBy(
-    searchMatched.filter(
-      (mission) =>
-        matchesSet(severityOf(mission), selectedSeverities) &&
-        matchesSet(ecosystemOf(mission), selectedEcosystems),
-    ),
-    (mission) => mission.score.effortLabel,
+  const { severityCounts, ecosystemCounts, effortCounts, filtered } = useMemo(
+    () => ({
+      severityCounts: countBy(
+        searchMatched.filter(
+          (mission) =>
+            matchesSet(mission.score.effortLabel, selectedEfforts) &&
+            matchesSet(ecosystemOf(mission), selectedEcosystems),
+        ),
+        severityOf,
+      ),
+      ecosystemCounts: countBy(
+        searchMatched.filter(
+          (mission) =>
+            matchesSet(severityOf(mission), selectedSeverities) &&
+            matchesSet(mission.score.effortLabel, selectedEfforts),
+        ),
+        ecosystemOf,
+      ),
+      effortCounts: countBy(
+        searchMatched.filter(
+          (mission) =>
+            matchesSet(severityOf(mission), selectedSeverities) &&
+            matchesSet(ecosystemOf(mission), selectedEcosystems),
+        ),
+        (mission) => mission.score.effortLabel,
+      ),
+      filtered: searchMatched.filter(
+        (mission) =>
+          matchesSet(severityOf(mission), selectedSeverities) &&
+          matchesSet(ecosystemOf(mission), selectedEcosystems) &&
+          matchesSet(mission.score.effortLabel, selectedEfforts),
+      ),
+    }),
+    [searchMatched, selectedSeverities, selectedEcosystems, selectedEfforts],
   );
 
-  const filtered = searchMatched.filter(
-    (mission) =>
-      matchesSet(severityOf(mission), selectedSeverities) &&
-      matchesSet(ecosystemOf(mission), selectedEcosystems) &&
-      matchesSet(mission.score.effortLabel, selectedEfforts),
+  const sorted = useMemo(
+    () => [...filtered].sort((a, b) => compareMissions(a, b, sortMode)),
+    [filtered, sortMode],
   );
-
-  const sorted = [...filtered].sort((a, b) => compareMissions(a, b, sortMode));
-  const groups = groupByRepo ? groupByRepoKey(sorted) : null;
+  const groups = useMemo(
+    () => (groupByRepo ? groupByRepoKey(sorted) : null),
+    [groupByRepo, sorted],
+  );
 
   const isFiltered =
     selectedSeverities.size > 0 ||

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { getDb } from "@/lib/db";
@@ -43,6 +44,11 @@ export async function POST(
       { status: 409 },
     );
   }
+
+  // Unclaims change both cached views: the board (this mission's row) and
+  // the directory (per-repo severity counts include open+claimed). ADR 0033.
+  revalidateTag("missions");
+  revalidateTag("repos");
 
   return NextResponse.json({ message: "Unclaimed.", status: "open" }, { status: 200 });
 }

@@ -1,0 +1,1 @@
+CREATE INDEX "idx_dependencies_repo_ecosystem" ON "dependencies" USING btree ("repo_id","ecosystem");

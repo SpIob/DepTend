@@ -21,10 +21,29 @@ import type {
   Severity,
 } from "./schema.js";
 
+/**
+ * Advisory subset shipped on mission list rows — narrower than the full
+ * advisories table row on purpose. No list consumer renders the unbounded
+ * blobs (details, affected_versions, and raw_data — the verbatim OSV
+ * record) or the write-path bookkeeping columns (package_name, cvss_score,
+ * summary, modified/created/updated timestamps), so selecting them only
+ * multiplied every board's payload. The ranking keys (published_at, osv_id)
+ * stay: rankMissions() and ADR 0031's SQL ordering both tie-break on them.
+ */
+export interface AdvisorySummary {
+  id: string;
+  osvId: string;
+  source: Advisory["source"];
+  ecosystem: Ecosystem;
+  severity: Severity;
+  fixedVersion: string | null;
+  publishedAt: Date | null;
+}
+
 /** Mission with its score, source advisory, and owning repo — ready for dashboard rendering */
 export interface MissionWithScore extends Mission {
   score: MissionScore;
-  advisory: Advisory | null;
+  advisory: AdvisorySummary | null;
   dependency: Dependency | null;
   repo: Repo;
 }

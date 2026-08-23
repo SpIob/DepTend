@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { getDb } from "@/lib/db";
@@ -38,6 +39,10 @@ export async function POST(
 
   switch (outcome) {
     case "withdrawn":
+      // Withdrawal deletes the repo and cascade-deletes its missions —
+      // both cached views change (ADR 0033).
+      revalidateTag("repos");
+      revalidateTag("missions");
       return NextResponse.json({ message: "Submission withdrawn." }, { status: 200 });
     case "not_found":
       return NextResponse.json({ error: "Repo not found." }, { status: 404 });

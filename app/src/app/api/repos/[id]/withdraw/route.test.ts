@@ -15,6 +15,9 @@ vi.mock("@/lib/auth", () => ({ authOptions: {} }));
 const getDb = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/db", () => ({ getDb }));
 
+const revalidateTag = vi.hoisted(() => vi.fn());
+vi.mock("next/cache", () => ({ revalidateTag }));
+
 const withdrawOwnRepo = vi.hoisted(() => vi.fn());
 vi.mock("@deptend/core/db/repos.js", async (importOriginal) => ({
   ...(await importOriginal<object>()),
@@ -71,6 +74,10 @@ describe("POST /api/repos/[id]/withdraw", () => {
     const response = await post(VALID_ID);
     expect(response.status).toBe(200);
     expect(withdrawOwnRepo).toHaveBeenCalledWith(DB, VALID_ID, login);
+    // Withdrawal deletes the repo and cascade-deletes its missions — both
+    // cached views invalidate (ADR 0033).
+    expect(revalidateTag).toHaveBeenCalledWith("repos");
+    expect(revalidateTag).toHaveBeenCalledWith("missions");
   });
 
   it("maps not_found to 404 and not_your_submission to 403", async () => {

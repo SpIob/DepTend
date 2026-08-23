@@ -3,16 +3,26 @@
  * getBoardMissionsWithScoresPage/getIndexedRepoCount/getTotalRepoCount,
  * bound to /app's own db client. See packages/core/src/db/queries.ts for
  * why the actual Drizzle query logic lives there instead of here.
+ *
+ * Read caching (ADR 0033): the shared, slowly-changing reads go through
+ * unstable_cache with a 60-second TTL and two invalidation tags —
+ * "missions" and "repos". The mutating API routes revalidate those tags on
+ * success, so claims and bookmarks stay immediately fresh; only
+ * ingestion-driven changes (written by the external Actions cron, which
+ * can't call revalidateTag) wait out the TTL. Per-user reads (bookmarks)
+ * are never cached. Pages keep force-dynamic — this caches at the query
+ * layer, not the page.
  */
 
+import { unstable_cache } from "next/cache";
 import { getBookmarkedRepoIds as coreGetBookmarkedRepoIds } from "@deptend/core/db/bookmarks.js";
 import {
   BOARD_PAGE_SIZE,
   getBoardMissionsWithScoresPage as coreGetBoardMissionsWithScoresPage,
   getIndexedRepoCount as coreGetIndexedRepoCount,
   getRepoEcosystems as coreGetRepoEcosystems,
+  getRepoDirectoryBase as coreGetRepoDirectoryBase,
   getRepoMissionsWithScores as coreGetRepoMissionsWithScores,
-  getReposWithMissionSummary as coreGetReposWithMissionSummary,
   getSkippedRepos as coreGetSkippedRepos,
   getTotalRepoCount as coreGetTotalRepoCount,
   type BoardFilters,
@@ -26,55 +36,117 @@ import { getDb } from "../db";
 export type { BoardFilters, BoardPage };
 export { BOARD_PAGE_SIZE };
 
+/** How stale ingestion-driven reads may get (ADR 0033 — chosen by Mico). */
+const READ_CACHE_SECONDS = 60;
+
+/**
+ * unstable_cache serializes through JSON, so on a cache hit every Date
+ * comes back as an ISO string. Every timestamp column in this schema is
+ * named `*At`, so reviving by key suffix restores real Date instances —
+ * which components render and core's rankMissions() calls .getTime() on —
+ * without hand-listing fields. Runs on the miss path too, where it's a
+ * no-op pass-through for live Date objects.
+ */
+function reviveDates<T>(value: T): T {
+  return reviveValue(value) as T;
+}
+
+/** Recursion core over `unknown` — typed-linting safe, no `any` leakage. */
+function reviveValue(value: unknown): unknown {
+  if (value === null || typeof value !== "object") {
+    return value;
+  }
+  if (value instanceof Date) {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => reviveValue(item));
+  }
+  const revived: Record<string, unknown> = {};
+  for (const [key, field] of Object.entries(value)) {
+    revived[key] =
+      typeof field === "string" && key.endsWith("At") ? new Date(field) : reviveValue(field);
+  }
+  return revived;
+}
+
+/** unstable_cache wrapper for one cached read: fixed key parts + tag + TTL. */
+function cachedRead<T>(
+  keyParts: string[],
+  tag: "missions" | "repos",
+  read: () => Promise<T>,
+): Promise<T> {
+  const cached = unstable_cache(async () => reviveDates(await read()), keyParts, {
+    revalidate: READ_CACHE_SECONDS,
+    tags: [tag],
+  });
+  return cached();
+}
+
 /**
  * One page of the board-wide listing (ADR 0031) — filters and sort applied
  * server-side, page selected by 1-based `page` against BOARD_PAGE_SIZE.
+ * Cached under the "missions" tag (ADR 0033).
  */
-export async function getBoardMissionsPage(
-  filters: BoardFilters,
-  page: number,
-): Promise<BoardPage> {
-  return coreGetBoardMissionsWithScoresPage(getDb(), filters, {
-    limit: BOARD_PAGE_SIZE,
-    offset: (page - 1) * BOARD_PAGE_SIZE,
-  });
+export function getBoardMissionsPage(filters: BoardFilters, page: number): Promise<BoardPage> {
+  return cachedRead(["board-page", JSON.stringify(filters), String(page)], "missions", () =>
+    coreGetBoardMissionsWithScoresPage(getDb(), filters, {
+      limit: BOARD_PAGE_SIZE,
+      offset: (page - 1) * BOARD_PAGE_SIZE,
+    }),
+  );
 }
 
-export async function getIndexedRepoCount(): Promise<number> {
-  return coreGetIndexedRepoCount(getDb());
+export function getIndexedRepoCount(): Promise<number> {
+  return cachedRead(["indexed-repo-count"], "repos", () => coreGetIndexedRepoCount(getDb()));
 }
 
-export async function getTotalRepoCount(): Promise<number> {
-  return coreGetTotalRepoCount(getDb());
+export function getTotalRepoCount(): Promise<number> {
+  return cachedRead(["total-repo-count"], "repos", () => coreGetTotalRepoCount(getDb()));
 }
 
-export async function getSkippedRepos(): Promise<SkippedRepo[]> {
-  return coreGetSkippedRepos(getDb());
+export function getSkippedRepos(): Promise<SkippedRepo[]> {
+  return cachedRead(["skipped-repos"], "repos", () => coreGetSkippedRepos(getDb()));
 }
 
-/** Repo directory rows (ADR 0027) — pass the signed-in user's login to populate isBookmarked. */
+/**
+ * Repo directory rows (ADR 0027) — the login-independent base is cached
+ * under the "repos" tag; the viewer's bookmark flags are overlaid fresh on
+ * every request, so toggling a bookmark never waits on the cache (ADR 0033).
+ */
 export async function getReposWithMissionSummary(
   userLogin?: string,
 ): Promise<RepoWithMissionSummary[]> {
-  return coreGetReposWithMissionSummary(getDb(), userLogin);
+  const repos = await cachedRead(["repo-directory-base"], "repos", () =>
+    coreGetRepoDirectoryBase(getDb()),
+  );
+  if (userLogin === undefined) {
+    return repos;
+  }
+  const bookmarkedRepoIds = await coreGetBookmarkedRepoIds(getDb(), userLogin);
+  return repos.map((repo) =>
+    bookmarkedRepoIds.has(repo.id) ? { ...repo, isBookmarked: true } : repo,
+  );
 }
 
-/** Open + claimed missions for one repo — the /repo/[owner]/[name] page's query (ADR 0027). */
-export async function getRepoMissionsWithScores(repoId: string): Promise<MissionWithScore[]> {
-  return coreGetRepoMissionsWithScores(getDb(), repoId);
+/** Open + claimed missions for one repo — the /repo/[owner]/[name] page's query (ADR 0027). Cached under the "missions" tag (ADR 0033). */
+export function getRepoMissionsWithScores(repoId: string): Promise<MissionWithScore[]> {
+  return cachedRead(["repo-missions", repoId], "missions", () =>
+    coreGetRepoMissionsWithScores(getDb(), repoId),
+  );
 }
 
-/** Resolves /repo/[owner]/[name]'s route params to a repo row, or null for a 404 (ADR 0027). */
+/** Resolves /repo/[owner]/[name]'s route params to a repo row, or null for a 404 (ADR 0027). Uncached — cheap unique-index lookup. */
 export async function getRepoByOwnerAndName(owner: string, name: string): Promise<Repo | null> {
   return coreGetRepoByOwnerAndName(getDb(), owner, name);
 }
 
-/** Repo IDs bookmarked by userLogin — backs the repo detail page's bookmark toggle (ADR 0027). */
+/** Repo IDs bookmarked by userLogin — backs the repo detail page's bookmark toggle (ADR 0027). Uncached by design (see ADR 0033). */
 export async function getBookmarkedRepoIds(userLogin: string): Promise<Set<string>> {
   return coreGetBookmarkedRepoIds(getDb(), userLogin);
 }
 
-/** Ecosystems present in one repo — backs the repo detail page's badge row. */
+/** Ecosystems present in one repo — backs the repo detail page's badge row. Uncached — cheap indexed lookup. */
 export async function getRepoEcosystems(repoId: string): Promise<Ecosystem[]> {
   return coreGetRepoEcosystems(getDb(), repoId);
 }

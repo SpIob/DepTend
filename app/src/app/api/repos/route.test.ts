@@ -22,6 +22,9 @@ vi.mock("@/lib/auth", () => ({ authOptions: {} }));
 const getDb = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/db", () => ({ getDb }));
 
+const revalidateTag = vi.hoisted(() => vi.fn());
+vi.mock("next/cache", () => ({ revalidateTag }));
+
 const submitRepo = vi.hoisted(() => vi.fn());
 vi.mock("@deptend/core/db/repos.js", async (importOriginal) => ({
   ...(await importOriginal<object>()),
@@ -198,6 +201,9 @@ describe("POST /api/repos", () => {
     // Compare in wire form — NextResponse.json serializes Date fields to
     // ISO strings, so the raw fixture (with Date instances) isn't equal.
     expect(data.repo).toEqual(JSON.parse(JSON.stringify(repo)));
+    // Creation invalidates the directory/count caches (ADR 0033).
+    expect(revalidateTag).toHaveBeenCalledWith("repos");
+    expect(revalidateTag).not.toHaveBeenCalledWith("missions");
   });
 
   it("maps cap_reached to 409 without dispatching ingestion", async () => {

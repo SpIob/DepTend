@@ -36,6 +36,13 @@
       "when": 1785300168968,
       "tag": "0004_yellow_firestar",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1787443948360,
+      "tag": "0005_absurd_malice",
+      "breakpoints": true
     }
   ]
 }

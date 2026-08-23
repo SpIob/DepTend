@@ -16,6 +16,9 @@ vi.mock("@/lib/auth", () => ({ authOptions: {} }));
 const getDb = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/db", () => ({ getDb }));
 
+const revalidateTag = vi.hoisted(() => vi.fn());
+vi.mock("next/cache", () => ({ revalidateTag }));
+
 const unclaimMission = vi.hoisted(() => vi.fn());
 vi.mock("@deptend/core/db/missions.js", async (importOriginal) => ({
   ...(await importOriginal<object>()),
@@ -89,5 +92,15 @@ describe("POST /api/missions/[id]/unclaim", () => {
     const data = (await response.json()) as { message?: string; status?: string };
     expect(data.message).toBe("Unclaimed.");
     expect(data.status).toBe("open");
+    // Success invalidates both cached views (ADR 0033).
+    expect(revalidateTag).toHaveBeenCalledWith("missions");
+    expect(revalidateTag).toHaveBeenCalledWith("repos");
+  });
+
+  it("does not revalidate when the unclaim fails", async () => {
+    signedIn();
+    unclaimMission.mockResolvedValue("not_claimed_by_you");
+    await post(VALID_ID);
+    expect(revalidateTag).not.toHaveBeenCalled();
   });
 });
