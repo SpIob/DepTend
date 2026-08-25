@@ -6,10 +6,13 @@
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fetchGitHubRepoMeta } from "./github-meta.js";
+import { fetchGitHubRepoMeta, GitHubMetaError } from "./github-meta.js";
 
 const OWNER = "owner";
 const NAME = "repo";
+
+/** Disables the transport policy's backoff/deadline for failure-path tests. */
+const NO_DELAY = { retryDelayMs: 0, timeoutMs: 0 } as const;
 
 function mockFetch(status: number, body: unknown, headers?: Record<string, string>): typeof fetch {
   const init: ResponseInit = headers ? { status, headers } : { status };
@@ -128,12 +131,16 @@ describe("fetchGitHubRepoMeta", () => {
     expect(capturedHeaders?.Authorization).toBeUndefined();
   });
 
-  it("throws a descriptive error on 404 (repo not found)", async () => {
+  it("throws a descriptive GitHubMetaError on 404 (repo not found)", async () => {
     vi.stubGlobal("fetch", mockFetch(404, null));
 
-    await expect(fetchGitHubRepoMeta(OWNER, NAME, null)).rejects.toThrow(
-      /GitHub repo not found: owner\/repo/,
-    );
+    const err = (await fetchGitHubRepoMeta(OWNER, NAME, null).catch(
+      (e: unknown) => e,
+    )) as GitHubMetaError;
+
+    expect(err).toBeInstanceOf(GitHubMetaError);
+    expect(err.kind).toBe("not_found");
+    expect(err.message).toMatch(/GitHub repo not found: owner\/repo/);
   });
 
   it("throws a rate-limit error with reset time on 403", async () => {
@@ -151,18 +158,54 @@ describe("fetchGitHubRepoMeta", () => {
     );
   });
 
-  it("throws a rate-limit error on 429, with 'unknown' when headers are absent", async () => {
+  it("throws a rate-limit GitHubMetaError on 429, with 'unknown' when headers are absent", async () => {
+    // 429 is transient under the transport policy — the stub answers the
+    // retry identically, so the second failure surfaces after zero backoff.
     vi.stubGlobal("fetch", mockFetch(429, null));
 
-    await expect(fetchGitHubRepoMeta(OWNER, NAME, null)).rejects.toThrow(
+    const err = (await fetchGitHubRepoMeta(OWNER, NAME, null, NO_DELAY).catch(
+      (e: unknown) => e,
+    )) as GitHubMetaError;
+
+    expect(err).toBeInstanceOf(GitHubMetaError);
+    expect(err.kind).toBe("rate_limited");
+    expect(err.message).toMatch(
       /GitHub API rate limit hit \(HTTP 429\)\. Remaining: unknown\. Resets at: unknown/,
     );
   });
 
-  it("throws a generic error on other non-OK statuses", async () => {
+  it("retries a transient 500 once and succeeds when the retry recovers", async () => {
+    const body = {
+      full_name: "owner/repo",
+      name: "repo",
+      owner: { login: "owner" },
+      default_branch: "main",
+      description: null,
+      stargazers_count: 0,
+      open_issues_count: 0,
+      homepage: null,
+    };
+    let calls = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => {
+        calls++;
+        return Promise.resolve(
+          calls === 1 ? new Response(null, { status: 503 }) : Response.json(body),
+        );
+      }),
+    );
+
+    const result = await fetchGitHubRepoMeta(OWNER, NAME, null, NO_DELAY);
+
+    expect(result.stargazers_count).toBe(0);
+    expect(calls).toBe(2);
+  });
+
+  it("throws a generic error on other non-OK statuses after the single retry", async () => {
     vi.stubGlobal("fetch", mockFetch(500, null));
 
-    await expect(fetchGitHubRepoMeta(OWNER, NAME, null)).rejects.toThrow(
+    await expect(fetchGitHubRepoMeta(OWNER, NAME, null, NO_DELAY)).rejects.toThrow(
       /GitHub API returned HTTP 500 for owner\/repo/,
     );
   });
@@ -173,7 +216,7 @@ describe("fetchGitHubRepoMeta", () => {
       vi.fn(() => Promise.reject(new Error("ECONNRESET"))),
     );
 
-    await expect(fetchGitHubRepoMeta(OWNER, NAME, null)).rejects.toThrow(
+    await expect(fetchGitHubRepoMeta(OWNER, NAME, null, NO_DELAY)).rejects.toThrow(
       /Network error calling GitHub API for owner\/repo.*ECONNRESET/s,
     );
   });

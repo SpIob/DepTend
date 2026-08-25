@@ -59,8 +59,10 @@ describe("NpmRegistryFetcher", () => {
   let fetcher: NpmRegistryFetcher;
 
   beforeEach(() => {
-    // Use a single concurrency slot in tests to get deterministic ordering
-    fetcher = new NpmRegistryFetcher(BASE, 1);
+    // Use a single concurrency slot in tests to get deterministic ordering.
+    // Transport backoff/deadline disabled — failure-path tests below stub
+    // failing responses and must not sleep through the real 30 s policy.
+    fetcher = new NpmRegistryFetcher(BASE, 1, { retryDelayMs: 0, timeoutMs: 0 });
   });
 
   afterEach(() => {

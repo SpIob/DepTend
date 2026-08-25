@@ -68,7 +68,9 @@ describe("PyPIIngestor", () => {
   let ingestor: PyPIIngestor;
 
   beforeEach(() => {
-    ingestor = new PyPIIngestor();
+    // Transport backoff/deadline disabled — failure-path tests below stub a
+    // rejecting fetch and must not sleep through the real 30 s policy.
+    ingestor = new PyPIIngestor({ retryDelayMs: 0, timeoutMs: 0 });
   });
 
   afterEach(() => {
@@ -133,7 +135,7 @@ dependencies = ["requests>=2.25"]
       await ingestor.parseDependencies(BASE);
 
       // Both were fetched (deliberate simplicity choice, see pypi.ts docstring)
-      expect(fetchMock).toHaveBeenCalledWith(requirementsUrl());
+      expect(fetchMock).toHaveBeenCalledWith(requirementsUrl(), expect.anything());
     });
   });
 

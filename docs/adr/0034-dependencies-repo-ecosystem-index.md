@@ -1,6 +1,6 @@
 # ADR 0034 — Composite index on `dependencies (repo_id, ecosystem)`
 
-**Status:** Proposed
+**Status:** Accepted (2026-08-23, after live verification)
 **Date:** 2026-08-23
 
 ---
@@ -29,6 +29,10 @@ The DISTINCT pair is now an index-only scan: Postgres walks the index's leading 
 ## Application status
 
 Applied to the **dev branch** (`DATABASE_URL_UNPOOLED` from `.env.local`) via `pnpm drizzle-kit migrate` on 2026-08-23 — additive DDL, no locks beyond the brief index build, no backfill. Production needs the same command against the production unpooled URL during the next deploy window; it is not applied there by this change.
+
+### Live verification (2026-08-23)
+
+`EXPLAIN (ANALYZE, BUFFERS)` against dev confirms the mechanism this ADR claims: with the planner free to choose, Postgres seq-scans instead — expected and correct at dev's 49 rows, where reading two heap pages beats index descent — and with `enable_seqscan = off` it produces `Index Only Scan using idx_dependencies_repo_ecosystem`, proving the DISTINCT pair is served from the index alone. `Heap Fetches: 36` on a freshly-written table reflects visibility-map lag that autovacuum closes at production scale. The planner will switch to this scan as the table grows past the crossover point, which is exactly the regime production's dependency count lives in.
 
 ## What changed
 

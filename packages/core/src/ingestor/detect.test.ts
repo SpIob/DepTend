@@ -153,4 +153,49 @@ describe("detectEcosystem", () => {
     expect(result.ecosystem).toBe("npm");
     expect(result.manifest_resolved).toBe(true);
   });
+
+  // -------------------------------------------------------------------------
+  // Throwing probes — a transport failure is not a verdict about the repo
+  // -------------------------------------------------------------------------
+
+  it("falls through to the next ingestor when a probe throws (transient network error)", async () => {
+    const npm = fakeIngestor("npm", unresolvedResult("npm", []));
+    npm.parseDependencies = vi.fn().mockRejectedValue(new Error("ENOTFOUND"));
+    const pypi = fakeIngestor("pypi", resolvedResult("pypi"));
+
+    const result = await detectEcosystem([npm, pypi], "/some/path");
+
+    expect(result.ecosystem).toBe("pypi");
+    expect(result.manifest_resolved).toBe(true);
+  });
+
+  it("keeps probing after an intermediate ingestor throws, not just the first", async () => {
+    const npm = fakeIngestor("npm", unresolvedResult("npm", []));
+    const pypi = fakeIngestor("pypi", unresolvedResult("pypi", []));
+    pypi.parseDependencies = vi.fn().mockRejectedValue(new Error("HTTP 503"));
+    // Third probe in the list (typed npm|pypi because the fake predates Go;
+    // its ecosystem label is irrelevant to what's under test here).
+    const later = fakeIngestor("pypi", resolvedResult("pypi"));
+
+    const result = await detectEcosystem([npm, pypi, later], "/some/path");
+
+    expect(later.parseDependencies).toHaveBeenCalled();
+    expect(result.manifest_resolved).toBe(true);
+  });
+
+  it("returns an unresolved result with every probe's failure recorded when all ingestors throw", async () => {
+    const npm = fakeIngestor("npm", unresolvedResult("npm", []));
+    npm.parseDependencies = vi.fn().mockRejectedValue(new Error("ENOTFOUND"));
+    const pypi = fakeIngestor("pypi", unresolvedResult("pypi", []));
+    pypi.parseDependencies = vi.fn().mockRejectedValue(new Error("ECONNRESET"));
+
+    const result = await detectEcosystem([npm, pypi], "/some/path");
+
+    expect(result.manifest_resolved).toBe(false);
+    expect(result.dependencies).toEqual([]);
+    expect(result.warnings).toHaveLength(2);
+    expect(result.warnings[0]).toContain("npm probe failed");
+    expect(result.warnings[0]).toContain("ENOTFOUND");
+    expect(result.warnings[1]).toContain("pypi probe failed");
+  });
 });

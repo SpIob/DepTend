@@ -8,8 +8,9 @@
  * github-meta.ts already established; no new secret, no new account.
  *
  * Deliberately best-effort, never throws: a dependency with no resolvable
- * GitHub repo, no Releases at all, a rate-limited call, or a network
- * failure all just come back as `source_available: false` — a real,
+ * GitHub repo, no Releases at all, a rate-limited call (after one shared
+ * retry — fetch-retry.ts), a network failure, or a scan truncated by the
+ * page cap all just come back as `source_available: false` — a real,
  * expected outcome (especially for PyPI, per ADR 0029 Decision 1), not a
  * fatal error for the whole ingestion run.
  *
@@ -30,6 +31,7 @@ import semver from "semver";
 import { compare as pep440Compare, valid as pep440Valid } from "@renovatebot/pep440";
 import type { Ecosystem } from "../db/schema.js";
 import type { SourceRepoRef } from "./source-repo.js";
+import { DEFAULT_RETRY_DELAY_MS, fetchWithRetry } from "./fetch-retry.js";
 
 const GITHUB_API_BASE = "https://api.github.com";
 const USER_AGENT = "deptend.dev/0.1.0 (https://github.com/deptend/deptend.dev)";
@@ -44,7 +46,13 @@ const MAX_SIGNAL_LENGTH = 200;
 export interface EffortSignals {
   has_migration_guide: boolean;
   breaking_change_signals: string[];
-  /** false = no resolvable repo, no reachable Releases data, or the fetch failed/was rate-limited. */
+  /**
+   * false = no resolvable repo, no reachable Releases data, the fetch
+   * failed/was rate-limited, or the scan hit the page cap without covering
+   * the full range (a truncated "checked, found nothing" would store an
+   * incomplete answer as real — same unavailable-beats-wrong rule as
+   * downstream-dependents.ts).
+   */
   source_available: boolean;
 }
 
@@ -170,6 +178,12 @@ function buildHeaders(token: string | null): Record<string, string> {
  *
  * `currentFloor === null` means "no known lower bound" — every release at
  * or below targetVersion is in range, bounded only by MAX_PAGES.
+ *
+ * Each page request gets the shared one-retry-on-transient-failure
+ * discipline (fetch-retry.ts): a 429 — or any non-OK response carrying a
+ * usable Retry-After, which is how GitHub signals some secondary rate
+ * limits — is retried once after the suggested wait before this module's
+ * own degradation kicks in.
  */
 export async function fetchReleaseSignals(
   repo: SourceRepoRef,
@@ -177,6 +191,7 @@ export async function fetchReleaseSignals(
   currentFloor: string | null,
   targetVersion: string | null,
   token: string | null,
+  retryDelayMs: number = DEFAULT_RETRY_DELAY_MS,
 ): Promise<EffortSignals> {
   if (targetVersion === null) {
     // Nothing to bound the range against — genuinely unavailable, not a
@@ -195,6 +210,7 @@ export async function fetchReleaseSignals(
   let hasMigrationGuide = false;
   const breakingChangeSignals: string[] = [];
   let receivedAnyPage = false;
+  let truncatedByPageCap = false;
 
   for (let page = 1; page <= MAX_PAGES; page++) {
     const url =
@@ -203,10 +219,11 @@ export async function fetchReleaseSignals(
 
     let response: Response;
     try {
-      response = await fetch(url, { headers });
+      response = await fetchWithRetry(url, { headers }, { retryDelayMs });
     } catch {
-      // Network failure mid-run — return whatever was gathered so far
-      // rather than discarding it; partial real data beats none.
+      // Network failure mid-run (after the shared retry) — return whatever
+      // was gathered so far rather than discarding it; partial real data
+      // beats none.
       break;
     }
 
@@ -217,9 +234,9 @@ export async function fetchReleaseSignals(
     }
 
     if (response.status === 403 || response.status === 429) {
-      // Rate-limited — same treatment as a network failure: keep whatever
-      // was gathered so far, don't fail the whole ingestion run over one
-      // dependency's changelog.
+      // Still rate-limited after the shared retry — same treatment as a
+      // network failure: keep whatever was gathered so far, don't fail the
+      // whole ingestion run over one dependency's changelog.
       break;
     }
 
@@ -268,6 +285,27 @@ export async function fetchReleaseSignals(
     }
 
     if (reachedFloor) break;
+
+    if (page === MAX_PAGES && releases.length >= PER_PAGE) {
+      // Cap page hit with a still-full listing: releases beyond the cap
+      // were never scanned, so "found nothing" could just mean "didn't
+      // look far enough". Unavailable beats wrong (same rule as down-
+      // stream-dependents.ts's incomplete scans) — discard the partial
+      // findings and keep the confidence flag set rather than store a
+      // truncated answer as real, checked data.
+      truncatedByPageCap = true;
+    }
+
+    if (releases.length < PER_PAGE) {
+      // Short page = the listing is exhausted; requesting the next one is
+      // a guaranteed-empty extra request (same early-exit as down-stream-
+      // dependents.ts's pagination loop).
+      break;
+    }
+  }
+
+  if (truncatedByPageCap) {
+    return { ...UNAVAILABLE_SIGNALS };
   }
 
   return {
@@ -310,6 +348,7 @@ export async function prefetchEffortSignals(
   requests: EffortSignalRequest[],
   token: string | null,
   concurrency = DEFAULT_CONCURRENCY,
+  retryDelayMs: number = DEFAULT_RETRY_DELAY_MS,
 ): Promise<Map<string, EffortSignals>> {
   const uniqueByKey = new Map<string, EffortSignalRequest>();
   for (const request of requests) {
@@ -337,6 +376,7 @@ export async function prefetchEffortSignals(
         request.currentFloor,
         request.targetVersion,
         token,
+        retryDelayMs,
       );
       results.set(request.key, signals);
     }

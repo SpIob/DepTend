@@ -95,3 +95,21 @@ Standard five-check loop clean at time of writing. Still owed before flipping to
   filtered page 2+ lands correctly, and confirm an out-of-range `?page=` redirects.
 - Cross-check that the SQL "priority" ordering matches the CLI's `rankMissions()` output on
   the same dataset (the Phase 4 cross-validation trick that caught ADR 0018).
+
+## Correction (2026-08-23, found live — the verification above finally ran and bit)
+
+The "absolute, always-present final fallback" ORDER BY fragment shipped as
+`COALESCE(advisories.osv_id, missions.id)` — mixing a `text` column with a `uuid` column.
+Postgres refuses to infer a common type across those (`42804`, COALESCE types text and uuid
+cannot be matched), so every execution of the page query failed, and `/missions` served
+error-boundary skeletons in production from the day this deployed. The JS mirror
+(`ranking.ts`'s `osv_id ?? mission.id`) mixes types freely, which is exactly why the parity
+tests — real Drizzle query building against a fake transport that never hands the SQL to a
+server — passed: they assert statement text, not Postgres type resolution. The live pass this
+ADR's own Verification section called owed is what surfaced it.
+
+Fix: `missions.id` casts to text inside the COALESCE (`::text`), preserving the fallback's
+role (a stable, always-present per-row key) at the cost of one cast. The ordering-parity tests
+now match the emitted `::text`, and queries.test.ts gained a DATABASE_URL-gated block that
+executes all three sort modes against a real Postgres so this class of error fails locally
+instead of in production.

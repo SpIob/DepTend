@@ -20,7 +20,12 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { OsvFetcher, cvssScoreToSeverity, mapStringSeverity } from "./osv.js";
+import {
+  OsvFetcher,
+  cvssScoreToSeverity,
+  cvssVectorToBaseScore,
+  mapStringSeverity,
+} from "./osv.js";
 import type { ParsedDependency } from "../ingestor/interface.js";
 
 // ---------------------------------------------------------------------------
@@ -120,7 +125,9 @@ describe("OsvFetcher", () => {
   let fetcher: OsvFetcher;
 
   beforeEach(() => {
-    fetcher = new OsvFetcher();
+    // Zero retry backoff — the delay is production pacing, not logic under
+    // test; only WHICH calls get retried is.
+    fetcher = new OsvFetcher(undefined, undefined, undefined, 0);
   });
 
   afterEach(() => {
@@ -311,6 +318,37 @@ describe("OsvFetcher", () => {
 
       const result = await fetcher.fetchAdvisories([dep("pkg")]);
       expect(result.advisories.get("GHSA-xxxx-yyyy-zzzz")?.cvssScore).toBeNull();
+    });
+
+    it("computes cvssScore and severity from a v3 vector string when no bare score exists", async () => {
+      // Real GitHub Advisory shape: many records carry only the vector —
+      // before the vector parser, both cvssScore and the derived severity
+      // under-read to null/"unknown" for exactly these.
+      const vuln = makeVuln({
+        severity: [{ type: "CVSS_V3", score: "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H" }],
+        database_specific: undefined,
+      });
+      vi.stubGlobal("fetch", mockOsvApiForVulns([[vuln]]));
+
+      const result = await fetcher.fetchAdvisories([dep("pkg")]);
+      const advisory = result.advisories.get("GHSA-xxxx-yyyy-zzzz");
+
+      expect(advisory?.cvssScore).toBe(9.8);
+      expect(advisory?.severity).toBe("critical");
+    });
+
+    it("computes cvssScore and severity from an unprefixed v2 vector string", async () => {
+      const vuln = makeVuln({
+        severity: [{ type: "CVSS_V2", score: "AV:N/AC:L/Au:N/C:N/I:N/A:C" }],
+        database_specific: undefined,
+      });
+      vi.stubGlobal("fetch", mockOsvApiForVulns([[vuln]]));
+
+      const result = await fetcher.fetchAdvisories([dep("pkg")]);
+
+      // Canonical v2 base score for this vector
+      expect(result.advisories.get("GHSA-xxxx-yyyy-zzzz")?.cvssScore).toBe(7.8);
+      expect(result.advisories.get("GHSA-xxxx-yyyy-zzzz")?.severity).toBe("high");
     });
   });
 
@@ -649,21 +687,30 @@ describe("OsvFetcher", () => {
 
   // -------------------------------------------------------------------------
   describe("fetchAdvisories — batch query network and API errors", () => {
-    it("throws a descriptive error on network failure", async () => {
-      vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("ECONNREFUSED")));
+    it("throws a descriptive error on network failure, after the single retry", async () => {
+      const fetchMock = vi.fn().mockRejectedValue(new Error("ECONNREFUSED"));
+      vi.stubGlobal("fetch", fetchMock);
 
       await expect(fetcher.fetchAdvisories([dep("pkg")])).rejects.toThrow(
         /Network error querying OSV/,
       );
+      expect(fetchMock).toHaveBeenCalledTimes(2);
     });
 
-    it("throws on non-200 HTTP response", async () => {
-      vi.stubGlobal(
-        "fetch",
-        vi.fn((): Response => new Response("", { status: 429 })),
-      );
+    it("throws on non-200 HTTP response, after the single retry", async () => {
+      const fetchMock = vi.fn((): Response => new Response("", { status: 429 }));
+      vi.stubGlobal("fetch", fetchMock);
 
       await expect(fetcher.fetchAdvisories([dep("pkg")])).rejects.toThrow(/HTTP 429/);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it("does not waste a retry on a permanent HTTP error", async () => {
+      const fetchMock = vi.fn((): Response => new Response("", { status: 404 }));
+      vi.stubGlobal("fetch", fetchMock);
+
+      await expect(fetcher.fetchAdvisories([dep("pkg")])).rejects.toThrow(/HTTP 404/);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
     it("throws when response body is not valid JSON", async () => {
@@ -684,6 +731,105 @@ describe("OsvFetcher", () => {
       await expect(fetcher.fetchAdvisories([dep("pkg")])).rejects.toThrow(
         /missing expected 'results'/,
       );
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  describe("fetchAdvisories — transient-failure retry (fetch-retry.ts)", () => {
+    it("retries the batch query once after a 429 (honoring Retry-After) and succeeds", async () => {
+      let postCalls = 0;
+      vi.stubGlobal(
+        "fetch",
+        vi.fn((_url: string | URL, init?: RequestInit): Response => {
+          if (init?.method === "POST") {
+            postCalls++;
+            if (postCalls === 1) {
+              return new Response("", { status: 429, headers: { "Retry-After": "0" } });
+            }
+            return new Response(JSON.stringify({ results: [{ vulns: [] }] }), { status: 200 });
+          }
+          return new Response("not found", { status: 404 });
+        }),
+      );
+
+      const result = await fetcher.fetchAdvisories([dep("pkg")]);
+
+      expect(postCalls).toBe(2);
+      expect(result.advisories.size).toBe(0);
+      expect(result.warnings).toHaveLength(0);
+    });
+
+    it("retries the batch query on a network error and succeeds", async () => {
+      let calls = 0;
+      vi.stubGlobal(
+        "fetch",
+        vi.fn((_url: string | URL, init?: RequestInit): Promise<Response> => {
+          if (init?.method === "POST") {
+            calls++;
+            if (calls === 1) return Promise.reject(new Error("ECONNRESET"));
+            return Promise.resolve(
+              new Response(JSON.stringify({ results: [{ vulns: [] }] }), { status: 200 }),
+            );
+          }
+          return Promise.resolve(new Response("not found", { status: 404 }));
+        }),
+      );
+
+      const result = await fetcher.fetchAdvisories([dep("pkg")]);
+
+      expect(calls).toBe(2);
+      expect(result.warnings).toHaveLength(0);
+    });
+
+    it("retries a detail fetch that fails transiently and stores the advisory anyway", async () => {
+      const vuln = makeVuln();
+      let getCalls = 0;
+      vi.stubGlobal(
+        "fetch",
+        vi.fn((url: string | URL, init?: RequestInit): Response => {
+          if (init?.method === "POST") {
+            return new Response(JSON.stringify({ results: [{ vulns: [{ id: vuln.id }] }] }), {
+              status: 200,
+            });
+          }
+          getCalls++;
+          if (getCalls === 1) {
+            return new Response("", { status: 503 });
+          }
+          return new Response(JSON.stringify(vuln), { status: 200 });
+        }),
+      );
+
+      const result = await fetcher.fetchAdvisories([dep("pkg")]);
+
+      expect(getCalls).toBe(2);
+      expect(result.advisories.get("GHSA-xxxx-yyyy-zzzz")).toBeDefined();
+      expect(result.warnings).toHaveLength(0);
+    });
+
+    it("gives up after the single retry when the detail fetch keeps failing transiently", async () => {
+      let getCalls = 0;
+      vi.stubGlobal(
+        "fetch",
+        vi.fn((url: string | URL, init?: RequestInit): Response => {
+          if (init?.method === "POST") {
+            return new Response(
+              JSON.stringify({ results: [{ vulns: [{ id: "GHSA-flaky-0000" }] }] }),
+              {
+                status: 200,
+              },
+            );
+          }
+          getCalls++;
+          return new Response("", { status: 503 });
+        }),
+      );
+
+      const result = await fetcher.fetchAdvisories([dep("pkg")]);
+
+      expect(getCalls).toBe(2);
+      expect(result.advisories.size).toBe(0);
+      expect(result.warnings.some((w) => w.includes("GHSA-flaky-0000"))).toBe(true);
     });
   });
 
@@ -801,5 +947,59 @@ describe("mapStringSeverity", () => {
     expect(mapStringSeverity("informational")).toBeNull();
     expect(mapStringSeverity("")).toBeNull();
     expect(mapStringSeverity("n/a")).toBeNull();
+  });
+});
+
+describe("cvssVectorToBaseScore", () => {
+  // Expected values are the NVD-published base scores for these exact
+  // canonical vectors, not hand-derived — the formulas must reproduce
+  // real calculator output or they're wrong in a way that only shows up
+  // on production data.
+  it.each([
+    [
+      "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+      9.8,
+      "canonical critical RCE vector (log4shell's S:U twin)",
+    ],
+    [
+      "CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H",
+      10,
+      "log4shell's exact vector, v3.0 prefix (same base formula as v3.1)",
+    ],
+    ["cvss:3.1/av:n/ac:l/pr:n/ui:n/s:u/c:h/i:h/a:h", 9.8, "case-insensitive parsing"],
+    [
+      "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H",
+      8.8,
+      "PR:L Scope Unchanged (NVD-verified: PrintNightmare CVE-2021-34527)",
+    ],
+    [
+      "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:C/C:H/I:H/A:H",
+      9.9,
+      "PR:L Scope Changed (the ubiquitous WordPress-plugin critical)",
+    ],
+    ["AV:N/AC:L/Au:N/C:N/I:N/A:C", 7.8, "unprefixed CVSS v2 vector, sniffed by its AU metric"],
+    ["AV:N/AC:L/Au:S/C:C/I:C/A:C", 9, "CVSS v2 with authentication (NVD-verified shape)"],
+  ])("%s → %s (%s)", (vector, expected) => {
+    expect(cvssVectorToBaseScore(vector)).toBe(expected);
+  });
+
+  it("returns null for incomplete v3 vectors rather than guessing a partial score", () => {
+    expect(cvssVectorToBaseScore("CVSS:3.1/AV:N/AC:L/PR:N/S:U/C:H/I:H")).toBeNull();
+  });
+
+  it("returns null for unrecognised metric values", () => {
+    expect(cvssVectorToBaseScore("CVSS:3.1/AV:X/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H")).toBeNull();
+  });
+
+  it("returns null for CVSS v4 vectors (unsupported)", () => {
+    expect(
+      cvssVectorToBaseScore("CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N"),
+    ).toBeNull();
+  });
+
+  it("returns null for non-vector input", () => {
+    expect(cvssVectorToBaseScore("7.5")).toBeNull();
+    expect(cvssVectorToBaseScore("")).toBeNull();
+    expect(cvssVectorToBaseScore("not-a-vector")).toBeNull();
   });
 });

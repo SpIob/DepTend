@@ -92,7 +92,9 @@ describe("GoRegistryFetcher", () => {
   beforeEach(() => {
     // Single concurrency slot in tests for deterministic ordering, same
     // convention registry.test.ts/pypi-registry.test.ts already use.
-    fetcher = new GoRegistryFetcher(BASE, 1);
+    // Transport backoff/deadline disabled — failure-path tests below stub
+    // failing responses and must not sleep through the real 30 s policy.
+    fetcher = new GoRegistryFetcher(BASE, 1, { retryDelayMs: 0, timeoutMs: 0 });
   });
 
   afterEach(() => {
@@ -132,6 +134,7 @@ describe("GoRegistryFetcher", () => {
 
       expect(fetchMock).toHaveBeenCalledWith(
         "https://proxy.golang.org/github.com/!azure/azure-sdk-for-go/@latest",
+        expect.anything(),
       );
       // Metadata is still keyed by the *original* (un-escaped) module path
       // — encoding is a request-construction detail, not an identity change.
@@ -267,7 +270,10 @@ describe("GoRegistryFetcher", () => {
 
       await customFetcher.fetchMetadata([dep("github.com/foo/bar")]);
 
-      expect(fetchMock).toHaveBeenCalledWith(`${customBase}/github.com/foo/bar/@latest`);
+      expect(fetchMock).toHaveBeenCalledWith(
+        `${customBase}/github.com/foo/bar/@latest`,
+        expect.anything(),
+      );
     });
 
     it("strips a trailing slash from a custom registry base URL", async () => {
@@ -285,6 +291,7 @@ describe("GoRegistryFetcher", () => {
 
       expect(fetchMock).toHaveBeenCalledWith(
         "https://my-proxy.example.com/github.com/foo/bar/@latest",
+        expect.anything(),
       );
     });
   });

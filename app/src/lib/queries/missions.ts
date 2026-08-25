@@ -46,10 +46,22 @@ const READ_CACHE_SECONDS = 60;
  * which components render and core's rankMissions() calls .getTime() on —
  * without hand-listing fields. Runs on the miss path too, where it's a
  * no-op pass-through for live Date objects.
+ *
+ * Exported for unit testing (same convention as osv.ts's pure utilities).
  */
-function reviveDates<T>(value: T): T {
+export function reviveDates<T>(value: T): T {
   return reviveValue(value) as T;
 }
+
+/**
+ * Matches exactly what a Postgres timestamptz column serializes to over
+ * JSON — an ISO 8601 timestamp ("2026-08-23T12:34:56.789Z", offset form
+ * included). The suffix check alone isn't enough: new Date("garbage")
+ * silently yields Invalid Date, and jsonb blobs (rawData, scoring inputs)
+ * can legally carry non-date "*At"-suffixed keys. A string that fails this
+ * shape passes through untouched instead of being corrupted.
+ */
+const ISO_TIMESTAMP_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})$/;
 
 /** Recursion core over `unknown` — typed-linting safe, no `any` leakage. */
 function reviveValue(value: unknown): unknown {
@@ -65,22 +77,33 @@ function reviveValue(value: unknown): unknown {
   const revived: Record<string, unknown> = {};
   for (const [key, field] of Object.entries(value)) {
     revived[key] =
-      typeof field === "string" && key.endsWith("At") ? new Date(field) : reviveValue(field);
+      typeof field === "string" && key.endsWith("At") && ISO_TIMESTAMP_RE.test(field)
+        ? new Date(field)
+        : reviveValue(field);
   }
   return revived;
 }
 
-/** unstable_cache wrapper for one cached read: fixed key parts + tag + TTL. */
+/** unstable_cache wrapper for one cached read: fixed key parts + tag + TTL.
+ *
+ * reviveDates runs on the RESULT of cached() — outside unstable_cache —
+ * deliberately. Inside the wrapped callback its output would be
+ * JSON-serialized into the store before the caller ever saw it, so every
+ * served value (miss AND hit) arrives as "*At" ISO strings and Date-typed
+ * consumers crash (found live: repo-card's toLocaleDateString took down /
+ * in production with exactly that placement). Outside, the miss path gets
+ * live Dates from the driver and passes through unchanged, and the hit
+ * path gets real Dates revived from their stored ISO strings. */
 function cachedRead<T>(
   keyParts: string[],
   tag: "missions" | "repos",
   read: () => Promise<T>,
 ): Promise<T> {
-  const cached = unstable_cache(async () => reviveDates(await read()), keyParts, {
+  const cached = unstable_cache(read, keyParts, {
     revalidate: READ_CACHE_SECONDS,
     tags: [tag],
   });
-  return cached();
+  return cached().then(reviveDates);
 }
 
 /**

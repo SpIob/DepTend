@@ -12,13 +12,8 @@
  * ADR: docs/adr/0006-scoring-algorithm.md
  */
 
-import type { EffortLabel, ScoreConfidence } from "../db/schema.js";
-import type {
-  EffortInputs,
-  EcosystemValueInputs,
-  ImpactInputs,
-  ConfidenceFlags,
-} from "../db/json-types.js";
+import type { EffortLabel } from "../db/schema.js";
+import type { EffortInputs, EcosystemValueInputs, ImpactInputs } from "../db/json-types.js";
 
 export interface ImpactScoreResult {
   score: number; // 0.0 – 10.0
@@ -35,16 +30,8 @@ export interface EcosystemValueScoreResult {
   inputs: EcosystemValueInputs;
 }
 
-export interface CompositeScoreResult {
-  impact_score: number;
-  ecosystem_value_score: number;
-  composite_score: number;
-  effort_label: EffortLabel;
-  confidence: ScoreConfidence;
-  confidence_notes: string[];
-  confidence_flags: ConfidenceFlags;
-  scoring_version: string;
-}
+// CompositeScoreResult (a flattened mission_scores shape) was removed —
+// MissionScoreComputation in mission-scorer.ts is the real, used shape.
 
 export interface ImpactScorer {
   score(inputs: ImpactInputs): ImpactScoreResult;

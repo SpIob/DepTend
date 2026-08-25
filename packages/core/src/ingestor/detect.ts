@@ -39,6 +39,14 @@ import type { EcosystemIngestor, IngestorResult } from "./interface.js";
  * order), so a caller sees the full "here's everything we tried" picture
  * rather than just the final ingestor's own warnings.
  *
+ * A probe that THROWS (a transient network error, an unexpected HTTP
+ * status) is one ingestor's transport failing, not a verdict about the
+ * repo — it's converted to an unresolved result carrying the error as a
+ * warning and probing continues to the next ingestor, exactly like a
+ * clean "manifest not found". Without this, one flaky request against the
+ * first-probed ecosystem would abort detection for repos that would have
+ * resolved on the next one.
+ *
  * @param ingestors - tried in array order; the caller controls probing
  *   order by how it orders this list (ADR 0022: npm first, then PyPI).
  * @param repoPath - passed through to each ingestor unchanged — a GitHub
@@ -53,7 +61,21 @@ export async function detectEcosystem(
   const attempts: IngestorResult[] = [];
 
   for (const ingestor of ingestors) {
-    const result = await ingestor.parseDependencies(repoPath);
+    let result: IngestorResult;
+    try {
+      result = await ingestor.parseDependencies(repoPath);
+    } catch (err) {
+      result = {
+        ecosystem: ingestor.ecosystem,
+        dependencies: [],
+        lock_file_present: false,
+        manifest_resolved: false,
+        warnings: [
+          `${ingestor.ecosystem} probe failed and was skipped: ${String(err)}` +
+            " — falling through to the next ingestor.",
+        ],
+      };
+    }
     attempts.push(result);
 
     if (result.manifest_resolved) {

@@ -1,7 +1,7 @@
 /**
  * Repo submission
  *
- * Lives here, not in /app, for the same reason getOpenMissionsWithScores
+ * Lives here, not in /app, for the same reason getRepoMissionsWithScores
  * does (see queries.ts's header) — keeps every Drizzle query in one
  * program/project context, avoiding the cross-package type-identity issue
  * from ADR 0012.

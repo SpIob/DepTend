@@ -25,9 +25,9 @@ import type { PgTable } from "drizzle-orm/pg-core";
 import * as schema from "./schema.js";
 import {
   BOARD_PAGE_SIZE,
+  createReadonlyDb,
   getBoardMissionsWithScoresPage,
   getIndexedRepoCount,
-  getOpenMissionsWithScores,
   getRepoEcosystems,
   getRepoMissionsWithScores,
   getReposWithMissionSummary,
@@ -269,7 +269,7 @@ describe("getBoardMissionsWithScoresPage ordering parity", () => {
       `CASE "mission_scores"."effort_label" WHEN 'trivial' THEN 0 WHEN 'low' THEN 1 WHEN 'medium' THEN 2 WHEN 'high' THEN 3 END ASC`,
     );
     const published = sql.indexOf('"advisories"."published_at" DESC NULLS LAST');
-    const unique = sql.indexOf('COALESCE("advisories"."osv_id", "missions"."id") ASC');
+    const unique = sql.indexOf('COALESCE("advisories"."osv_id", "missions"."id"::text) ASC');
 
     expect(tier).toBeGreaterThan(-1);
     expect(effort).toBeGreaterThan(tier);
@@ -286,7 +286,7 @@ describe("getBoardMissionsWithScoresPage ordering parity", () => {
       `CASE "mission_scores"."effort_label" WHEN 'trivial' THEN 0 WHEN 'low' THEN 1 WHEN 'medium' THEN 2 WHEN 'high' THEN 3 END ASC`,
     );
     const composite = sql.indexOf('"mission_scores"."composite_score" DESC');
-    const unique = sql.indexOf('COALESCE("advisories"."osv_id", "missions"."id") ASC');
+    const unique = sql.indexOf('COALESCE("advisories"."osv_id", "missions"."id"::text) ASC');
 
     expect(effort).toBeGreaterThan(-1);
     expect(composite).toBeGreaterThan(effort);
@@ -300,7 +300,7 @@ describe("getBoardMissionsWithScoresPage ordering parity", () => {
 
     const sql = bySql(calls, /limit /).sql;
     const published = sql.indexOf('"advisories"."published_at" DESC NULLS LAST');
-    const unique = sql.indexOf('COALESCE("advisories"."osv_id", "missions"."id") ASC');
+    const unique = sql.indexOf('COALESCE("advisories"."osv_id", "missions"."id"::text) ASC');
 
     expect(published).toBeGreaterThan(-1);
     expect(unique).toBeGreaterThan(published);
@@ -482,7 +482,7 @@ describe("getBoardMissionsWithScoresPage result shaping", () => {
         ...flatten(repos, REPO_VALUES),
       ],
     ]);
-    const result = await getOpenMissionsWithScores(db);
+    const result = await getRepoMissionsWithScores(db, "r-1");
 
     expect(result).toHaveLength(1);
     expect(result[0]?.advisory).toBeNull();
@@ -502,7 +502,7 @@ describe("getBoardMissionsWithScoresPage result shaping", () => {
 // Fetch-everything path (per-repo board + JS-side ranking)
 // ---------------------------------------------------------------------------
 
-describe("getOpenMissionsWithScores / getRepoMissionsWithScores", () => {
+describe("getRepoMissionsWithScores", () => {
   function twoRowRouter(): RowRouter {
     return (sql: string): unknown[][] => {
       if (/limit |group by/i.test(sql)) return [];
@@ -526,7 +526,7 @@ describe("getOpenMissionsWithScores / getRepoMissionsWithScores", () => {
 
   it("ranks rows through rankMissions() (higher composite first despite input order)", async () => {
     const { db } = makeDb(twoRowRouter());
-    const result = await getOpenMissionsWithScores(db);
+    const result = await getRepoMissionsWithScores(db, "r-1");
 
     expect(result.map((m) => m.id)).toEqual(["m-2", "m-1"]);
   });
@@ -632,3 +632,49 @@ describe("getReposWithMissionSummary", () => {
     expect(result.every((repo) => !repo.isBookmarked)).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Live-Postgres check (opt-in)
+//
+// The fake transport above can assert SQL TEXT but never whether Postgres
+// ACCEPTS it — boardOrderBy() once shipped a COALESCE(advisories.osv_id,
+// missions.id) mixing text with uuid that every mocked test passed and that
+// took /missions down in production (NeonDbError 42804). When DATABASE_URL
+// is set (local dev has it in .env.local), actually execute all three sort
+// modes so type errors in these statements fail here instead of live. CI
+// runs without DATABASE_URL and skips this block.
+// ---------------------------------------------------------------------------
+
+const LIVE_DATABASE_URL = process.env.DATABASE_URL ?? "";
+
+describe.skipIf(LIVE_DATABASE_URL === "")(
+  "getBoardMissionsWithScoresPage against real Postgres",
+  () => {
+    it(
+      "executes every sort mode's ORDER BY without a Postgres type error",
+      { timeout: 30_000 },
+      async () => {
+        const db = createReadonlyDb(LIVE_DATABASE_URL);
+        const baseFilters: BoardFilters = {
+          q: "",
+          severities: [],
+          ecosystems: [],
+          efforts: [],
+          sort: "priority",
+        };
+
+        for (const sort of ["priority", "quick-wins", "newest"] as const) {
+          const page = await getBoardMissionsWithScoresPage(
+            db,
+            { ...baseFilters, sort },
+            {
+              limit: 5,
+            },
+          );
+          expect(Array.isArray(page.missions)).toBe(true);
+          expect(page.total).toBeGreaterThanOrEqual(0);
+        }
+      },
+    );
+  },
+);

@@ -38,7 +38,7 @@
  *      docs/adr/0032-downstream-dependents.md
  */
 
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import type { NeonDatabase, NeonTransaction } from "drizzle-orm/neon-serverless";
 import {
   advisories,
@@ -104,6 +104,11 @@ type DbOrTx = AnyNeonDb | AnyNeonTx;
  */
 function buildSignalKey(dependencyId: string, targetVersion: string | null): string {
   return `${dependencyId}:${targetVersion ?? "null"}`;
+}
+
+/** Key shape for the bulk existing-missions lookup — see selectExistingMissionIds(). */
+function missionPairKey(dependencyId: string, advisoryId: string): string {
+  return `${dependencyId}:${advisoryId}`;
 }
 
 export class MissionWriter {
@@ -176,6 +181,20 @@ export class MissionWriter {
     let updated = 0;
 
     await this.db.transaction(async (tx) => {
+      // One bulk existence check for every candidate pair up front, instead
+      // of one SELECT per candidate inside the write loop — N round trips
+      // became 1 (the pair lookup leans on migration 0006's
+      // idx_missions_dependency_id). Runs inside the transaction, same as
+      // the per-candidate check it replaces, so the check-then-write
+      // semantics don't widen.
+      const existingMissionIds = await this.selectExistingMissionIds(
+        tx,
+        candidateRows.map((row) => ({
+          dependencyId: row.dependency.id,
+          advisoryId: row.advisory.id,
+        })),
+      );
+
       for (const row of candidateRows) {
         const targetVersion = row.advisory.fixedVersion ?? row.dependency.latestVersion;
         const signals = effortSignalsByKey.get(buildSignalKey(row.dependency.id, targetVersion));
@@ -195,14 +214,32 @@ export class MissionWriter {
         const score = computeMissionScore(ctx);
         const copy = generateMissionCopy(ctx, score);
 
-        const { wasCreated, id: missionId } = await this.upsertMission(tx, {
+        const missionInput = {
           repoId,
           dependencyId: ctx.dependency.id,
           advisoryId: ctx.advisory.id,
           title: copy.title,
           description: copy.description,
           actionHint: copy.action_hint,
-        });
+        };
+
+        const existingId = existingMissionIds.get(
+          missionPairKey(missionInput.dependencyId, missionInput.advisoryId),
+        );
+
+        let missionId: string;
+        let wasCreated: boolean;
+        if (existingId !== undefined) {
+          // Copy only — status/claimed_by/claimed_at/resolved_at/
+          // dismissed_at/dismiss_reason are user-driven state a re-run must
+          // never overwrite (ADR 0008 §3).
+          await this.refreshMissionCopy(tx, existingId, missionInput);
+          missionId = existingId;
+          wasCreated = false;
+        } else {
+          missionId = await this.insertMission(tx, missionInput);
+          wasCreated = true;
+        }
 
         await this.upsertMissionScore(tx, missionId, score);
 
@@ -249,10 +286,64 @@ export class MissionWriter {
   }
 
   // ---------------------------------------------------------------------------
-  // missions (manual check-then-write — no unique constraint, ADR 0008 §2)
+  // missions (manual check-then-write — no unique constraint, ADR 0008 §2;
+  // the "check" half is selectExistingMissionIds's single bulk query)
   // ---------------------------------------------------------------------------
 
-  private async upsertMission(
+  /**
+   * Resolves which of this repo's candidate pairs already have a mission,
+   * in ONE query: SELECT id, dependency_id, advisory_id WHERE dependency_id
+   * IN (this repo's candidate dependencies) — leaning on migration 0006's
+   * idx_missions_dependency_id. Rows whose dependency_id/advisory_id were
+   * nulled by their ON DELETE SET NULL foreign keys can never match a
+   * candidate pair and are skipped.
+   */
+  private async selectExistingMissionIds(
+    tx: DbOrTx,
+    pairs: { dependencyId: string; advisoryId: string }[],
+  ): Promise<Map<string, string>> {
+    const result = new Map<string, string>();
+    if (pairs.length === 0) return result;
+
+    const dependencyIds = [...new Set(pairs.map((p) => p.dependencyId))];
+    const rows = await tx
+      .select({
+        id: missions.id,
+        dependencyId: missions.dependencyId,
+        advisoryId: missions.advisoryId,
+      })
+      .from(missions)
+      .where(inArray(missions.dependencyId, dependencyIds));
+
+    for (const row of rows) {
+      if (row.dependencyId === null || row.advisoryId === null) continue;
+      result.set(missionPairKey(row.dependencyId, row.advisoryId), row.id);
+    }
+    return result;
+  }
+
+  /** Refreshes an existing mission's copy fields only (ADR 0008 §3). */
+  private async refreshMissionCopy(
+    tx: DbOrTx,
+    missionId: string,
+    input: {
+      title: string;
+      description: string;
+      actionHint: string | null;
+    },
+  ): Promise<void> {
+    await tx
+      .update(missions)
+      .set({
+        title: input.title,
+        description: input.description,
+        actionHint: input.actionHint,
+        updatedAt: new Date(),
+      })
+      .where(eq(missions.id, missionId));
+  }
+
+  private async insertMission(
     tx: DbOrTx,
     input: {
       repoId: string;
@@ -262,37 +353,7 @@ export class MissionWriter {
       description: string;
       actionHint: string | null;
     },
-  ): Promise<{ id: string; wasCreated: boolean }> {
-    const existing = await tx
-      .select({ id: missions.id })
-      .from(missions)
-      .where(
-        and(
-          eq(missions.dependencyId, input.dependencyId),
-          eq(missions.advisoryId, input.advisoryId),
-        ),
-      )
-      .limit(1);
-
-    const existingRow = existing[0];
-
-    if (existingRow !== undefined) {
-      // Copy only — status/claimed_by/claimed_at/resolved_at/dismissed_at/
-      // dismiss_reason are user-driven state a re-run must never overwrite
-      // (ADR 0008 §3).
-      await tx
-        .update(missions)
-        .set({
-          title: input.title,
-          description: input.description,
-          actionHint: input.actionHint,
-          updatedAt: new Date(),
-        })
-        .where(eq(missions.id, existingRow.id));
-
-      return { id: existingRow.id, wasCreated: false };
-    }
-
+  ): Promise<string> {
     const inserted = await tx
       .insert(missions)
       .values({
@@ -309,11 +370,11 @@ export class MissionWriter {
     const insertedRow = inserted[0];
     if (insertedRow === undefined) {
       throw new Error(
-        `upsertMission: insert returned no row for dependency ${input.dependencyId} / advisory ${input.advisoryId}`,
+        `insertMission: insert returned no row for dependency ${input.dependencyId} / advisory ${input.advisoryId}`,
       );
     }
 
-    return { id: insertedRow.id, wasCreated: true };
+    return insertedRow.id;
   }
 
   // ---------------------------------------------------------------------------

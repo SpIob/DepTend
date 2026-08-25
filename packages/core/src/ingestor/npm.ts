@@ -27,10 +27,22 @@
  */
 
 import type { EcosystemIngestor, IngestorResult } from "./interface.js";
+import { fetchWithRetry, type FetchRetryOptions } from "./fetch-retry.js";
 import { LOCK_FILE_NAMES, parsePackageJsonContent } from "./npm-parse.js";
 
 export class NpmIngestor implements EcosystemIngestor {
   readonly ecosystem = "npm" as const;
+
+  private readonly fetchRetryOptions: FetchRetryOptions;
+
+  /**
+   * @param fetchRetryOptions - transport tuning for the raw-content fetches.
+   *   Ingestion keeps the defaults; interactive callers (manifest-check's
+   *   submission pre-check) tighten them.
+   */
+  constructor(fetchRetryOptions: FetchRetryOptions = {}) {
+    this.fetchRetryOptions = fetchRetryOptions;
+  }
 
   /**
    * Parse dependencies from a GitHub repository.
@@ -69,7 +81,7 @@ export class NpmIngestor implements EcosystemIngestor {
     let response: Response;
 
     try {
-      response = await fetch(url);
+      response = await fetchWithRetry(url, undefined, this.fetchRetryOptions);
     } catch (err) {
       throw new Error(`Network error fetching package.json from ${url}: ${String(err)}`);
     }
@@ -99,7 +111,11 @@ export class NpmIngestor implements EcosystemIngestor {
   private async detectLockFile(base: string): Promise<boolean> {
     const checks = LOCK_FILE_NAMES.map(async (name) => {
       try {
-        const res = await fetch(`${base}/${name}`, { method: "HEAD" });
+        const res = await fetchWithRetry(
+          `${base}/${name}`,
+          { method: "HEAD" },
+          this.fetchRetryOptions,
+        );
         return res.ok;
       } catch {
         return false;

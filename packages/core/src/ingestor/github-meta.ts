@@ -12,11 +12,16 @@
  * from 60 req/hr to 5,000 req/hr — same rationale as every other GitHub API
  * call in this project.
  *
- * This is a faithful extraction, not a redesign: behavior (including error
- * messages) is unchanged from the original scripts/ingest.js version. No new
- * runtime validation was added on the response shape — the GitHub REST API's
- * contract is trusted the same way it always has been here.
+ * Originally a faithful extraction from scripts/ingest.js — error messages
+ * are still byte-identical to that version. Since then it gained the shared
+ * transient-failure retry (fetch-retry.ts) and GitHubMetaError, whose `kind`
+ * field lets callers classify the two branch-worthy failures structurally
+ * instead of matching on message prefixes. No runtime validation is done on
+ * the response shape — the GitHub REST API's contract is trusted the same
+ * way it always has been here.
  */
+
+import { fetchWithRetry, type FetchRetryOptions } from "./fetch-retry.js";
 
 const GITHUB_API_BASE = "https://api.github.com";
 const USER_AGENT = "deptend.dev/0.1.0 (https://github.com/deptend/deptend.dev)";
@@ -37,19 +42,49 @@ export interface GitHubRepoMeta {
 }
 
 /**
+ * The two failure kinds callers actually branch on. Everything else stays a
+ * plain Error — only these carry structured kind data so downstream
+ * classification never has to match on message text again.
+ *
+ * - "not_found": 404 — private, deleted, or mistyped URL.
+ * - "rate_limited": 403/429 — the shared GitHub API budget ran out.
+ */
+export type GitHubMetaFailureKind = "not_found" | "rate_limited";
+
+export class GitHubMetaError extends Error {
+  readonly kind: GitHubMetaFailureKind;
+
+  constructor(kind: GitHubMetaFailureKind, message: string) {
+    super(message);
+    this.name = "GitHubMetaError";
+    this.kind = kind;
+  }
+}
+
+/**
  * Fetch repository metadata from the GitHub REST API.
+ *
+ * Routed through the shared transient-failure retry policy (one retry,
+ * capped Retry-After, per-attempt deadline), so a single flaky request no
+ * longer fails a whole ingestion run or repo submission outright.
  *
  * @param owner - repo owner/org login
  * @param name - repo name
  * @param token - GitHub token for the 5,000 req/hr authenticated rate limit,
  *   or null for unauthenticated (60 req/hr)
- * @throws if the repo doesn't exist (404), the rate limit is hit (403/429),
- *   any other non-OK response, or a network-level failure
+ * @param options - transport tuning passed straight to fetchWithRetry.
+ *   Background ingestion keeps the defaults; interactive callers
+ *   (manifest-check.ts's submission pre-check) tighten them so a retry
+ *   backoff can't stall a user-facing request.
+ * @throws GitHubMetaError when the repo doesn't exist (404, kind
+ *   "not_found") or the rate limit is hit (403/429, kind "rate_limited");
+ *   plain Error on network-level failure or any other non-OK response.
  */
 export async function fetchGitHubRepoMeta(
   owner: string,
   name: string,
   token: string | null,
+  options?: FetchRetryOptions,
 ): Promise<GitHubRepoMeta> {
   const url = `${GITHUB_API_BASE}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`;
   const headers: Record<string, string> = {
@@ -60,13 +95,14 @@ export async function fetchGitHubRepoMeta(
 
   let response: Response;
   try {
-    response = await fetch(url, { headers });
+    response = await fetchWithRetry(url, { headers }, options);
   } catch (err) {
     throw new Error(`Network error calling GitHub API for ${owner}/${name}: ${String(err)}`);
   }
 
   if (response.status === 404) {
-    throw new Error(
+    throw new GitHubMetaError(
+      "not_found",
       `GitHub repo not found: ${owner}/${name}. ` +
         `It may be private, deleted, or the URL may be incorrect.`,
     );
@@ -76,7 +112,8 @@ export async function fetchGitHubRepoMeta(
     const remaining = response.headers.get("x-ratelimit-remaining");
     const reset = response.headers.get("x-ratelimit-reset");
     const resetTime = reset ? new Date(Number(reset) * 1000).toISOString() : "unknown";
-    throw new Error(
+    throw new GitHubMetaError(
+      "rate_limited",
       `GitHub API rate limit hit (HTTP ${String(response.status)}). ` +
         `Remaining: ${remaining ?? "unknown"}. Resets at: ${resetTime}. ` +
         `Set GITHUB_TOKEN to raise the limit to 5,000 req/hr.`,

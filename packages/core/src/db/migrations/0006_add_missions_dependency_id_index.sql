@@ -1,0 +1,1 @@
+CREATE INDEX "idx_missions_dependency_id" ON "missions" USING btree ("dependency_id");

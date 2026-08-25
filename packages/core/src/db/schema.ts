@@ -269,6 +269,7 @@ export const missions = pgTable(
     index("idx_missions_status").on(table.status),
     index("idx_missions_mission_type").on(table.missionType),
     index("idx_missions_advisory_id").on(table.advisoryId),
+    index("idx_missions_dependency_id").on(table.dependencyId),
   ],
 );
 

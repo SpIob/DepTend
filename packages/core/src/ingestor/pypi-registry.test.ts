@@ -59,7 +59,10 @@ describe("PyPIRegistryFetcher", () => {
 
   beforeEach(() => {
     // Use a single concurrency slot in tests to get deterministic ordering
-    fetcher = new PyPIRegistryFetcher(BASE, 1);
+    // Single concurrency slot + transport backoff/deadline disabled —
+    // failure-path tests below stub failing responses and must not sleep
+    // through the real 30 s policy.
+    fetcher = new PyPIRegistryFetcher(BASE, 1, { retryDelayMs: 0, timeoutMs: 0 });
   });
 
   afterEach(() => {

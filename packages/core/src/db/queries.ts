@@ -133,11 +133,14 @@ export function createReadonlyDb(databaseUrl: string): ReadonlyDb {
 }
 
 /**
- * Shared implementation behind getOpenMissionsWithScores() and
- * getRepoMissionsWithScores() below — same join, same ranking; status
- * filter always applies, repoId narrows to one repo when passed (ADR 0027)
- * and is left off entirely otherwise so the board-wide callers are
- * unchanged.
+ * Shared implementation behind getRepoMissionsWithScores() below — same
+ * join, same ranking; status filter always applies, repoId narrows to one
+ * repo when passed (ADR 0027).
+ *
+ * The former board-wide variant (getOpenMissionsWithScores, all repos,
+ * status "open" only) was removed: the board's read path is
+ * getBoardMissionsWithScoresPage (ADR 0031) — SQL-side filtering/sorting/
+ * pagination — and nothing else ever consumed the fetch-everything shape.
  */
 async function getMissionsWithScoresByStatus(
   db: ReadonlyDb,
@@ -178,22 +181,11 @@ async function getMissionsWithScoresByStatus(
 }
 
 /**
- * All open missions, ranked highest-priority first (rankMissions() —
+ * Open + claimed missions for one repo, ranked by rankMissions() —
  * composite score, effort as tie-breaker, same algorithm used everywhere
- * else in this project).
- *
- * "Open" excludes claimed/resolved/dismissed missions — this is "what to
- * fix next," not "everything that was ever found."
- */
-export async function getOpenMissionsWithScores(db: ReadonlyDb): Promise<MissionWithScore[]> {
-  return getMissionsWithScoresByStatus(db, ["open"]);
-}
-
-/**
- * Open + claimed missions for one repo, ranked the same way as
- * getOpenMissionsWithScores() — the query behind /repo/[owner]/[name]
- * (ADR 0027). Scoped to a single repo_id so query cost and payload size
- * are bounded by one repo's mission count, not the whole board's.
+ * else in this project — the query behind /repo/[owner]/[name] (ADR 0027).
+ * Scoped to a single repo_id so query cost and payload size are bounded by
+ * one repo's mission count, not the whole board's.
  */
 export async function getRepoMissionsWithScores(
   db: ReadonlyDb,
@@ -279,8 +271,11 @@ const BOARD_TIER_EXPR = sql<number>`FLOOR(${missionScores.compositeScore} / 0.5)
 /** Newest known vulnerability first; NULL sorts last (ranking.ts's -Infinity). */
 const BOARD_PUBLISHED_DESC = sql`${advisories.publishedAt} DESC NULLS LAST`;
 
-/** Absolute, always-present final fallback (ranking.ts's osv_id ?? mission id). */
-const BOARD_UNIQUE_ASC = sql`COALESCE(${advisories.osvId}, ${missions.id}) ASC`;
+/** Absolute, always-present final fallback (ranking.ts's osv_id ?? mission id).
+ * osv_id is text and mission id is uuid — Postgres refuses COALESCE across
+ * them (42804, found live: this expression alone took down /missions in
+ * production), so the id side casts to text. */
+const BOARD_UNIQUE_ASC = sql`COALESCE(${advisories.osvId}, ${missions.id}::text) ASC`;
 
 function boardInSet(expr: SQL, values: readonly string[]): SQL {
   return sql`${expr} IN (${sql.join(
@@ -479,18 +474,25 @@ export async function getTotalRepoCount(db: ReadonlyDb): Promise<number> {
 export interface SkippedRepo {
   owner: string;
   name: string;
-  /** Why NpmIngestor couldn't find/parse a manifest — see writer.ts. */
+  /** Why the winning ingestor couldn't find/parse a manifest — see writer.ts. */
   reason: string | null;
 }
 
 /**
  * Repos whose most recent ingestion completed without error but found no
- * analyzable package.json (status: "skipped" — see the ingestion_status
- * enum's own comment in schema.ts). Still counts against the repo cap via
- * getTotalRepoCount() above; excluded from getIndexedRepoCount() since
- * nothing was actually indexed. Small enough a list that the dashboard
- * can show it in full — no pagination.
+ * analyzable package.json/pyproject.toml/requirements.txt/go.mod (status:
+ * "skipped" — see the ingestion_status enum's own comment in schema.ts).
+ * Still counts against the repo cap via getTotalRepoCount() above; excluded
+ * from getIndexedRepoCount() since nothing was actually indexed. Small
+ * enough a list that the dashboard can show it in full — no pagination.
  */
+export async function getSkippedRepos(db: ReadonlyDb): Promise<SkippedRepo[]> {
+  return db
+    .select({ owner: repos.owner, name: repos.name, reason: repos.ingestionError })
+    .from(repos)
+    .where(eq(repos.ingestionStatus, "skipped"));
+}
+
 /**
  * Distinct ecosystems present in one repo — same source data
  * getReposWithMissionSummary() uses for the directory grid, just scoped to
@@ -506,13 +508,6 @@ export async function getRepoEcosystems(
     .from(dependencies)
     .where(eq(dependencies.repoId, repoId));
   return rows.map((row) => row.ecosystem);
-}
-
-export async function getSkippedRepos(db: ReadonlyDb): Promise<SkippedRepo[]> {
-  return db
-    .select({ owner: repos.owner, name: repos.name, reason: repos.ingestionError })
-    .from(repos)
-    .where(eq(repos.ingestionStatus, "skipped"));
 }
 
 /**

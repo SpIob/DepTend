@@ -57,7 +57,9 @@ describe("GoIngestor", () => {
   let ingestor: GoIngestor;
 
   beforeEach(() => {
-    ingestor = new GoIngestor();
+    // Transport backoff/deadline disabled — failure-path tests below stub a
+    // rejecting fetch and must not sleep through the real 30 s policy.
+    ingestor = new GoIngestor({ retryDelayMs: 0, timeoutMs: 0 });
   });
 
   afterEach(() => {

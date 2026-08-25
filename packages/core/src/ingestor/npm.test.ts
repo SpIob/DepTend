@@ -51,7 +51,9 @@ describe("NpmIngestor", () => {
   let ingestor: NpmIngestor;
 
   beforeEach(() => {
-    ingestor = new NpmIngestor();
+    // Transport backoff/deadline disabled — failure-path tests below stub a
+    // rejecting fetch and must not sleep through the real 30 s policy.
+    ingestor = new NpmIngestor({ retryDelayMs: 0, timeoutMs: 0 });
   });
 
   afterEach(() => {

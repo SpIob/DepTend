@@ -33,6 +33,8 @@
  * ADR: docs/adr/0032-downstream-dependents.md
  */
 
+import { fetchWithRetry } from "./fetch-retry.js";
+
 const LIBRARIES_IO_API_BASE = "https://libraries.io/api";
 const USER_AGENT = "deptend.dev/0.1.0 (https://github.com/deptend/deptend.dev)";
 
@@ -52,7 +54,6 @@ const MAX_PAGES = 5;
 
 /** Wait before the single 429 retry when the response carries no usable Retry-After. */
 const DEFAULT_RATE_LIMIT_RETRY_DELAY_MS = 30_000;
-const MAX_RETRY_AFTER_MS = 120_000;
 
 export interface RepoRef {
   owner: string;
@@ -75,7 +76,7 @@ export interface FetchDownstreamDependentsOptions {
    * to skip waiting; production keeps the default that respects 60 req/min.
    */
   minIntervalMs?: number;
-  /** Backoff before the single 429 retry when Retry-After is absent/unusable. */
+  /** Backoff before the single retry when Retry-After is absent/unusable. */
   rateLimitRetryDelayMs?: number;
 }
 
@@ -107,14 +108,6 @@ async function pace(now: number, minIntervalMs: number): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, earliestAllowed - now));
   }
   lastCallAt = Date.now();
-}
-
-function parseRetryAfterMs(response: Response): number {
-  const header = response.headers.get("retry-after");
-  if (header === null) return -1;
-  const seconds = Number(header);
-  if (!Number.isFinite(seconds) || seconds < 0) return -1;
-  return Math.min(seconds * 1_000, MAX_RETRY_AFTER_MS);
 }
 
 // ---------------------------------------------------------------------------
@@ -222,7 +215,8 @@ export async function fetchDownstreamDependents(
 }
 
 // ---------------------------------------------------------------------------
-// Single-page fetch (paced, retries a 429 once)
+// Single-page fetch (paced, transient failures retried once via the
+// shared transport policy)
 // ---------------------------------------------------------------------------
 
 type PageResult =
@@ -240,14 +234,22 @@ async function fetchProjectsPage(
   let response: Response;
   try {
     await pace(Date.now(), minIntervalMs);
-    response = await fetch(url, { headers: { "User-Agent": USER_AGENT } });
-    if (response.status === 429) {
-      const retryAfterMs = parseRetryAfterMs(response);
-      const waitMs = retryAfterMs >= 0 ? retryAfterMs : rateLimitRetryDelayMs;
-      await new Promise((resolve) => setTimeout(resolve, waitMs));
-      await pace(Date.now(), minIntervalMs);
-      response = await fetch(url, { headers: { "User-Agent": USER_AGENT } });
-    }
+    // The shared transport policy — same one-retry-with-capped-Retry-After
+    // discipline as every other third-party call in this directory
+    // (fetch-retry.ts), replacing the hand-rolled 429-only block that used
+    // to live here. A network error on page 3 of 5 no longer discards the
+    // whole scan; it gets one recovery shot like any other transient
+    // failure before degrading to "network-error" → unavailable.
+    // Pacing note: pace() covers the first attempt; the wrapper's internal
+    // backoff (30 s flat or the server's own capped Retry-After) already
+    // exceeds the 1.1 s floor, except an explicit Retry-After: 0 — where
+    // libraries.io itself is saying "retry immediately", so re-pacing would
+    // second-guess the server.
+    response = await fetchWithRetry(
+      url,
+      { headers: { "User-Agent": USER_AGENT } },
+      { retryDelayMs: rateLimitRetryDelayMs },
+    );
   } catch {
     return { kind: "network-error" };
   }

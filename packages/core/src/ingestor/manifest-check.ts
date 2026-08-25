@@ -31,7 +31,7 @@
  * 0025), so this can't be hammered independently of that.
  */
 
-import { fetchGitHubRepoMeta, type GitHubRepoMeta } from "./github-meta.js";
+import { fetchGitHubRepoMeta, GitHubMetaError, type GitHubRepoMeta } from "./github-meta.js";
 import { detectEcosystem } from "./detect.js";
 import { NpmIngestor } from "./npm.js";
 import { PyPIIngestor } from "./pypi.js";
@@ -47,6 +47,14 @@ export type ManifestCheckResult =
     };
 
 /**
+ * Tighter transport policy than ingestion's defaults — this runs inside a
+ * user-facing POST request, so a retry backoff or hung socket must not
+ * stall it the way a 30 s default would. One quick retry, ten-second
+ * deadline, then the route's existing 404/503 mapping takes over.
+ */
+const REQUEST_CONTEXT_TRANSPORT = { retryDelayMs: 2_000, timeoutMs: 10_000 } as const;
+
+/**
  * @param token - passed straight through to fetchGitHubRepoMeta; null runs
  *   unauthenticated (60 req/hr, shared globally by IP — see the code
  *   comment on GH_READ_TOKEN in api/repos/route.ts for why this is null by
@@ -59,25 +67,31 @@ export async function checkSubmittableRepo(
 ): Promise<ManifestCheckResult> {
   let meta: GitHubRepoMeta;
   try {
-    meta = await fetchGitHubRepoMeta(owner, name, token);
+    meta = await fetchGitHubRepoMeta(owner, name, token, REQUEST_CONTEXT_TRANSPORT);
   } catch (err) {
-    // fetchGitHubRepoMeta's own JSDoc documents these as its only thrown
-    // cases; matching on the message prefixes it documents there rather
-    // than inventing typed errors for a single caller of an otherwise
-    // widely-reused, already-tested function.
+    // fetchGitHubRepoMeta throws GitHubMetaError for exactly the two
+    // branch-worthy failures (kind "not_found" | "rate_limited"); anything
+    // else — network error, other non-OK status — is verification_failed.
+    // Exhaustive on kind per the codebase's outcome-union convention.
+    if (err instanceof GitHubMetaError) {
+      switch (err.kind) {
+        case "not_found":
+          return { ok: false, reason: "not_found", message: err.message };
+        case "rate_limited":
+          return { ok: false, reason: "rate_limited", message: err.message };
+      }
+    }
     const message = err instanceof Error ? err.message : String(err);
-    if (message.startsWith("GitHub repo not found")) {
-      return { ok: false, reason: "not_found", message };
-    }
-    if (message.startsWith("GitHub API rate limit hit")) {
-      return { ok: false, reason: "rate_limited", message };
-    }
     return { ok: false, reason: "verification_failed", message };
   }
 
   const rawBase = `https://raw.githubusercontent.com/${owner}/${name}/${meta.default_branch}`;
   const result = await detectEcosystem(
-    [new NpmIngestor(), new PyPIIngestor(), new GoIngestor()],
+    [
+      new NpmIngestor(REQUEST_CONTEXT_TRANSPORT),
+      new PyPIIngestor(REQUEST_CONTEXT_TRANSPORT),
+      new GoIngestor(REQUEST_CONTEXT_TRANSPORT),
+    ],
     rawBase,
   );
 

@@ -12,6 +12,42 @@ All notable changes to DepTend, condensed to one entry per phase.
 
 ## [Unreleased]
 
+**Transport-hardening pass: deadlines, full retry coverage, ingest write-path round-trip cut** — `ADR 0035`
+
+### Added
+
+- `fetch-retry.test.ts`: direct unit suite for the shared transport policy — Retry-After parsing/capping, transient-status matrix, body-cancel hygiene, per-attempt deadline behavior, caller-cancellation semantics. Closes the gap where the load-bearing helper shipped with only indirect coverage.
+- Per-attempt deadlines on every outbound ingestor fetch (`timeoutMs`, default 30 s via `AbortSignal.timeout`): a hung socket now surfaces as a retryable failure instead of stalling the run — the failure mode that left repos stuck at `ingestionStatus: "running"` forever, since `closeRun` only executes on completion.
+- ADR 0035 + migration `0006`: `idx_missions_dependency_id`, serving MissionWriter's existence checks; production applies it together with pending migration `0005` in the next deploy window.
+
+### Changed
+
+- The shared retry policy is now actually shared: `github-meta.ts` (the rate-limit-sensitive call), all three registry fetchers, all three manifest fetchers including lock-file HEAD probes, and downstream-dependents.ts's page fetches route through `fetchWithRetry`. Previously only osv.ts and changelog-signals.ts did; downstream-dependents kept a hand-rolled 429-only retry where a network error mid-scan discarded the whole listing. Ingestion keeps the default backoff; interactive callers tune it down.
+- `fetchGitHubRepoMeta` throws `GitHubMetaError` carrying a structured `kind` (`not_found | rate_limited`) with byte-identical messages; manifest-check.ts classifies failures structurally instead of matching message prefixes — wording tweaks can no longer silently degrade the submission pre-check's 404/429 mapping.
+- MissionWriter does ONE bulk existence SELECT for all candidate pairs inside the transaction instead of one SELECT per candidate — N+1 round trips → 1, shortening how long each repo's Neon WebSocket transaction stays open (ADR 0035).
+- changelog-signals.ts stops paginating when a short (<100 releases) page comes back — same guaranteed-empty-request elimination as downstream-dependents.ts.
+- Dead code removed: `getOpenMissionsWithScores()` (superseded by ADR 0031's board query), `CompositeScoreResult`, `RepoWithIngestionStatus`; orphaned doc block over `getRepoEcosystems` untangled and `SkippedRepo.reason`'s npm-only comment updated for PyPI/Go.
+
+**Robustness pass: two production-breaking read-path bugs, retry discipline, scoring fix**
+
+### Fixed
+
+- `/missions` served error-boundary skeletons in production from the day ADR 0031 deployed: its final ORDER BY tie-break was `COALESCE(advisories.osv_id, missions.id)` — text vs uuid, which Postgres rejects (`42804`). Every mocked test passed because the fake transport asserts SQL text and never executes it; the live pass finally caught it. Fixed with a `::text` cast (ADR 0031 correction note), plus a new `DATABASE_URL`-gated test block in `queries.test.ts` that executes all three board sort modes against real Postgres so this class of error fails locally instead of live.
+- `/` crashed the same way for a different reason: ADR 0033's `reviveDates` ran _inside_ the `unstable_cache` callback, whose return value gets JSON-serialized before the caller sees it — so every served read carried `*At` ISO strings and `repo-card.tsx`'s `lastIngestedAt.toLocaleDateString()` threw. The revival was dead code on every path. Moved outside `cached()` (hits revive, misses pass through), pinned by regression tests with a serializing-cache fake (ADR 0033 correction note).
+- OSV records carrying only a CVSS vector string (`CVSS:3.1/AV:N/...`, no bare numeric score) got `cvssScore: null` and severity derived without CVSS — most GHSA records look exactly like this. Vector strings now compute their base score per the CVSS v3.1/v2 specs (weights cross-checked against NVD-published scores for canonical vectors); both `cvss_score` and derived severity stop under-reading.
+- A transient network error while probing ecosystems aborted detection instead of falling through to the next ingestor — one flaky request against raw.githubusercontent.com could skip an npm repo whose pyproject.toml would have resolved. Probe failures now convert to unresolved results carrying the error as a warning, matching the router's never-throw contract.
+
+### Changed
+
+- One shared transient-failure retry policy for outbound ingestor fetches (`fetch-retry.ts`): one retry after flat backoff, honoring capped Retry-After headers, covering 429/500/502/503/504 and network errors. Extracted from downstream-dependents.ts's discipline; osv.ts (batch + detail fetches) and changelog-signals.ts (releases pages) now follow it instead of failing instantly or not at all.
+- changelog-signals.ts no longer stores a page-cap-truncated scan as checked data: hitting 5×100 releases without reaching the version floor now returns `source_available: false` (confidence flag stays set), discarding partial findings — same unavailable-beats-wrong rule as downstream-dependents.ts.
+- `reviveDates()` guards with an exact ISO-timestamp regex before calling `new Date()`: a non-date `*At`-suffixed string (jsonb blobs can carry them) passes through instead of becoming an Invalid Date.
+- ADRs: 0034 flipped to Accepted (index-only scan verified via `EXPLAIN` on dev); 0033 stays Proposed pending a post-deploy two-request check, correction note added; 0031 correction note documents the COALESCE bug above.
+
+### Added
+
+- `npm-parse.test.ts`: direct coverage of `parsePackageJsonContent` (name validation rules, section handling, lock-file warnings), closing the gap with its pypi-parse/go-parse siblings that npm.test.ts only covered indirectly through mocked fetches.
+
 **Read-path performance pass** — `ADR 0033`, `ADR 0034`
 
 ### Added

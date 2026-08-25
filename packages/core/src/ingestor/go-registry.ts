@@ -64,6 +64,7 @@
  */
 
 import type { ParsedDependency } from "./interface.js";
+import { fetchWithRetry, type FetchRetryOptions } from "./fetch-retry.js";
 import type { PackageMetadata } from "./registry.js";
 import { parseSourceRepo, type SourceRepoRef } from "./source-repo.js";
 
@@ -126,10 +127,16 @@ const DEFAULT_CONCURRENCY = 10;
 export class GoRegistryFetcher {
   private readonly registryBase: string;
   private readonly concurrency: number;
+  private readonly fetchRetryOptions: FetchRetryOptions;
 
-  constructor(registryBase = GO_PROXY_BASE, concurrency = DEFAULT_CONCURRENCY) {
+  constructor(
+    registryBase = GO_PROXY_BASE,
+    concurrency = DEFAULT_CONCURRENCY,
+    fetchRetryOptions: FetchRetryOptions = {},
+  ) {
     this.registryBase = registryBase.replace(/\/$/, "");
     this.concurrency = concurrency;
+    this.fetchRetryOptions = fetchRetryOptions;
   }
 
   /**
@@ -220,7 +227,7 @@ export class GoRegistryFetcher {
 
     let response: Response;
     try {
-      response = await fetch(url);
+      response = await fetchWithRetry(url, undefined, this.fetchRetryOptions);
     } catch (err) {
       return failedResult(
         packageName,

@@ -193,13 +193,19 @@ describe("fetchDownstreamDependents", () => {
     });
 
     it("degrades to unavailable with a warning when a later page fails — a partial max would be misleadingly low", async () => {
+      // Under the shared transport policy the failing page fetch itself gets
+      // one recovery shot; the base mock keeps rejecting, so the scan still
+      // discards everything and reports unavailable.
       const fetchMock = vi
         .fn()
         .mockResolvedValueOnce(jsonResponse(fullPage(500)))
-        .mockRejectedValueOnce(new Error("ECONNRESET"));
+        .mockRejectedValue(new Error("ECONNRESET"));
       vi.stubGlobal("fetch", fetchMock);
 
-      const result = await fetchDownstreamDependents(repo(), "k", NO_WAIT);
+      const result = await fetchDownstreamDependents(repo(), "k", {
+        ...NO_WAIT,
+        rateLimitRetryDelayMs: 1,
+      });
 
       expect(result.count).toBeNull();
       expect(result.warnings).toHaveLength(1);
@@ -228,10 +234,17 @@ describe("fetchDownstreamDependents", () => {
       expect(result.warnings).toEqual([]);
     });
 
-    it("warns and returns unavailable on another non-ok status", async () => {
-      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 500 })));
+    it("warns and returns unavailable on another non-ok status after the single retry", async () => {
+      // 5xx is transient under the shared transport policy — the stub keeps
+      // answering 500, so the retry fails identically and the page scan
+      // still degrades to unavailable.
+      const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 500 }));
+      vi.stubGlobal("fetch", fetchMock);
 
-      const result = await fetchDownstreamDependents(repo(), "k", NO_WAIT);
+      const result = await fetchDownstreamDependents(repo(), "k", {
+        ...NO_WAIT,
+        rateLimitRetryDelayMs: 1,
+      });
 
       expect(result.count).toBeNull();
       expect(result.warnings).toHaveLength(1);
@@ -241,7 +254,10 @@ describe("fetchDownstreamDependents", () => {
     it("warns and returns unavailable on a network failure", async () => {
       vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("ECONNREFUSED")));
 
-      const result = await fetchDownstreamDependents(repo(), "k", NO_WAIT);
+      const result = await fetchDownstreamDependents(repo(), "k", {
+        ...NO_WAIT,
+        rateLimitRetryDelayMs: 1,
+      });
 
       expect(result.count).toBeNull();
       expect(result.warnings).toHaveLength(1);
@@ -328,8 +344,12 @@ describe("fetchDownstreamDependents", () => {
       expect(result.warnings[0]).toContain("HTTP 429");
     });
 
-    it("does not retry non-429 failures", async () => {
-      const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 503 }));
+    it("does not retry a plain 403 (transient-elsewhere status, no Retry-After)", async () => {
+      // The shared transport policy retries 429/5xx/network errors — but a
+      // bare 403 (actually forbidden) carries no Retry-After and gets no
+      // second attempt. GitHub's 403-WITH-Retry-After secondary-limit shape
+      // is the pinned counter-case in fetch-retry.test.ts.
+      const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 403 }));
       vi.stubGlobal("fetch", fetchMock);
 
       await fetchDownstreamDependents(repo(), "k", NO_WAIT);

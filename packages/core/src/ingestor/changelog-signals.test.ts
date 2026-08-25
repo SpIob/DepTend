@@ -85,16 +85,23 @@ describe("fetchReleaseSignals", () => {
       expect(result).toEqual(UNAVAILABLE_SIGNALS);
     });
 
-    it("returns unavailable on a network failure with nothing gathered yet", async () => {
-      vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("ECONNREFUSED")));
+    it("returns unavailable on a network failure with nothing gathered yet (after the shared retry)", async () => {
+      const fetchMock = vi.fn().mockRejectedValue(new Error("ECONNREFUSED"));
+      vi.stubGlobal("fetch", fetchMock);
 
-      const result = await fetchReleaseSignals(repo(), "npm", null, "1.0.0", null);
+      const result = await fetchReleaseSignals(repo(), "npm", null, "1.0.0", null, 0);
 
       expect(result).toEqual(UNAVAILABLE_SIGNALS);
+      // One automatic retry before giving up (fetch-retry.ts discipline)
+      expect(fetchMock).toHaveBeenCalledTimes(2);
     });
 
     it("returns unavailable on a rate limit (403) with nothing gathered yet", async () => {
-      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 403 })));
+      // Plain 403 carries no Retry-After → not transient → no retry delay
+      vi.stubGlobal(
+        "fetch",
+        vi.fn((): Response => new Response(null, { status: 403 })),
+      );
 
       const result = await fetchReleaseSignals(repo(), "npm", null, "1.0.0", null);
 
@@ -113,16 +120,65 @@ describe("fetchReleaseSignals", () => {
       expect(result.breaking_change_signals).toEqual([]);
     });
 
-    it("returns partial data (and source_available: true) from a later-page failure", async () => {
+    it("recovers from a transient rate limit mid-scan via the shared retry", async () => {
+      // Pages 1–2 must be FULL (100 releases): a short page now ends
+      // pagination before page 2 could ever be requested.
+      const fullPage = (body: string): unknown[] =>
+        Array.from({ length: 100 }, (_, i) =>
+          i === 99
+            ? release({ tag_name: "v2.0.0", body: `BREAKING CHANGE: ${body}.` })
+            : release({ tag_name: "v2.0.0" }),
+        );
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce(jsonResponse(fullPage("page one")))
+        .mockResolvedValueOnce(new Response(null, { status: 429, headers: { "Retry-After": "0" } }))
+        .mockResolvedValueOnce(jsonResponse(fullPage("page two")))
+        .mockResolvedValueOnce(jsonResponse([release({ tag_name: "v1.0.0", body: "" })]));
+      vi.stubGlobal("fetch", fetchMock);
+
+      const result = await fetchReleaseSignals(repo(), "npm", null, "2.0.0", null);
+
+      expect(result.source_available).toBe(true);
+      expect(result.breaking_change_signals).toEqual(["page one.", "page two."]);
+      // Page 3 comes back short, ending the scan — no empty-page request.
+      expect(fetchMock).toHaveBeenCalledTimes(4);
+    });
+
+    it("keeps partial data when rate limiting persists past the retry", async () => {
+      // Page 1 must be FULL — a short page would end the scan before the
+      // rate-limited page could ever be requested.
+      const fullPage = (): unknown[] =>
+        Array.from({ length: 100 }, (_, i) =>
+          i === 99
+            ? release({ tag_name: "v2.0.0", body: "BREAKING CHANGE: page one." })
+            : release({ tag_name: "v2.0.0" }),
+        );
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce(jsonResponse(fullPage()))
+        // No Retry-After header → falls back to the flat delay (passed as 0 here)
+        .mockResolvedValue(new Response(null, { status: 429 }));
+      vi.stubGlobal("fetch", fetchMock);
+
+      const result = await fetchReleaseSignals(repo(), "npm", null, "2.0.0", null, 0);
+
+      expect(result.source_available).toBe(true);
+      expect(result.breaking_change_signals).toEqual(["page one."]);
+      // Page two was attempted exactly twice before giving up for this repo
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+    });
+
+    it("returns partial data (and source_available: true) from a later-page network failure", async () => {
       const fetchMock = vi
         .fn()
         .mockResolvedValueOnce(
           jsonResponse([release({ tag_name: "v2.0.0", body: "BREAKING CHANGE: page one." })]),
         )
-        .mockRejectedValueOnce(new Error("ECONNRESET"));
+        .mockRejectedValue(new Error("ECONNRESET"));
       vi.stubGlobal("fetch", fetchMock);
 
-      const result = await fetchReleaseSignals(repo(), "npm", "0.9.0", "2.0.0", null);
+      const result = await fetchReleaseSignals(repo(), "npm", "0.9.0", "2.0.0", null, 0);
 
       expect(result.source_available).toBe(true);
       expect(result.breaking_change_signals).toEqual(["page one."]);
@@ -350,16 +406,18 @@ describe("fetchReleaseSignals", () => {
   });
 
   describe("pagination", () => {
-    it("stops once an empty page is returned", async () => {
+    it("stops without a second request once a short page comes back", async () => {
+      // A page under PER_PAGE means the listing is exhausted — requesting
+      // the next one is a guaranteed-empty call, so the early-exit skips it
+      // (same shape as downstream-dependents.ts's loop).
       const fetchMock = vi
         .fn()
-        .mockResolvedValueOnce(jsonResponse([release({ tag_name: "v1.0.0" })]))
-        .mockResolvedValueOnce(jsonResponse([]));
+        .mockResolvedValueOnce(jsonResponse([release({ tag_name: "v1.0.0" })]));
       vi.stubGlobal("fetch", fetchMock);
 
       await fetchReleaseSignals(repo(), "npm", null, "1.0.0", null);
 
-      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
     it("stops after 5 pages even if the floor is never reached", async () => {
@@ -382,6 +440,48 @@ describe("fetchReleaseSignals", () => {
       await fetchReleaseSignals(repo(), "npm", null, "0.99.0", null);
 
       expect(fetchMock).toHaveBeenCalledTimes(5);
+    });
+
+    it("reports a cap-truncated scan as unavailable rather than storing it as checked-and-empty", async () => {
+      // Same shape as above: cap hit with a still-full last page and no
+      // floor ever reached. The releases seen carried real signals, but the
+      // range was never fully covered — unavailable beats wrong (same rule
+      // as downstream-dependents.ts's incomplete scans), so even the real
+      // partial findings are discarded and the confidence flag stays set.
+      vi.stubGlobal(
+        "fetch",
+        vi
+          .fn()
+          .mockImplementation(() =>
+            jsonResponse(
+              Array.from({ length: 100 }, (_, i) =>
+                release({ tag_name: `v0.${String(99 - i)}.0` }),
+              ),
+            ),
+          ),
+      );
+
+      const result = await fetchReleaseSignals(repo(), "npm", null, "0.99.0", null);
+
+      expect(result).toEqual(UNAVAILABLE_SIGNALS);
+    });
+
+    it("does not treat an early floor-reached stop at the cap boundary as truncated", async () => {
+      // Pages 1–4 stay above the floor; the floor is found within page 5,
+      // so the scan ends genuinely complete even though it touched the cap.
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockImplementation((url: string | URL): Response => {
+          const page = Number(url.toString().split("page=")[1]);
+          return page <= 4
+            ? jsonResponse(Array.from({ length: 100 }, () => release({ tag_name: "v0.50.0" })))
+            : jsonResponse([release({ tag_name: "v0.49.0", body: "at the floor" })]);
+        }),
+      );
+
+      const result = await fetchReleaseSignals(repo(), "npm", "0.49.0", "0.99.0", null);
+
+      expect(result.source_available).toBe(true);
     });
   });
 

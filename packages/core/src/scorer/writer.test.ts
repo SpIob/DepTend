@@ -3,9 +3,9 @@
  *
  * The Drizzle DB is replaced with a lightweight stub, same strategy as
  * ingestor/writer.test.ts: chainable mock builder methods, call-order-based
- * dispatch for select() (repo lookup -> candidate join -> one mission
- * existence check per candidate, in loop order), and a transaction mock
- * that runs the callback synchronously against the same stub db.
+ * dispatch for select() (repo lookup -> candidate join -> ONE bulk
+ * existing-missions check), and a transaction mock that runs the callback
+ * synchronously against the same stub db.
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -78,6 +78,22 @@ function makeMockDb(overrides: {
     insertedScoreValues: [],
   };
 
+  // The per-candidate existingMissionRows spec is converted here into the
+  // single bulk row list generateMissionsForRepo now fetches in one query
+  // (select #3): each non-null entry becomes a row keyed by its candidate's
+  // dependency/advisory ids, which writer.ts matches via missionPairKey.
+  const bulkExistingMissionRows = candidateRows.flatMap((row, index) => {
+    const existing = existingMissionRows[index] ?? null;
+    if (existing === null) return [];
+    return [
+      {
+        id: existing.id,
+        dependencyId: String(row.dependency.id),
+        advisoryId: String(row.advisory.id),
+      },
+    ];
+  });
+
   let insertedIdQueueIndex = 0;
 
   function makeChain(currentTable: Table | undefined): Chain {
@@ -87,16 +103,14 @@ function makeMockDb(overrides: {
       where: (): WhereResult => {
         // Dispatch purely on selectCount, matching the exact call order
         // generateMissionsForRepo makes: 1) repo lookup, 2) candidate join,
-        // 3..N) one mission-existence check per candidate.
+        // 3) one bulk existing-missions check.
         if (calls.selectCount === 1) {
           return thenableRows(repoRow !== undefined ? [repoRow] : []);
         }
         if (calls.selectCount === 2) {
           return thenableRows(candidateRows);
         }
-        const missionCheckIndex = calls.selectCount - 3;
-        const existing = existingMissionRows[missionCheckIndex] ?? null;
-        return thenableRows(existing === null ? [] : [existing]);
+        return thenableRows(bulkExistingMissionRows);
       },
       limit: (): Promise<unknown[]> => Promise.resolve([]),
       values: (v: unknown): Chain => {
@@ -550,24 +564,34 @@ describe("MissionWriter.generateMissionsForRepo — downstreamDependents prefetc
   });
 
   it("keeps the flag set and surfaces a warning when the lookup fails", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 500 })));
+    // The lookup rides the shared transport policy now, so its single
+    // transient-failure retry really sleeps the flat backoff — fake timers
+    // advance past it instead of the test waiting out 30 real seconds.
+    vi.useFakeTimers();
+    try {
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 500 })));
 
-    const { db, calls } = makeMockDb({
-      repoRow: REPO_ROW,
-      candidateRows: [{ dependency: makeDependencyRow(), advisory: makeAdvisoryRow() }],
-      existingMissionRows: [null],
-      insertedMissionIds: ["mission-1"],
-    });
-    const writer = new MissionWriter(db);
-    const result = await writer.generateMissionsForRepo("repo-1", undefined, null, "lio-key");
+      const { db, calls } = makeMockDb({
+        repoRow: REPO_ROW,
+        candidateRows: [{ dependency: makeDependencyRow(), advisory: makeAdvisoryRow() }],
+        existingMissionRows: [null],
+        insertedMissionIds: ["mission-1"],
+      });
+      const writer = new MissionWriter(db);
+      const pending = writer.generateMissionsForRepo("repo-1", undefined, null, "lio-key");
+      await vi.advanceTimersByTimeAsync(31_000);
+      const result = await pending;
 
-    const scoreValues = calls.insertedScoreValues[0] as {
-      ecosystemValueInputs: { downstream_dependents: number | null };
-      confidenceFlags: Record<string, boolean>;
-    };
-    expect(scoreValues.ecosystemValueInputs.downstream_dependents).toBeNull();
-    expect(scoreValues.confidenceFlags.downstream_dependents_unavailable).toBe(true);
-    expect(result.warnings).toHaveLength(1);
+      const scoreValues = calls.insertedScoreValues[0] as {
+        ecosystemValueInputs: { downstream_dependents: number | null };
+        confidenceFlags: Record<string, boolean>;
+      };
+      expect(scoreValues.ecosystemValueInputs.downstream_dependents).toBeNull();
+      expect(scoreValues.confidenceFlags.downstream_dependents_unavailable).toBe(true);
+      expect(result.warnings).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("makes no libraries.io call when the repo has zero candidates, even with a key", async () => {

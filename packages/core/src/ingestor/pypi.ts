@@ -38,10 +38,22 @@
  */
 
 import type { EcosystemIngestor, IngestorResult } from "./interface.js";
+import { fetchWithRetry, type FetchRetryOptions } from "./fetch-retry.js";
 import { PYTHON_LOCK_FILE_NAMES, parsePyPIManifests } from "./pypi-parse.js";
 
 export class PyPIIngestor implements EcosystemIngestor {
   readonly ecosystem = "pypi" as const;
+
+  private readonly fetchRetryOptions: FetchRetryOptions;
+
+  /**
+   * @param fetchRetryOptions - transport tuning for the raw-content fetches.
+   *   Ingestion keeps the defaults; interactive callers (manifest-check's
+   *   submission pre-check) tighten them.
+   */
+  constructor(fetchRetryOptions: FetchRetryOptions = {}) {
+    this.fetchRetryOptions = fetchRetryOptions;
+  }
 
   /**
    * Parse dependencies from a GitHub repository.
@@ -92,7 +104,7 @@ export class PyPIIngestor implements EcosystemIngestor {
     let response: Response;
 
     try {
-      response = await fetch(url);
+      response = await fetchWithRetry(url, undefined, this.fetchRetryOptions);
     } catch (err) {
       throw new Error(`Network error fetching ${url}: ${String(err)}`);
     }
@@ -120,7 +132,11 @@ export class PyPIIngestor implements EcosystemIngestor {
   private async detectLockFile(base: string): Promise<boolean> {
     const checks = PYTHON_LOCK_FILE_NAMES.map(async (name) => {
       try {
-        const res = await fetch(`${base}/${name}`, { method: "HEAD" });
+        const res = await fetchWithRetry(
+          `${base}/${name}`,
+          { method: "HEAD" },
+          this.fetchRetryOptions,
+        );
         return res.ok;
       } catch {
         return false;
