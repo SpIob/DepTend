@@ -44,7 +44,7 @@ import { NextResponse, type NextRequest } from "next/server";
  * no-inferrable-types. The assertion widens without tripping either rule,
  * so the flip stays a genuine conditional.
  */
-const CSP_ENFORCED = false as boolean;
+const CSP_ENFORCED = true as boolean;
 
 function buildCsp(nonce: string): string {
   const isDev = process.env.NODE_ENV !== "production";
