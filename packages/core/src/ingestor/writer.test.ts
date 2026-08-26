@@ -20,7 +20,7 @@ import type { WriteIngestionInput } from "./writer.js";
 import type { IngestorResult } from "./interface.js";
 import type { OsvFetchResult } from "./osv.js";
 import type { NpmRegistryFetchResult } from "./registry.js";
-import type { NewAdvisory } from "../db/schema.js";
+import { advisories, dependencies, type NewAdvisory } from "../db/schema.js";
 
 /** The exact type IngestionWriter's constructor expects, derived directly
  * from the class so the mock stays in sync if the constructor signature
@@ -47,13 +47,15 @@ interface Chain {
   onConflictDoUpdate: () => Chain;
   set: (values: Record<string, unknown>) => Chain;
   where: () => Promise<unknown[]>;
-  from: () => Chain;
+  from: (table?: Table) => Chain;
   returning: () => Promise<unknown[]>;
 }
 
 interface MockDbCalls {
   inserts: string[];
   updates: string[];
+  /** Tables passed to delete() — populated only by dependency pruning today. */
+  deletes: string[];
   selects: string[];
   transactionCalled: boolean;
   /** Every value object passed to .set(), in call order, across all update() calls. */
@@ -74,6 +76,7 @@ interface MockDb {
   _calls: MockDbCalls;
   insert: ReturnType<typeof vi.fn>;
   update: ReturnType<typeof vi.fn>;
+  delete: ReturnType<typeof vi.fn>;
   select: ReturnType<typeof vi.fn>;
   transaction: ReturnType<typeof vi.fn>;
 }
@@ -87,6 +90,11 @@ function makeMockDb(overrides: {
   depRows?: { id: string; packageName: string; depType: string }[];
   /** Rows returned by the advisories select (osv_id → id lookup) */
   advisoryRows?: { id: string; osvId: string }[];
+  /**
+   * Rows returned by the dependency-pruning SELECT (this repo's stored
+   * dependency rows, per pruneRemovedDependencies).
+   */
+  existingDepRows?: { id: string; packageName: string; depType: string }[];
   /** Whether the transaction callback should throw */
   txShouldThrow?: boolean;
 }): MockDb {
@@ -95,6 +103,7 @@ function makeMockDb(overrides: {
     runRow = { id: "run-uuid-1" },
     depRows = [],
     advisoryRows = [],
+    existingDepRows = [],
     txShouldThrow = false,
   } = overrides;
 
@@ -102,6 +111,7 @@ function makeMockDb(overrides: {
   const calls: MockDbCalls = {
     inserts: [],
     updates: [],
+    deletes: [],
     selects: [],
     transactionCalled: false,
     setCalls: [],
@@ -114,7 +124,7 @@ function makeMockDb(overrides: {
   /**
    * @param insertTableName - when this chain originated from insert(table),
    *   the table name, so .values() can record which table its rows were
-   *   meant for. Left undefined for update()/select() chains.
+   *   meant for. Left undefined for update()/select()/delete() chains.
    */
   function makeChain(insertTableName?: string): Chain {
     const chain: Chain = {
@@ -160,11 +170,40 @@ function makeMockDb(overrides: {
       return makeChain();
     }),
 
+    delete: vi.fn((table: Table): Chain => {
+      calls.deletes.push(getTableName(table));
+      return makeChain();
+    }),
+
     select: vi.fn((): Chain => {
       calls.selects.push("select");
       const chain = makeChain();
-      // Override where() to return the advisory rows for the osv_id lookup
-      chain.where = (): Promise<unknown[]> => Promise.resolve(advisoryRows);
+      // Route where() results by the table the select is FROM — pruning
+      // added a second intra-transaction select (dependencies), so a call
+      // counter alone can no longer say which rows to hand back.
+      let selectedTable: Table | undefined;
+      const baseFrom = chain.from.bind(chain);
+      chain.from = (table?: Table): Chain => {
+        if (table !== undefined) {
+          selectedTable = table;
+        }
+        return baseFrom(table);
+      };
+      chain.where = (): Promise<unknown[]> => {
+        if (
+          selectedTable !== undefined &&
+          getTableName(selectedTable) === getTableName(advisories)
+        ) {
+          return Promise.resolve(advisoryRows);
+        }
+        if (
+          selectedTable !== undefined &&
+          getTableName(selectedTable) === getTableName(dependencies)
+        ) {
+          return Promise.resolve(existingDepRows);
+        }
+        return Promise.resolve([]);
+      };
       return chain;
     }),
 
@@ -353,10 +392,11 @@ describe("IngestionWriter", () => {
       expect(db.transaction).toHaveBeenCalledTimes(1);
     });
 
-    it("selects advisory UUIDs inside the transaction to build dep_advisory links", async () => {
+    it("selects advisory UUIDs and prunable dependencies inside the transaction", async () => {
       await writer.write(makeInput());
-      // select is called once: advisory UUID lookup
-      expect(db.select).toHaveBeenCalledTimes(1);
+      // Two selects: the advisory UUID lookup, then this repo's stored
+      // dependency rows for the pruning pass.
+      expect(db.select).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -579,6 +619,89 @@ describe("IngestionWriter", () => {
       for (const row of rows) {
         expect(row.ecosystem).toBe("pypi");
       }
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Dependency pruning — a re-ingestion's manifest is the authoritative
+  // dependency set; rows it no longer lists must go, along with their
+  // advisory links (cascade), while missions keep history via SET NULL.
+  describe("write — dependency pruning", () => {
+    function makePruneDb(
+      existingDepRows: { id: string; packageName: string; depType: string }[],
+    ): ReturnType<typeof makeMockDb> {
+      return makeMockDb({
+        repoRow: { id: "repo-uuid-1" },
+        runRow: { id: "run-uuid-1" },
+        depRows: [
+          { id: "dep-uuid-0", packageName: "pkg-0", depType: "production" },
+          { id: "dep-uuid-1", packageName: "pkg-1", depType: "production" },
+        ],
+        advisoryRows: [{ id: "adv-uuid-0", osvId: "GHSA-test-0000-0000" }],
+        existingDepRows,
+      });
+    }
+
+    it("deletes stored dependencies absent from this run's manifest and reports the count", async () => {
+      db = makePruneDb([
+        { id: "dep-uuid-0", packageName: "pkg-0", depType: "production" },
+        { id: "dep-uuid-1", packageName: "pkg-1", depType: "production" },
+        { id: "dep-old", packageName: "pkg-gone", depType: "production" },
+      ]);
+      writer = new IngestionWriter(db as unknown as WriterDb);
+
+      const result = await writer.write(makeInput());
+
+      expect(result.dependenciesPruned).toBe(1);
+      expect(db._calls.deletes).toEqual([getTableName(dependencies)]);
+    });
+
+    it("keeps every dependency when the manifest matches what is stored", async () => {
+      db = makePruneDb([
+        { id: "dep-uuid-0", packageName: "pkg-0", depType: "production" },
+        { id: "dep-uuid-1", packageName: "pkg-1", depType: "production" },
+      ]);
+      writer = new IngestionWriter(db as unknown as WriterDb);
+
+      const result = await writer.write(makeInput());
+
+      expect(result.dependenciesPruned).toBe(0);
+      expect(db._calls.deletes).toHaveLength(0);
+    });
+
+    it("never prunes when manifest_resolved is false — an unreadable manifest defines nothing", async () => {
+      db = makePruneDb([{ id: "dep-old", packageName: "pkg-gone", depType: "production" }]);
+      writer = new IngestionWriter(db as unknown as WriterDb);
+
+      const result = await writer.write(
+        makeInput({
+          ingestorResult: makeIngestorResult(0, ["No package.json found."], false),
+          osvResult: makeOsvResult(0),
+          registryResult: makeRegistryResult([]),
+        }),
+      );
+
+      expect(result.dependenciesPruned).toBe(0);
+      expect(db._calls.deletes).toHaveLength(0);
+    });
+
+    it("clears all stored dependencies when a resolved manifest lists none", async () => {
+      db = makePruneDb([
+        { id: "dep-uuid-0", packageName: "pkg-0", depType: "production" },
+        { id: "dep-uuid-1", packageName: "pkg-1", depType: "development" },
+      ]);
+      writer = new IngestionWriter(db as unknown as WriterDb);
+
+      const result = await writer.write(
+        makeInput({
+          ingestorResult: makeIngestorResult(0),
+          osvResult: makeOsvResult(0),
+          registryResult: makeRegistryResult([]),
+        }),
+      );
+
+      expect(result.dependenciesPruned).toBe(2);
+      expect(db._calls.deletes).toEqual([getTableName(dependencies)]);
     });
   });
 

@@ -18,6 +18,16 @@ on:
         type: string
         default: "manual"
 
+# One ingestion run at a time. Overlapping cron/dispatch runs both select
+# the same pending repos, and MissionWriter's check-then-insert has no DB
+# unique constraint to fall back on (missions table is deliberately
+# unconstrained), so interleaved runs could create duplicate missions.
+# Queue overlapping triggers instead of cancelling: killing a run between
+# openRun and closeRun would strand rows at status "running".
+concurrency:
+  group: ingest
+  cancel-in-progress: false
+
 jobs:
   ingest:
     name: Run ingestion job

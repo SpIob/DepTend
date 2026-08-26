@@ -32,32 +32,36 @@ repos
 
 Tracks GitHub repositories submitted for analysis.
 
-| Column              | Type         | Notes                                                   |
-| ------------------- | ------------ | ------------------------------------------------------- |
-| `id`                | uuid PK      | gen_random_uuid()                                       |
-| `github_url`        | text UNIQUE  | `https://github.com/{owner}/{name}`                     |
-| `owner`             | text         | GitHub org or username                                  |
-| `name`              | text         | Repo name                                               |
-| `default_branch`    | text         | Default: `'main'`                                       |
-| `description`       | text?        | From GitHub API                                         |
-| `stars`             | integer      | Refreshed each ingestion                                |
-| `open_issues_count` | integer      | Refreshed each ingestion                                |
-| `topics`            | text[]       | GitHub repo topics                                      |
-| `homepage_url`      | text?        | From GitHub API                                         |
-| `ingestion_status`  | enum         | `pending \| running \| complete \| failed \| skipped`   |
-| `last_ingested_at`  | timestamptz? | NULL until first completed run                          |
-| `ingestion_error`   | text?        | Last error message; also holds the reason for `skipped` |
-| `submitted_by`      | text?        | GitHub username; NULL for CLI-submitted                 |
-| `created_at`        | timestamptz  |                                                         |
-| `updated_at`        | timestamptz  | Managed by trigger                                      |
+| Column              | Type         | Notes                                                     |
+| ------------------- | ------------ | --------------------------------------------------------- |
+| `id`                | uuid PK      | gen_random_uuid()                                         |
+| `github_url`        | text UNIQUE  | `https://github.com/{owner}/{name}`                       |
+| `owner`             | text         | GitHub org or username                                    |
+| `name`              | text         | Repo name                                                 |
+| `default_branch`    | text         | Default: `'main'`                                         |
+| `description`       | text?        | From GitHub API                                           |
+| `stars`             | integer      | Refreshed each ingestion                                  |
+| `open_issues_count` | integer      | Refreshed each ingestion                                  |
+| `topics`            | text[]       | GitHub repo topics                                        |
+| `homepage_url`      | text?        | From GitHub API                                           |
+| `ingestion_status`  | enum         | `pending \| running \| complete \| failed \| skipped`     |
+| `last_ingested_at`  | timestamptz? | NULL until first completed run; drives stale re-ingestion |
+| `ingestion_error`   | text?        | Last error message; also holds the reason for `skipped`   |
+| `submitted_by`      | text?        | GitHub username; NULL for CLI-submitted                   |
+| `created_at`        | timestamptz  |                                                           |
+| `updated_at`        | timestamptz  | Managed by trigger                                        |
 
 **MVP constraint:** Maximum 150 rows (`NEXT_PUBLIC_MAX_REPOS`, raised from 3 to 10 -- ADR 0020 -- then 10 to 150 for launch -- ADR 0028). Enforced at application layer.
+
+**Status lifecycle:** cron runs pick `pending`/`failed` first (fresh submissions, retryable errors), then up to a capped batch of `complete` repos whose `last_ingested_at` is older than the staleness threshold (`REINGEST_STALE_DAYS`, default 7) — so indexed boards keep tracking upstream reality. `skipped` is terminal on both paths into it: no analyzable manifest at ingestion time, or the repo no longer exists on GitHub (`not_found`) — neither is ever re-picked.
 
 ---
 
 ### `dependencies`
 
 One row per `(repo, package_name, dep_type)`.
+
+The set is reconciled against the manifest on every successful ingestion: rows for packages the manifest no longer lists are deleted (cascading their `dependency_advisories`; missions survive via SET NULL on `dependency_id`). A run that couldn't read the manifest never prunes — an unreadable manifest defines nothing.
 
 | Column             | Type            | Notes                                           |
 | ------------------ | --------------- | ----------------------------------------------- |
@@ -122,24 +126,26 @@ UNIQUE constraint on `(dependency_id, advisory_id)`.
 
 Ranked maintenance work items shown on the dashboard.
 
-| Column           | Type                    | Notes                                                             |
-| ---------------- | ----------------------- | ----------------------------------------------------------------- |
-| `id`             | uuid PK                 |                                                                   |
-| `repo_id`        | uuid FK → repos         | CASCADE on delete                                                 |
-| `title`          | text                    | Human-readable; e.g. "Patch CVE-2024-… in lodash"                 |
-| `description`    | text                    | Plain-language explanation                                        |
-| `action_hint`    | text?                   | e.g. `pnpm update lodash`                                         |
-| `mission_type`   | enum                    | `vulnerability_fix \| dep_update \| maintenance \| license_issue` |
-| `status`         | enum                    | `open \| claimed \| resolved \| dismissed`                        |
-| `advisory_id`    | uuid? FK → advisories   | SET NULL on delete                                                |
-| `dependency_id`  | uuid? FK → dependencies | SET NULL on delete                                                |
-| `claimed_by`     | text?                   | GitHub username; Phase 5                                          |
-| `claimed_at`     | timestamptz?            |                                                                   |
-| `resolved_at`    | timestamptz?            |                                                                   |
-| `dismissed_at`   | timestamptz?            |                                                                   |
-| `dismiss_reason` | text?                   |                                                                   |
-| `created_at`     | timestamptz             |                                                                   |
-| `updated_at`     | timestamptz             |                                                                   |
+| Column           | Type                    | Notes                                                                |
+| ---------------- | ----------------------- | -------------------------------------------------------------------- |
+| `id`             | uuid PK                 |                                                                      |
+| `repo_id`        | uuid FK → repos         | CASCADE on delete                                                    |
+| `title`          | text                    | Human-readable; e.g. "Patch CVE-2024-… in lodash"                    |
+| `description`    | text                    | Plain-language explanation                                           |
+| `action_hint`    | text?                   | e.g. `pnpm update lodash`                                            |
+| `mission_type`   | enum                    | `vulnerability_fix \| dep_update \| maintenance \| license_issue`    |
+| `status`         | enum                    | `open \| claimed \| resolved \| dismissed`                           |
+| `advisory_id`    | uuid? FK → advisories   | SET NULL on delete                                                   |
+| `dependency_id`  | uuid? FK → dependencies | SET NULL on delete                                                   |
+| `claimed_by`     | text?                   | GitHub username; Phase 5                                             |
+| `claimed_at`     | timestamptz?            |                                                                      |
+| `resolved_at`    | timestamptz?            | Set by the pipeline's auto-resolution pass or a future manual flow   |
+| `dismissed_at`   | timestamptz?            | Set by the dismiss endpoint (any signed-in user, open missions only) |
+| `dismiss_reason` | text?                   | Optional bounded plain-text reason from the dismiss endpoint         |
+| `created_at`     | timestamptz             |                                                                      |
+| `updated_at`     | timestamptz             |                                                                      |
+
+**Status lifecycle:** `resolved` and `dismissed` are both reachable. The pipeline closes open/claimed missions as `resolved` when their `(dependency_id, advisory_id)` pair produces no candidate in a re-ingestion run — dependency pruned from the manifest, advisory range no longer matching, or the advisory withdrawn; a previously auto-resolved mission whose pair returns is reopened. `dismissed` is a human decision via `POST /api/missions/[id]/dismiss` (open missions only), reversible via `/undismiss`. Claim fields survive auto-resolution as history; dismissal of claimed missions requires unclaiming first.
 
 ---
 

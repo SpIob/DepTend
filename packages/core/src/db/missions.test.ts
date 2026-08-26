@@ -8,7 +8,13 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { claimMission, isValidMissionId, unclaimMission } from "./missions.js";
+import {
+  claimMission,
+  dismissMission,
+  isValidMissionId,
+  undismissMission,
+  unclaimMission,
+} from "./missions.js";
 
 // ---------------------------------------------------------------------------
 // Mock DB
@@ -183,6 +189,120 @@ describe("unclaimMission", () => {
     });
 
     const result = await unclaimMission(db, "does-not-exist", "octocat");
+
+    expect(result).toBe("not_found");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// dismissMission
+// ---------------------------------------------------------------------------
+
+describe("dismissMission", () => {
+  it("returns dismissed and stamps status/dismissedAt (no reason) when the mission is open", async () => {
+    const { db, setValues } = makeMockDb({
+      updateResponse: [{ id: "mission-1" }],
+      recheckResponse: [],
+    });
+
+    const result = await dismissMission(db, "mission-1");
+
+    expect(result).toBe("dismissed");
+    expect(setValues).toHaveLength(1);
+    const set = setValues[0];
+    expect(set?.status).toBe("dismissed");
+    // No reason given → the key is omitted entirely, not set to undefined
+    // (exactOptionalPropertyTypes discipline; keeps any prior value's
+    // absence explicit rather than writing a null over history that was
+    // never there).
+    expect(Object.keys(set ?? {})).not.toContain("dismissReason");
+    expect(set?.dismissedAt).toBeInstanceOf(Date);
+  });
+
+  it("stores a trimmed non-empty reason when one is provided", async () => {
+    const { db, setValues } = makeMockDb({
+      updateResponse: [{ id: "mission-1" }],
+      recheckResponse: [],
+    });
+
+    const result = await dismissMission(db, "mission-1", "upstream won't fix");
+
+    expect(result).toBe("dismissed");
+    expect(setValues[0]).toMatchObject({
+      status: "dismissed",
+      dismissReason: "upstream won't fix",
+    });
+  });
+
+  it("treats an empty-string reason as no reason", async () => {
+    const { db, setValues } = makeMockDb({
+      updateResponse: [{ id: "mission-1" }],
+      recheckResponse: [],
+    });
+
+    await dismissMission(db, "mission-1", "");
+
+    expect(setValues[0]).not.toHaveProperty("dismissReason");
+  });
+
+  it("returns not_open for a claimed/resolved/dismissed mission (update matches nothing)", async () => {
+    const { db } = makeMockDb({
+      updateResponse: [],
+      recheckResponse: [{ id: "mission-1" }],
+    });
+
+    const result = await dismissMission(db, "mission-1");
+
+    expect(result).toBe("not_open");
+  });
+
+  it("returns not_found when the mission doesn't exist", async () => {
+    const { db } = makeMockDb({
+      updateResponse: [],
+      recheckResponse: [],
+    });
+
+    const result = await dismissMission(db, "does-not-exist");
+
+    expect(result).toBe("not_found");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// undismissMission
+// ---------------------------------------------------------------------------
+
+describe("undismissMission", () => {
+  it("restores to open and clears the dismissal stamp", async () => {
+    const { db, setValues } = makeMockDb({
+      updateResponse: [{ id: "mission-1" }],
+      recheckResponse: [],
+    });
+
+    const result = await undismissMission(db, "mission-1");
+
+    expect(result).toBe("restored");
+    expect(setValues).toEqual([{ status: "open", dismissedAt: null, dismissReason: null }]);
+  });
+
+  it("returns not_dismissed for an open/claimed/resolved mission", async () => {
+    const { db } = makeMockDb({
+      updateResponse: [],
+      recheckResponse: [{ id: "mission-1" }],
+    });
+
+    const result = await undismissMission(db, "mission-1");
+
+    expect(result).toBe("not_dismissed");
+  });
+
+  it("returns not_found when the mission doesn't exist", async () => {
+    const { db } = makeMockDb({
+      updateResponse: [],
+      recheckResponse: [],
+    });
+
+    const result = await undismissMission(db, "does-not-exist");
 
     expect(result).toBe("not_found");
   });

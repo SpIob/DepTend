@@ -1,14 +1,16 @@
 /**
  * Route-level tests for POST /api/repos — the submission path. This is the
  * route with the most HTTP surface in the project: auth gate, its own
- * 5/hour rate bucket, body/URL validation, the manifest pre-check's
- * four-reason status mapping (ADR 0030's correction), submitRepo()'s three
- * outcomes including the repo cap, and the best-effort ingestion dispatch.
+ * 5/hour rate bucket, body/URL validation, the duplicate short-circuits
+ * (cheap exact-case lookup before the network, canonical lookup after),
+ * the manifest pre-check's four-reason status mapping (ADR 0030's
+ * correction), submitRepo()'s three outcomes including the repo cap, and
+ * the best-effort ingestion dispatch.
  *
  * parseGithubUrl is NOT mocked (real implementation — it's pure); only
- * network-touching boundaries are: checkSubmittableRepo and
- * triggerIngestion. NEXT_PUBLIC_MAX_REPOS is stubbed so the cap assertion
- * doesn't depend on the shell environment.
+ * network/DB-touching boundaries are: getRepoByOwnerAndName,
+ * checkSubmittableRepo, and triggerIngestion. NEXT_PUBLIC_MAX_REPOS is
+ * stubbed so the cap assertion doesn't depend on the shell environment.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -25,9 +27,11 @@ vi.mock("@/lib/db", () => ({ getDb }));
 const revalidateTag = vi.hoisted(() => vi.fn());
 vi.mock("next/cache", () => ({ revalidateTag }));
 
+const getRepoByOwnerAndName = vi.hoisted(() => vi.fn());
 const submitRepo = vi.hoisted(() => vi.fn());
 vi.mock("@deptend/core/db/repos.js", async (importOriginal) => ({
   ...(await importOriginal<object>()),
+  getRepoByOwnerAndName,
   submitRepo,
 }));
 
@@ -75,8 +79,16 @@ function makeRepo(): Record<string, unknown> {
   };
 }
 
+/** Canonical GitHubRepoMeta-shaped payload — the route reads owner/name off it post-pre-check. */
+function makeMeta(): Record<string, unknown> {
+  return { full_name: "octocat/Hello-World", owner: { login: "octocat" }, name: "Hello-World" };
+}
+
 beforeEach(() => {
   vi.resetAllMocks();
+  // Default: no existing repo row for either duplicate check. Individual
+  // tests override this to exercise the short-circuit paths.
+  getRepoByOwnerAndName.mockResolvedValue(null);
   // Deterministic regardless of the developer's/CI's shell env: no token
   // (pre-check runs unauthenticated → core receives null), cap pinned at 150.
   vi.stubEnv("GITHUB_TOKEN", undefined);
@@ -128,6 +140,44 @@ describe("POST /api/repos", () => {
     expect(checkSubmittableRepo).not.toHaveBeenCalled();
   });
 
+  it("short-circuits an exact-case duplicate before the network pre-check", async () => {
+    signedIn();
+    const repo = makeRepo();
+    getRepoByOwnerAndName.mockResolvedValue(repo);
+
+    const response = await POST(postJson({ githubUrl: "https://github.com/octocat/Hello-World" }));
+
+    expect(response.status).toBe(200);
+    // The whole point of this check: no GitHub API budget spent re-verifying
+    // a repo we already index.
+    expect(checkSubmittableRepo).not.toHaveBeenCalled();
+    expect(submitRepo).not.toHaveBeenCalled();
+    expect(getRepoByOwnerAndName).toHaveBeenCalledWith(DB, "octocat", "Hello-World");
+    const data = (await response.json()) as { message?: string; repo?: unknown };
+    expect(data.message).toContain("already been submitted");
+    expect(data.repo).toEqual(JSON.parse(JSON.stringify(repo)));
+  });
+
+  it("catches a case-variant duplicate via canonical metadata after the pre-check", async () => {
+    signedIn();
+    const repo = makeRepo();
+    // First lookup (raw parsed casing) misses; the post-pre-check lookup
+    // against canonical owner/name finds the row.
+    getRepoByOwnerAndName.mockResolvedValueOnce(null).mockResolvedValueOnce(repo);
+    checkSubmittableRepo.mockResolvedValue({
+      ok: true,
+      ecosystem: "npm",
+      meta: { full_name: "octocat/Hello-World", owner: { login: "octocat" }, name: "Hello-World" },
+    });
+
+    const response = await POST(postJson({ githubUrl: "https://github.com/OCTOCAT/HELLO-WORLD" }));
+
+    expect(response.status).toBe(200);
+    expect(submitRepo).not.toHaveBeenCalled();
+    expect(triggerIngestion).not.toHaveBeenCalled();
+    expect(getRepoByOwnerAndName).toHaveBeenNthCalledWith(2, DB, "octocat", "Hello-World");
+  });
+
   it("maps no_manifest to 400 without creating a row", async () => {
     signedIn();
     checkSubmittableRepo.mockResolvedValue({
@@ -172,9 +222,17 @@ describe("POST /api/repos", () => {
     expect(submitRepo).not.toHaveBeenCalled();
   });
 
-  it("submits with parsed URL parts, the caller's login, and the configured cap on success", async () => {
+  it("submits with canonical URL parts, the caller's login, and the configured cap on success", async () => {
     signedIn("submitter-login");
-    checkSubmittableRepo.mockResolvedValue({ ok: true, ecosystem: "npm", meta: {} });
+    // GitHub resolves owner/repo names case-insensitively; the pre-check's
+    // metadata is canonical. A user-submitted "OctoCat" casing must NOT be
+    // what lands in the DB — scripts/ingest.js writes back
+    // ghMeta.full_name, and a casing mismatch would fork the row into two.
+    checkSubmittableRepo.mockResolvedValue({
+      ok: true,
+      ecosystem: "npm",
+      meta: { full_name: "octocat/Hello-World", owner: { login: "octocat" }, name: "Hello-World" },
+    });
     const repo = makeRepo();
     submitRepo.mockResolvedValue({ outcome: "created", repo });
     triggerIngestion.mockResolvedValue({ ok: true });
@@ -185,14 +243,14 @@ describe("POST /api/repos", () => {
 
     expect(response.status).toBe(201);
     expect(submitRepo).toHaveBeenCalledWith(DB, {
-      githubUrl: "https://github.com/OctoCat/Hello-World",
-      owner: "OctoCat",
+      githubUrl: "https://github.com/octocat/Hello-World",
+      owner: "octocat",
       name: "Hello-World",
       submittedBy: "submitter-login",
       maxRepos: 150,
     });
-    // Token comes straight from the environment — unset here means the
-    // pre-check runs unauthenticated, exactly as in production today.
+    // The pre-check itself still receives the raw parsed parts — it is the
+    // thing resolving them to canonical form.
     expect(checkSubmittableRepo).toHaveBeenCalledWith("OctoCat", "Hello-World", null);
     expect(triggerIngestion).toHaveBeenCalledWith(repo.id);
 
@@ -208,7 +266,7 @@ describe("POST /api/repos", () => {
 
   it("maps cap_reached to 409 without dispatching ingestion", async () => {
     signedIn();
-    checkSubmittableRepo.mockResolvedValue({ ok: true, ecosystem: "npm", meta: {} });
+    checkSubmittableRepo.mockResolvedValue({ ok: true, ecosystem: "npm", meta: makeMeta() });
     submitRepo.mockResolvedValue({ outcome: "cap_reached", repo: null });
     const response = await POST(postJson({ githubUrl: "https://github.com/a/b" }));
     expect(response.status).toBe(409);
@@ -217,7 +275,7 @@ describe("POST /api/repos", () => {
 
   it("maps already_exists to 200 without re-dispatching", async () => {
     signedIn();
-    checkSubmittableRepo.mockResolvedValue({ ok: true, ecosystem: "npm", meta: {} });
+    checkSubmittableRepo.mockResolvedValue({ ok: true, ecosystem: "npm", meta: makeMeta() });
     const repo = makeRepo();
     submitRepo.mockResolvedValue({ outcome: "already_exists", repo });
     const response = await POST(postJson({ githubUrl: "https://github.com/a/b" }));
@@ -225,21 +283,29 @@ describe("POST /api/repos", () => {
     expect(triggerIngestion).not.toHaveBeenCalled();
   });
 
-  it("still returns 201 with a cron fallback message when the dispatch fails", async () => {
+  it("still returns 201 with a cron fallback message when the dispatch fails — and logs why", async () => {
     signedIn();
-    checkSubmittableRepo.mockResolvedValue({ ok: true, ecosystem: "npm", meta: {} });
-    submitRepo.mockResolvedValue({ outcome: "created", repo: makeRepo() });
-    triggerIngestion.mockResolvedValue({ ok: false });
+    checkSubmittableRepo.mockResolvedValue({ ok: true, ecosystem: "npm", meta: makeMeta() });
+    const repo = makeRepo();
+    submitRepo.mockResolvedValue({ outcome: "created", repo });
+    triggerIngestion.mockResolvedValue({ ok: false, error: "GitHub API returned 404" });
 
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const response = await POST(postJson({ githubUrl: "https://github.com/a/b" }));
     expect(response.status).toBe(201);
     const data = (await response.json()) as { message?: string };
     expect(data.message).toContain("next scheduled run");
+    // The dispatch failure must leave evidence — an expired
+    // GH_DISPATCH_TOKEN otherwise looks like nothing broke.
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]?.[0]).toContain(repo.id);
+    expect(warn.mock.calls[0]?.[0]).toContain("GitHub API returned 404");
+    warn.mockRestore();
   });
 
   it("returns 500 if a created outcome somehow carries no repo row", async () => {
     signedIn();
-    checkSubmittableRepo.mockResolvedValue({ ok: true, ecosystem: "npm", meta: {} });
+    checkSubmittableRepo.mockResolvedValue({ ok: true, ecosystem: "npm", meta: makeMeta() });
     submitRepo.mockResolvedValue({ outcome: "created", repo: null });
     const response = await POST(postJson({ githubUrl: "https://github.com/a/b" }));
     expect(response.status).toBe(500);

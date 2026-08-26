@@ -12,6 +12,37 @@ All notable changes to DepTend, condensed to one entry per phase.
 
 ## [Unreleased]
 
+**Data-lifecycle pass: re-ingestion, dependency pruning, reachable mission outcomes**
+
+### Added
+
+- Stale re-ingestion: cron runs now also pick `complete` repos whose `last_ingested_at` is older than `REINGEST_STALE_DAYS` (default 7), oldest first and capped at `REINGEST_MAX_PER_RUN` per run (default 25) to pace the shared GitHub/libraries.io budgets — until now a repo was ingested exactly once and its board froze at first-run time. Fresh `pending`/`failed` repos always go first.
+- Dependency pruning: a successfully-parsed manifest is now treated as the authoritative dependency set — rows for packages it no longer lists are deleted in the ingestion transaction (cascading their `dependency_advisories`; missions survive via SET NULL on `dependency_id`). A run that couldn't read the manifest never prunes, so a transport blip can't wipe a repo's last good state.
+- Mission auto-resolution: after each repo's candidate loop, every open/claimed mission whose `(dependency_id, advisory_id)` pair produced no candidate is closed as `resolved` inside the same transaction — this makes "resolved" a reachable status and stops the board accumulating permanently-open missions for problems that are already gone. A previously auto-resolved mission whose pair comes back is reopened ("resolved" was pipeline state, not user state); dismissed keeps its human decision; claim fields survive as history. Reported via a new `resolved` count on `GenerateMissionsOutput`.
+- Dismiss/undismiss: `POST /api/missions/[id]/dismiss` (open missions only, any signed-in user, optional bounded `reason` stored on `dismiss_reason`) and `/undismiss` — colocated route suites included, same mock-at-the-module-boundary discipline as the other six mutating routes. Mission cards grow a secondary Dismiss button next to Claim and a Restore affordance for dismissed missions.
+
+### Fixed
+
+- Repos deleted/renamed/privated on GitHub no longer retry every day forever: `fetchGitHubRepoMeta`'s structured `not_found` now marks the repo `skipped` (the writer's established terminal state, never re-picked by cron) instead of `failed`, and does not fail the run — one dead repo can't keep the daily job red with nothing actionable left.
+
+### Changed
+
+- `docs/data-model/README.md`: repos status lifecycle (staleness re-pick, terminal `skipped`), dependencies reconciliation note, and the missions status-lifecycle paragraph added in the same pass as the behavior.
+
+**Correctness pass: submission identity, board navigation races, dispatch visibility**
+
+### Fixed
+
+- Repo submissions stored raw parsed owner/name casing while ingestion always writes back GitHub's canonical casing (`ghMeta.full_name`) — a case-mismatched URL forked into two rows for one real repo, the first stranded at `pending` and re-picked by every cron run forever, with case-sensitive 404s on direct `/repo/*` navigation. The route now dedups on and stores the canonical casing the manifest pre-check already fetches, and short-circuits exact-case re-submissions before any network call (saves the shared unauthenticated 60 req/hr budget).
+- `/missions` filter/sort/clear/search navigations carried the stale `?page=N`: `buildHref`'s base always included the current page, landing users mid-results of their new filter instead of its top-ranked page (contradicting the comment above the code). Page now comes only from explicit pagination overrides.
+- Debounced search could silently undo a filter click within its 300 ms window: the armed timer survived the chip's navigation (keyed on `search` alone), then fired a stale-closure URL without the just-clicked filter. Explicit navigations now cancel the pending commit (their href already carries the typed text), and the deferred commit builds its URL from the latest render so a group-by toggle landing mid-window isn't reverted either.
+- `ingest.yml` had no `concurrency` guard — overlapping cron/dispatch runs both process the same pending repos, and with `missions` deliberately unconstrained, interleaved MissionWriter check-then-inserts could create duplicate missions nothing can ever dedupe. Now queued single-file (`cancel-in-progress: false` — killing a run between openRun/closeRun would strand rows at `"running"`).
+
+### Changed
+
+- The best-effort ingestion dispatch carries a hard 10 s deadline (a hung socket previously held the submitter's POST open until the platform kill timeout), and its failure reason is logged server-side — an expired `GH_DISPATCH_TOKEN` otherwise degrades every submission to next-daily-cron latency looking like nothing broke.
+- Submission route tests extended: canonical-casing assertion on the created row, exact-case duplicate short-circuit before the pre-check, case-variant duplicate caught post-pre-check, and the dispatch-failure log line.
+
 **Transport-hardening pass: deadlines, full retry coverage, ingest write-path round-trip cut** — `ADR 0035`
 
 ### Added

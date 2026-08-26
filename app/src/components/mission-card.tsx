@@ -51,15 +51,20 @@ function extractErrorMessage(data: unknown): string | null {
 }
 
 /**
- * Claim/unclaim UI for one mission — a self-contained fetch + request-state
- * component, same pattern as SubmitRepoForm. Only rendered content changes
- * based on mission.status and the signed-in user's login. After a successful
- * mutation the parent is told via onStatusChange so a parent-owned copy of
- * the mission list stays in sync without a full page reload; when no parent
- * copy exists (the server-rendered paginated board, ADR 0031), a
- * router.refresh() re-syncs the card from the database instead.
+ * Claim/unclaim/dismiss/undismiss UI for one mission — a self-contained
+ * fetch + request-state component, same pattern as SubmitRepoForm. Only
+ * rendered content changes based on mission.status and the signed-in user's
+ * login. After a successful mutation the parent is told via onStatusChange
+ * so a parent-owned copy of the mission list stays in sync without a full
+ * page reload; when no parent copy exists (the server-rendered paginated
+ * board, ADR 0031), a router.refresh() re-syncs the card from the database
+ * instead.
+ *
+ * Dismissal is open to any signed-in user on OPEN missions only (a claimed
+ * mission belongs to its claimant; the pipeline auto-resolves missions whose
+ * underlying vulnerability disappears). Undismiss restores a dismissed one.
  */
-function ClaimAction({
+function MissionActions({
   missionId,
   status,
   claimedBy,
@@ -75,7 +80,10 @@ function ClaimAction({
   const [request, setRequest] = useState<ClaimRequestState>({ kind: "idle" });
   const login = session?.user?.login;
 
-  async function callAction(action: "claim" | "unclaim", patch: MissionClaimPatch): Promise<void> {
+  async function callAction(
+    action: "claim" | "unclaim" | "dismiss" | "undismiss",
+    patch: MissionClaimPatch,
+  ): Promise<void> {
     setRequest({ kind: "pending" });
     try {
       const response = await fetch(`/api/missions/${missionId}/${action}`, { method: "POST" });
@@ -100,6 +108,31 @@ function ClaimAction({
 
   const pending = request.kind === "pending";
   const errorMessage = request.kind === "error" ? request.message : null;
+
+  if (status === "dismissed") {
+    return (
+      <div className="flex flex-col gap-1">
+        <p className="text-ink-muted font-mono text-xs">Dismissed</p>
+        {login !== undefined && (
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() =>
+              void callAction("undismiss", { status: "open", claimedBy: null, claimedAt: null })
+            }
+            className="border-border text-ink-muted hover:text-ink hover:border-ink-muted w-fit rounded-md border px-2.5 py-1 font-mono text-xs disabled:opacity-50"
+          >
+            {pending ? "Restoring…" : "Restore"}
+          </button>
+        )}
+        <div role="alert">
+          {errorMessage !== null && (
+            <p className="text-severity-critical text-xs">{errorMessage}</p>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   if (status === "claimed" && claimedBy === login) {
     return (
@@ -149,16 +182,28 @@ function ClaimAction({
 
   return (
     <div className="flex flex-col gap-1">
-      <button
-        type="button"
-        disabled={pending}
-        onClick={() =>
-          void callAction("claim", { status: "claimed", claimedBy: login, claimedAt: new Date() })
-        }
-        className="bg-accent w-fit rounded-md px-2.5 py-1 font-mono text-xs font-medium text-white hover:opacity-90 disabled:opacity-50"
-      >
-        {pending ? "Claiming…" : "Claim this mission"}
-      </button>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          disabled={pending}
+          onClick={() =>
+            void callAction("claim", { status: "claimed", claimedBy: login, claimedAt: new Date() })
+          }
+          className="bg-accent w-fit rounded-md px-2.5 py-1 font-mono text-xs font-medium text-white hover:opacity-90 disabled:opacity-50"
+        >
+          {pending ? "Claiming…" : "Claim this mission"}
+        </button>
+        <button
+          type="button"
+          disabled={pending}
+          onClick={() =>
+            void callAction("dismiss", { status: "dismissed", claimedBy: null, claimedAt: null })
+          }
+          className="border-border text-ink-muted hover:text-ink hover:border-ink-muted w-fit rounded-md border px-2.5 py-1 font-mono text-xs disabled:opacity-50"
+        >
+          {pending ? "Working…" : "Dismiss"}
+        </button>
+      </div>
       <div role="alert">
         {errorMessage !== null && <p className="text-severity-critical text-xs">{errorMessage}</p>}
       </div>
@@ -291,7 +336,7 @@ export function MissionCard({
             </a>
           </div>
 
-          <ClaimAction
+          <MissionActions
             missionId={mission.id}
             status={mission.status}
             claimedBy={mission.claimedBy}

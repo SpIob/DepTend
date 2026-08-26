@@ -27,7 +27,7 @@ const WITHDRAWABLE_STATUSES: readonly IngestionStatus[] = ["pending", "skipped"]
  * Self-service reclaim (Roadmap "Now #4", Option B) — lets the original
  * submitter remove their own repo while it's still unindexed, freeing the
  * cap slot without needing Mico to do it by hand via direct SQL. Same
- * self-contained fetch + request-state shape as BookmarkToggle/ClaimAction,
+ * self-contained fetch + request-state shape as BookmarkToggle/MissionActions,
  * plus an explicit two-step confirm since this one is destructive and,
  * unlike a bookmark, not reversible from the UI.
  *

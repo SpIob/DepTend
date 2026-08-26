@@ -3,7 +3,7 @@ import { revalidateTag } from "next/cache";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { parseGithubUrl, submitRepo } from "@deptend/core/db/repos.js";
+import { getRepoByOwnerAndName, parseGithubUrl, submitRepo } from "@deptend/core/db/repos.js";
 import { checkSubmittableRepo } from "@deptend/core/ingestor/manifest-check.js";
 import { triggerIngestion } from "@/lib/github-dispatch";
 import { checkRepoSubmissionLimit } from "@/lib/rate-limit";
@@ -52,6 +52,21 @@ export async function POST(request: Request): Promise<Response> {
     );
   }
 
+  // Cheap duplicate check before anything touches the network: a
+  // re-submission of an already-indexed URL otherwise pays the full
+  // manifest pre-check out of a GitHub API budget that runs
+  // unauthenticated in production today (60 req/hr shared across all of
+  // /app's traffic). Case-variant duplicates can't be caught here — the
+  // stored row may use different casing than this URL — so a second,
+  // canonical check follows the pre-check below.
+  const exactCaseMatch = await getRepoByOwnerAndName(getDb(), parsed.owner, parsed.name);
+  if (exactCaseMatch !== null) {
+    return NextResponse.json(
+      { message: "This repo has already been submitted.", repo: exactCaseMatch },
+      { status: 200 },
+    );
+  }
+
   // Manifest pre-check (Roadmap "Now #4", Option A) — reject before a row
   // (and a cap slot) is created at all, rather than letting a repo with no
   // analyzable manifest quietly land as ingestionStatus: "skipped" later.
@@ -95,12 +110,31 @@ export async function POST(request: Request): Promise<Response> {
     }
   }
 
+  // GitHub treats owner/repo casing as insignificant; Postgres doesn't.
+  // Store — and dedup on — the canonical casing the API just returned,
+  // which is exactly what scripts/ingest.js writes back on every run
+  // (ghMeta.full_name). Submitting raw parsed values instead lets a
+  // "Foo/bar" submission coexist with the writer's canonical "foo/BAR":
+  // two rows for one real repo, the first stranded at "pending" and
+  // re-picked by resolvePending() on every cron run forever.
+  const canonical = await getRepoByOwnerAndName(
+    getDb(),
+    manifestCheck.meta.owner.login,
+    manifestCheck.meta.name,
+  );
+  if (canonical !== null) {
+    return NextResponse.json(
+      { message: "This repo has already been submitted.", repo: canonical },
+      { status: 200 },
+    );
+  }
+
   const maxRepos = Number.parseInt(process.env.NEXT_PUBLIC_MAX_REPOS ?? "150", 10);
 
   const result = await submitRepo(getDb(), {
-    githubUrl: parsed.githubUrl,
-    owner: parsed.owner,
-    name: parsed.name,
+    githubUrl: `https://github.com/${manifestCheck.meta.owner.login}/${manifestCheck.meta.name}`,
+    owner: manifestCheck.meta.owner.login,
+    name: manifestCheck.meta.name,
     submittedBy: login,
     maxRepos,
   });
@@ -130,6 +164,14 @@ export async function POST(request: Request): Promise<Response> {
   revalidateTag("repos");
 
   const dispatch = await triggerIngestion(repo.id);
+  if (!dispatch.ok) {
+    // Best-effort by design — degrade to the next cron run, but leave
+    // evidence. Without this line an expired GH_DISPATCH_TOKEN looks like
+    // nothing broke while every submission quietly waits up to 24h.
+    console.warn(
+      `[api/repos] ingestion dispatch failed for ${repo.id}: ${dispatch.error ?? "unknown error"}`,
+    );
+  }
 
   return NextResponse.json(
     {

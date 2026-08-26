@@ -11,6 +11,9 @@
  *   3. advisories         — upsert on osv_id (independent of repo)
  *   4. dependencies       — upsert on (repo_id, package_name, dep_type)
  *   5. dependency_advisories — upsert on (dependency_id, advisory_id)
+ *   5b. dependencies      — prune rows absent from this run's manifest
+ *                           (only when manifest_resolved; see
+ *                           pruneRemovedDependencies)
  *   6. ingestion_runs     — final status + count update on finish
  *
  * Steps 3–5 are wrapped in a transaction: either all dependency + advisory
@@ -78,6 +81,14 @@ export interface WriteIngestionOutput {
   dependenciesWritten: number;
   advisoriesWritten: number;
   dependencyAdvisoriesWritten: number;
+  /**
+   * Dependency rows removed because this run's manifest no longer lists
+   * them (0 unless manifest_resolved was true — a run that couldn't read
+   * the manifest never prunes). Their dependency_advisories rows go with
+   * them via ON DELETE CASCADE; missions referencing them keep history via
+   * ON DELETE SET NULL on missions.dependency_id.
+   */
+  dependenciesPruned: number;
   /** All warnings collected across the ingestion pipeline */
   allWarnings: string[];
 }
@@ -117,6 +128,7 @@ export class IngestionWriter {
     let dependenciesWritten = 0;
     let advisoriesWritten = 0;
     let dependencyAdvisoriesWritten = 0;
+    let dependenciesPruned = 0;
 
     try {
       // 3–5. Transactional: advisories → dependencies → dependency_advisories
@@ -129,12 +141,28 @@ export class IngestionWriter {
           input.registryResult,
           input.osvResult,
         );
-        return { advCount, depCount, depAdvisoryCount };
+        // Prune only when the manifest actually resolved this run: a
+        // successfully-parsed manifest is the authoritative dependency set,
+        // but a run where probing failed or found nothing to read must NOT
+        // wipe the last good state over a transport blip.
+        const prunedCount = input.ingestorResult.manifest_resolved
+          ? await this.pruneRemovedDependencies(
+              tx,
+              repoId,
+              new Set(
+                input.ingestorResult.dependencies.map(
+                  (dep) => `${dep.package_name}:${dep.dep_type}`,
+                ),
+              ),
+            )
+          : 0;
+        return { advCount, depCount, depAdvisoryCount, prunedCount };
       });
 
       dependenciesWritten = counts.depCount;
       advisoriesWritten = counts.advCount;
       dependencyAdvisoriesWritten = counts.depAdvisoryCount;
+      dependenciesPruned = counts.prunedCount;
     } catch (err) {
       await this.closeRun(runId, "failed", 0, 0, err);
       throw err;
@@ -172,6 +200,7 @@ export class IngestionWriter {
       dependenciesWritten,
       advisoriesWritten,
       dependencyAdvisoriesWritten,
+      dependenciesPruned,
       allWarnings,
     };
   }
@@ -423,6 +452,53 @@ export class IngestionWriter {
     }
 
     return { depCount: upserted.length, depAdvisoryCount };
+  }
+
+  // ---------------------------------------------------------------------------
+  // dependency pruning (re-ingestion lifecycle)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Removes this repo's dependency rows whose (package_name, dep_type) was
+   * NOT in the manifest this run — until now the dependency set grew
+   * append-only, so packages dropped from a manifest kept their rows, their
+   * is_affected advisory links, and regenerated missions forever.
+   *
+   * Caller contract (enforced at the write() call site): only invoked when
+   * ingestorResult.manifest_resolved was true — a successfully-parsed
+   * manifest defines the authoritative set; an unreadable one must never
+   * destroy the last good state.
+   *
+   * FK fallout by design: dependency_advisories rows cascade away with
+   * their dependency; mission rows survive with dependency_id set NULL
+   * (ON DELETE SET NULL), keeping their title/description/scores as history
+   * — MissionWriter's resolution pass closes them as "resolved" in its own
+   * transaction immediately after this one.
+   */
+  private async pruneRemovedDependencies(
+    tx: DbOrTx,
+    repoId: string,
+    keepKeys: Set<string>,
+  ): Promise<number> {
+    const existing = await tx
+      .select({
+        id: dependencies.id,
+        packageName: dependencies.packageName,
+        depType: dependencies.depType,
+      })
+      .from(dependencies)
+      .where(eq(dependencies.repoId, repoId));
+
+    const staleIds = existing
+      .filter((row) => !keepKeys.has(`${row.packageName}:${row.depType}`))
+      .map((row) => row.id);
+
+    if (staleIds.length === 0) {
+      return 0;
+    }
+
+    await tx.delete(dependencies).where(inArray(dependencies.id, staleIds));
+    return staleIds.length;
   }
 }
 

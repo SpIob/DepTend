@@ -11,7 +11,12 @@
  *
  * Best-effort: if this fails, the repo row is still created and the daily
  * cron will pick it up regardless — see submitRepo() in
- * packages/core/src/db/repos.ts.
+ * packages/core/src/db/repos.ts. Callers must log DispatchResult.error on
+ * failure; without that an expired token or misconfigured GH_REPO would
+ * silently degrade every submission to next-daily-cron latency.
+ *
+ * The dispatch carries a hard deadline so a hung connection can't hold the
+ * submitter's POST open until the platform kill timeout.
  */
 
 export interface DispatchResult {
@@ -41,6 +46,9 @@ export async function triggerIngestion(repoId: string): Promise<DispatchResult> 
           ref: "main",
           inputs: { repo_id: repoId, triggered_by: "submit" },
         }),
+        // Best-effort call — bound it so a stalled socket can't hold the
+        // submitter's request open past the point of usefulness.
+        signal: AbortSignal.timeout(10_000),
       },
     );
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import type { Ecosystem, EffortLabel, Severity } from "@deptend/core/db/schema.js";
 import type { BoardFacets } from "@deptend/core/db/queries.js";
@@ -174,18 +174,43 @@ export function PaginatedMissionBoard({
     initialQuery.effort.size > 0 ||
     initialQuery.q.trim() !== "";
 
+  // The not-yet-fired debounced search navigation, if any. Explicit user
+  // navigations (navigate()) cancel it; see both functions below.
+  const pendingSearchNav = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Always holds the most recent render's URL builder, so a deferred search
+  // commit folds in query-shaping state that changed after the timer was
+  // armed (a group-by toggle's replaceState, say) instead of reverting it
+  // with a closure frozen at arm time. Refreshed in an effect below.
+  const latestBuildHref = useRef<((overrides: MissionBoardQueryState) => string) | undefined>(
+    undefined,
+  );
+  useEffect(() => {
+    latestBuildHref.current = buildHref;
+  });
+
   // Every board interaction funnels through here so one isPending flag can
   // cover chips, sort, clear, pagination, and the debounced search commit.
   function navigate(href: string): void {
+    // A user-initiated navigation supersedes any armed search commit: the
+    // href being navigated to already carries the input's current text
+    // (buildHref's base reads live `search` state), so letting the armed
+    // timer also fire would replay an older, filter-less URL over the top
+    // of this one and silently undo the click that triggered it.
+    if (pendingSearchNav.current !== null) {
+      clearTimeout(pendingSearchNav.current);
+      pendingSearchNav.current = null;
+    }
     startTransition(() => {
       router.replace(href);
     });
   }
 
   // Builds a board URL from the server-rendered filter state plus per-call
-  // overrides. Filter/sort changes deliberately pass no page: the serializer
-  // omits it, resetting to page 1 — matching the old client-side board,
-  // where changing a filter always re-listed from the top.
+  // overrides. `page` is deliberately absent from the base: every
+  // filter/sort/search/clear navigation should land at the top of the
+  // freshly-filtered ranking (the serializer omits page 1 entirely), and
+  // the only callers that want a specific page — the pagination buttons —
+  // pass it as an explicit override.
   function buildHref(overrides: MissionBoardQueryState): string {
     return buildMissionBoardHref(basePath, {
       q: search,
@@ -194,7 +219,6 @@ export function PaginatedMissionBoard({
       effort: initialQuery.effort,
       sort: initialQuery.sort,
       group: groupByRepo,
-      page,
       ...overrides,
     });
   }
@@ -206,15 +230,24 @@ export function PaginatedMissionBoard({
       return;
     }
     const handle = setTimeout(() => {
-      navigate(buildHref({ q: search }));
+      pendingSearchNav.current = null;
+      const build = latestBuildHref.current;
+      if (build !== undefined) {
+        navigate(build({ q: search }));
+      }
     }, SEARCH_DEBOUNCE_MS);
+    pendingSearchNav.current = handle;
     return (): void => {
       clearTimeout(handle);
+      if (pendingSearchNav.current === handle) {
+        pendingSearchNav.current = null;
+      }
     };
-    // Deliberately keyed on `search` alone: buildHref closes over the
-    // current filter state on every render, and re-arming the timer on
+    // Deliberately keyed on `search` alone: re-arming the timer on
     // unrelated re-renders (e.g. claim patches) would only delay a
-    // navigation that's still correct.
+    // navigation that's still correct. Filter/sort/group changes either
+    // cancel the timer outright (navigate()) or are folded in at fire
+    // time (latestBuildHref), so they don't need to re-arm it either.
   }, [search]);
 
   // Group-by-repo is pure presentation over the current page — it never

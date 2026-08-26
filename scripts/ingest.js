@@ -24,10 +24,22 @@
  *                          downstream_dependents prefetch (ADR 0032). Without
  *                          it, downstream_dependents stays null on every
  *                          mission and its confidence flag stays set.
+ *   REINGEST_STALE_DAYS    Optional. Cron runs re-ingest 'complete' repos
+ *                          whose last_ingested_at is older than this many
+ *                          days (default: 7). Keeps dependency/advisory data
+ *                          current — without it a repo was ingested exactly
+ *                          once and its board froze at first-run time.
+ *   REINGEST_MAX_PER_RUN   Optional. Cap on stale-complete repos picked per
+ *                          cron run (default: 25), oldest first — paces the
+ *                          shared GitHub/libraries.io budgets. Fresh
+ *                          'pending'/'failed' repos always go first,
+ *                          whatever this cap is.
  *
  * Exit codes:
  *   0  All targeted repos processed successfully (warnings are non-fatal).
  *   1  One or more repos failed, or a fatal startup error occurred.
+ *      A repo that no longer exists on GitHub is NOT a failure: it's marked
+ *      'skipped' (terminal — never re-picked) and the run continues green.
  *
  * Phase 1: ingests repos, dependencies, and advisories.
  * Phase 2: also generates/refreshes vulnerability_fix missions and scores
@@ -53,7 +65,7 @@
 
 import { Pool } from "@neondatabase/serverless";
 import { drizzle } from "drizzle-orm/neon-serverless";
-import { eq, or } from "drizzle-orm";
+import { and, asc, eq, isNull, lt, or } from "drizzle-orm";
 
 // Internal imports via direct dist paths — the scripts/ directory is an
 // internal monorepo consumer; it bypasses the @deptend/core exports map
@@ -69,7 +81,10 @@ import { PyPIRegistryFetcher } from "../packages/core/dist/ingestor/pypi-registr
 import { GoRegistryFetcher } from "../packages/core/dist/ingestor/go-registry.js";
 import { IngestionWriter } from "../packages/core/dist/ingestor/writer.js";
 import { MissionWriter } from "../packages/core/dist/scorer/writer.js";
-import { fetchGitHubRepoMeta } from "../packages/core/dist/ingestor/github-meta.js";
+import {
+  fetchGitHubRepoMeta,
+  GitHubMetaError,
+} from "../packages/core/dist/ingestor/github-meta.js";
 
 // ---------------------------------------------------------------------------
 // Entry point
@@ -135,8 +150,12 @@ async function main() {
     // --repo-id: process one specific repo by UUID.
     targetRepos = await resolveById(db, args.repoId);
   } else {
-    // Cron / no filter: process all repos with status 'pending' or 'failed'.
-    targetRepos = await resolvePending(db);
+    // Cron / no filter: everything due for (re)ingestion — 'pending' and
+    // 'failed' repos first (fresh submissions and retryable errors are the
+    // user-facing queue), then the oldest 'complete' repos past the
+    // staleness threshold, so already-indexed boards keep tracking
+    // upstream reality instead of freezing at first-run time.
+    targetRepos = await resolveDueRepos(db);
   }
 
   if (targetRepos.length === 0) {
@@ -335,6 +354,7 @@ async function ingestRepo(
       dependenciesWritten: output.dependenciesWritten,
       advisoriesWritten: output.advisoriesWritten,
       dependencyAdvisoriesWritten: output.dependencyAdvisoriesWritten,
+      dependenciesPruned: output.dependenciesPruned,
       warnings: output.allWarnings.length,
     });
 
@@ -361,6 +381,7 @@ async function ingestRepo(
         candidatesFound: missionOutput.candidatesFound,
         created: missionOutput.created,
         updated: missionOutput.updated,
+        resolved: missionOutput.resolved,
       });
 
       await db
@@ -383,6 +404,29 @@ async function ingestRepo(
 
     return true;
   } catch (err) {
+    // A repo that no longer exists on GitHub (deleted, renamed past
+    // redirect, made private) is permanently broken. Mark it 'skipped' —
+    // the writer's established terminal state that the cron resolution
+    // query never re-picks — instead of 'failed', which would burn a
+    // GitHub API call on it every single day forever. Handled-terminal is
+    // not a run failure: return true so one dead repo can't keep the
+    // daily job red with nothing actionable left.
+    if (err instanceof GitHubMetaError && err.kind === "not_found") {
+      log("warn", `[${label}] Repo not found on GitHub — marking 'skipped' (terminal).`);
+      try {
+        await db
+          .update(schema.repos)
+          .set({
+            ingestionStatus: "skipped",
+            ingestionError: `Repo not found on GitHub: ${err.message}`,
+          })
+          .where(eq(schema.repos.githubUrl, repo.githubUrl ?? repo.url));
+      } catch {
+        // Best-effort — the warn above already records what happened
+      }
+      return true;
+    }
+
     log(
       "error",
       `[${label}] Ingestion failed: ${err instanceof Error ? err.message : String(err)}`,
@@ -426,6 +470,46 @@ async function resolvePending(db) {
   }
 
   return rows;
+}
+
+/**
+ * Everything due for processing on a cron run: pending/failed repos, then
+ * up to REINGEST_MAX_PER_RUN complete repos whose last_ingested_at is
+ * older than REINGEST_STALE_DAYS (or null — legacy rows predating the
+ * column), oldest first. The staleness query leans on the existing
+ * idx_repos_last_ingested_at index; the cap keeps a cold-start sweep (the
+ * first run after this feature ships re-picks everything at once) within
+ * the shared GitHub/libraries.io budgets.
+ */
+async function resolveDueRepos(db) {
+  const pendingFailed = await resolvePending(db);
+
+  const staleDays = intEnv("REINGEST_STALE_DAYS", 7);
+  const maxStale = intEnv("REINGEST_MAX_PER_RUN", 25);
+  const cutoff = new Date(Date.now() - staleDays * 24 * 60 * 60 * 1000);
+
+  const staleComplete = await db
+    .select()
+    .from(schema.repos)
+    .where(
+      and(
+        eq(schema.repos.ingestionStatus, "complete"),
+        or(isNull(schema.repos.lastIngestedAt), lt(schema.repos.lastIngestedAt, cutoff)),
+      ),
+    )
+    // ASC puts NULLs first in Postgres — never-refreshed rows go oldest.
+    .orderBy(asc(schema.repos.lastIngestedAt))
+    .limit(maxStale);
+
+  if (staleComplete.length > 0) {
+    log(
+      "info",
+      `Re-ingesting ${staleComplete.length} stale 'complete' repo(s)` +
+        ` (older than ${staleDays} day(s), cap ${maxStale}/run).`,
+    );
+  }
+
+  return [...pendingFailed, ...staleComplete];
 }
 
 /** Return a single repo from DB by UUID. */
@@ -511,6 +595,16 @@ function parseArgs(argv) {
 function argValue(argv, flag) {
   const i = argv.indexOf(flag);
   return i !== -1 && i + 1 < argv.length ? argv[i + 1] : undefined;
+}
+
+/** Positive-integer env var with a fallback — for the re-ingestion knobs. */
+function intEnv(name, fallback) {
+  const raw = process.env[name];
+  if (raw === undefined || raw === "") {
+    return fallback;
+  }
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 // ---------------------------------------------------------------------------

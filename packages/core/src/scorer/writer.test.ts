@@ -22,11 +22,15 @@ type WriterDb = ConstructorParameters<typeof MissionWriter>[0];
 
 interface WhereResult extends Promise<unknown[]> {
   limit: (n: number) => Promise<unknown[]>;
+  /** The auto-resolution pass chains .returning() after .where() on its UPDATE */
+  returning: (v?: unknown) => Promise<unknown[]>;
 }
 
 function thenableRows(rows: unknown[]): WhereResult {
   const promise = Promise.resolve(rows) as WhereResult;
   promise.limit = (): Promise<unknown[]> => Promise.resolve(rows);
+  // Default no-op; makeChain overrides it with the table-aware version.
+  promise.returning = (): Promise<unknown[]> => Promise.resolve([]);
   return promise;
 }
 
@@ -44,6 +48,12 @@ interface Chain {
 interface MockDbCalls {
   inserts: string[];
   updates: string[];
+  /**
+   * Captured set() payload for every missions-table update, in call order:
+   * refreshMissionCopy writes first (copy fields; +status/resolvedAt when
+   * reopening), then the auto-resolution pass writes its status flip.
+   */
+  missionsUpdateSets: Record<string, unknown>[];
   selectCount: number;
   transactionCalled: boolean;
   /** Captured values() argument for every mission_scores insert, in candidate order — lets tests inspect the real, unmocked computeMissionScore() output (ADR 0029). */
@@ -54,9 +64,11 @@ function makeMockDb(overrides: {
   repoRow?: Record<string, unknown>;
   candidateRows?: { dependency: Record<string, unknown>; advisory: Record<string, unknown> }[];
   /** One entry per candidate, in loop order: null = no existing mission (insert path) */
-  existingMissionRows?: ({ id: string } | null)[];
+  existingMissionRows?: ({ id: string; status?: string } | null)[];
   /** ids returned by the missions insert, consumed in order for candidates with no existing mission */
   insertedMissionIds?: string[];
+  /** ids returned by the auto-resolution UPDATE ... RETURNING (resolveStaleMissions) */
+  resolvedRowIds?: string[];
   txShouldThrow?: boolean;
   /** Optional shared array — "fetch" is pushed by the test's own fetch mock, "transaction" is pushed here, so tests can assert ordering (ADR 0029: prefetch must happen before the transaction opens). */
   callOrder?: string[];
@@ -66,6 +78,7 @@ function makeMockDb(overrides: {
     candidateRows = [],
     existingMissionRows = [],
     insertedMissionIds = [],
+    resolvedRowIds = [],
     txShouldThrow = false,
     callOrder,
   } = overrides;
@@ -73,6 +86,7 @@ function makeMockDb(overrides: {
   const calls: MockDbCalls = {
     inserts: [],
     updates: [],
+    missionsUpdateSets: [],
     selectCount: 0,
     transactionCalled: false,
     insertedScoreValues: [],
@@ -82,6 +96,7 @@ function makeMockDb(overrides: {
   // single bulk row list generateMissionsForRepo now fetches in one query
   // (select #3): each non-null entry becomes a row keyed by its candidate's
   // dependency/advisory ids, which writer.ts matches via missionPairKey.
+  // Status defaults to "open" — the overwhelmingly common case in tests.
   const bulkExistingMissionRows = candidateRows.flatMap((row, index) => {
     const existing = existingMissionRows[index] ?? null;
     if (existing === null) return [];
@@ -90,30 +105,37 @@ function makeMockDb(overrides: {
         id: existing.id,
         dependencyId: String(row.dependency.id),
         advisoryId: String(row.advisory.id),
+        status: existing.status ?? "open",
       },
     ];
   });
 
   let insertedIdQueueIndex = 0;
 
-  function makeChain(currentTable: Table | undefined): Chain {
-    const chain: Chain = {
+  function makeChain(currentTable: Table | undefined): Chain & { valuesCalled: boolean } {
+    const chain: Chain & { valuesCalled: boolean } = {
+      valuesCalled: false,
       from: (table?: Table): Chain => makeChain(table ?? currentTable),
       innerJoin: (): Chain => chain,
       where: (): WhereResult => {
         // Dispatch purely on selectCount, matching the exact call order
         // generateMissionsForRepo makes: 1) repo lookup, 2) candidate join,
         // 3) one bulk existing-missions check.
+        let rows: unknown[];
         if (calls.selectCount === 1) {
-          return thenableRows(repoRow !== undefined ? [repoRow] : []);
+          rows = repoRow !== undefined ? [repoRow] : [];
+        } else if (calls.selectCount === 2) {
+          rows = candidateRows;
+        } else {
+          rows = bulkExistingMissionRows;
         }
-        if (calls.selectCount === 2) {
-          return thenableRows(candidateRows);
-        }
-        return thenableRows(bulkExistingMissionRows);
+        const promise = thenableRows(rows);
+        promise.returning = (): Promise<unknown[]> => handleReturning();
+        return promise;
       },
       limit: (): Promise<unknown[]> => Promise.resolve([]),
       values: (v: unknown): Chain => {
+        chain.valuesCalled = true;
         if (
           currentTable !== undefined &&
           getTableName(currentTable) === getTableName(missionScores)
@@ -123,17 +145,31 @@ function makeMockDb(overrides: {
         return chain;
       },
       onConflictDoUpdate: (): Promise<unknown[]> => Promise.resolve([]),
-      set: (): Chain => chain,
-      returning: (): Promise<unknown[]> => {
+      set: (v: unknown): Chain => {
         if (currentTable !== undefined && getTableName(currentTable) === getTableName(missions)) {
-          const id = insertedMissionIds[insertedIdQueueIndex];
-          insertedIdQueueIndex++;
-          return Promise.resolve(id !== undefined ? [{ id }] : []);
+          calls.missionsUpdateSets.push(v as Record<string, unknown>);
         }
-        return Promise.resolve([]);
+        return chain;
       },
+      returning: (): Promise<unknown[]> => handleReturning(),
     };
     return chain;
+
+    /** Shared returning() logic for select/update chains ending at missions. */
+    function handleReturning(): Promise<unknown[]> {
+      if (currentTable !== undefined && getTableName(currentTable) === getTableName(missions)) {
+        // An update().returning() on missions is the auto-resolution
+        // pass (refreshMissionCopy never chains .values()); an insert
+        // consumes the inserted-id queue.
+        if (!chain.valuesCalled) {
+          return Promise.resolve(resolvedRowIds.map((id) => ({ id })));
+        }
+        const id = insertedMissionIds[insertedIdQueueIndex];
+        insertedIdQueueIndex++;
+        return Promise.resolve(id !== undefined ? [{ id }] : []);
+      }
+      return Promise.resolve([]);
+    }
   }
 
   const db = {
@@ -239,7 +275,13 @@ describe("MissionWriter.generateMissionsForRepo", () => {
     const writer = new MissionWriter(db);
     const result = await writer.generateMissionsForRepo("repo-1");
 
-    expect(result).toEqual({ created: 0, updated: 0, candidatesFound: 0, warnings: [] });
+    expect(result).toEqual({
+      created: 0,
+      updated: 0,
+      resolved: 0,
+      candidatesFound: 0,
+      warnings: [],
+    });
     expect(calls.transactionCalled).toBe(true);
   });
 
@@ -253,10 +295,18 @@ describe("MissionWriter.generateMissionsForRepo", () => {
     const writer = new MissionWriter(db);
     const result = await writer.generateMissionsForRepo("repo-1");
 
-    expect(result).toEqual({ created: 1, updated: 0, candidatesFound: 1, warnings: [] });
+    expect(result).toEqual({
+      created: 1,
+      updated: 0,
+      resolved: 0,
+      candidatesFound: 1,
+      warnings: [],
+    });
     expect(calls.inserts).toContain(getTableName(missions));
     expect(calls.inserts).toContain(getTableName(missionScores));
-    expect(calls.updates).not.toContain(getTableName(missions));
+    // The only missions-table update is the resolution pass (which resolved
+    // nothing here) — a fresh insert never goes through refreshMissionCopy.
+    expect(calls.missionsUpdateSets.every((set) => set.status === "resolved")).toBe(true);
   });
 
   it("updates an existing mission's copy without touching status/claim fields", async () => {
@@ -268,12 +318,24 @@ describe("MissionWriter.generateMissionsForRepo", () => {
     const writer = new MissionWriter(db);
     const result = await writer.generateMissionsForRepo("repo-1");
 
-    expect(result).toEqual({ created: 0, updated: 1, candidatesFound: 1, warnings: [] });
+    expect(result).toEqual({
+      created: 0,
+      updated: 1,
+      resolved: 0,
+      candidatesFound: 1,
+      warnings: [],
+    });
     expect(calls.updates).toContain(getTableName(missions));
     expect(calls.inserts).not.toContain(getTableName(missions));
     // mission_scores is always written via insert().onConflictDoUpdate(),
     // never a plain update() — see writer.ts.
     expect(calls.inserts).toContain(getTableName(missionScores));
+    // The refresh write carries copy fields only — no status flip for an
+    // open mission.
+    const refreshSet = calls.missionsUpdateSets[0];
+    if (refreshSet === undefined) throw new Error("expected a missions update");
+    expect(refreshSet.status).toBeUndefined();
+    expect(refreshSet.title).toBeTypeOf("string");
   });
 
   it("processes multiple candidates and reports mixed created/updated counts", async () => {
@@ -295,9 +357,16 @@ describe("MissionWriter.generateMissionsForRepo", () => {
     const writer = new MissionWriter(db);
     const result = await writer.generateMissionsForRepo("repo-1");
 
-    expect(result).toEqual({ created: 1, updated: 1, candidatesFound: 2, warnings: [] });
+    expect(result).toEqual({
+      created: 1,
+      updated: 1,
+      resolved: 0,
+      candidatesFound: 2,
+      warnings: [],
+    });
+    // One refresh update + one resolution-pass update.
+    expect(calls.updates.filter((name) => name === getTableName(missions))).toHaveLength(2);
     expect(calls.inserts.filter((name) => name === getTableName(missions))).toHaveLength(1);
-    expect(calls.updates.filter((name) => name === getTableName(missions))).toHaveLength(1);
     expect(calls.inserts.filter((name) => name === getTableName(missionScores))).toHaveLength(2);
   });
 
@@ -321,6 +390,103 @@ describe("MissionWriter.generateMissionsForRepo", () => {
     });
     const writer = new MissionWriter(db);
     await expect(writer.generateMissionsForRepo("repo-1")).rejects.toThrow("DB transaction failed");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Auto-resolution — closing missions whose pair no longer exists
+// ---------------------------------------------------------------------------
+
+describe("MissionWriter.generateMissionsForRepo — auto-resolution", () => {
+  it("reports resolved count from the resolution pass alongside created/updated", async () => {
+    const { db, calls } = makeMockDb({
+      repoRow: REPO_ROW,
+      candidateRows: [{ dependency: makeDependencyRow(), advisory: makeAdvisoryRow() }],
+      existingMissionRows: [null],
+      insertedMissionIds: ["mission-1"],
+      // Two other open/claimed missions of this repo had no candidate this
+      // run — dep removed / advisory withdrawn.
+      resolvedRowIds: ["stale-1", "stale-2"],
+    });
+    const writer = new MissionWriter(db);
+    const result = await writer.generateMissionsForRepo("repo-1");
+
+    expect(result.created).toBe(1);
+    expect(result.resolved).toBe(2);
+    // The resolution write is the LAST missions-table update and carries
+    // the resolved status stamp.
+    const resolutionSet = calls.missionsUpdateSets.at(-1);
+    if (resolutionSet === undefined) throw new Error("expected a missions update");
+    expect(resolutionSet.status).toBe("resolved");
+    expect(resolutionSet.resolvedAt).toBeInstanceOf(Date);
+  });
+
+  it("resolves every open/claimed mission when there are zero candidates", async () => {
+    const { db } = makeMockDb({
+      repoRow: REPO_ROW,
+      candidateRows: [],
+      resolvedRowIds: ["m-1", "m-2", "m-3"],
+    });
+    const writer = new MissionWriter(db);
+    const result = await writer.generateMissionsForRepo("repo-1");
+
+    // The "every vulnerability fixed since last run" case: nothing
+    // generates candidates, so everything open closes as resolved.
+    expect(result.resolved).toBe(3);
+    expect(result.candidatesFound).toBe(0);
+  });
+
+  it("reopens a previously auto-resolved mission whose pair came back", async () => {
+    const { db, calls } = makeMockDb({
+      repoRow: REPO_ROW,
+      candidateRows: [{ dependency: makeDependencyRow(), advisory: makeAdvisoryRow() }],
+      existingMissionRows: [{ id: "resolved-mission", status: "resolved" }],
+    });
+    const writer = new MissionWriter(db);
+    const result = await writer.generateMissionsForRepo("repo-1");
+
+    // Counts as updated (it went through refresh), not created/resolved.
+    expect(result.updated).toBe(1);
+    expect(result.created).toBe(0);
+    const refreshSet = calls.missionsUpdateSets[0];
+    if (refreshSet === undefined) throw new Error("expected a missions update");
+    expect(refreshSet.status).toBe("open");
+    expect(refreshSet.resolvedAt).toBeNull();
+    expect(refreshSet.title).toBeTypeOf("string");
+  });
+
+  it("leaves an open mission's status alone on refresh (no reopen fields)", async () => {
+    const { db, calls } = makeMockDb({
+      repoRow: REPO_ROW,
+      candidateRows: [{ dependency: makeDependencyRow(), advisory: makeAdvisoryRow() }],
+      existingMissionRows: [{ id: "open-mission", status: "open" }],
+    });
+    const writer = new MissionWriter(db);
+
+    await writer.generateMissionsForRepo("repo-1");
+
+    const refreshSet = calls.missionsUpdateSets[0];
+    if (refreshSet === undefined) throw new Error("expected a missions update");
+    expect(refreshSet.status).toBeUndefined();
+    expect(refreshSet.resolvedAt).toBeUndefined();
+  });
+
+  it("never routes a dismissed or claimed mission's refresh through a status flip", async () => {
+    for (const status of ["dismissed", "claimed"] as const) {
+      const { db, calls } = makeMockDb({
+        repoRow: REPO_ROW,
+        candidateRows: [{ dependency: makeDependencyRow(), advisory: makeAdvisoryRow() }],
+        existingMissionRows: [{ id: `mission-${status}`, status }],
+      });
+      const writer = new MissionWriter(db);
+      await writer.generateMissionsForRepo("repo-1");
+
+      const refreshSet = calls.missionsUpdateSets[0];
+      if (refreshSet === undefined) throw new Error("expected a missions update");
+      // Copy-only refresh: user-driven state is never overwritten
+      // (ADR 0008 §3) — only auto-"resolved" rows may flip back to open.
+      expect(refreshSet.status).toBeUndefined();
+    }
   });
 });
 

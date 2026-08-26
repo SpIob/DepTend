@@ -32,13 +32,21 @@
  * ctx.downstreamDependents stays absent: identical to pre-ADR-0032
  * behavior.
  *
+ * Auto-resolution: after the candidate loop, every open/claimed mission of
+ * this repo whose (dependency_id, advisory_id) pair produced no candidate
+ * this run is closed as "resolved" inside the same transaction — the
+ * dependency left the manifest, the advisory no longer matches, or OSV
+ * withdrew it. "dismissed" keeps its human decision; a previously
+ * auto-resolved mission whose pair returns is reopened. See
+ * resolveStaleMissions().
+ *
  * ADR: docs/adr/0008-mission-db-writer.md
  *      docs/adr/0011-schema-as-single-type-source.md
  *      docs/adr/0029-breaking-change-signals.md
  *      docs/adr/0032-downstream-dependents.md
  */
 
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, notInArray, sql } from "drizzle-orm";
 import type { NeonDatabase, NeonTransaction } from "drizzle-orm/neon-serverless";
 import {
   advisories,
@@ -49,6 +57,7 @@ import {
   repos,
   type Advisory,
   type Dependency,
+  type MissionStatus,
 } from "../db/schema.js";
 import {
   computeMissionScore,
@@ -78,6 +87,13 @@ import { fetchDownstreamDependents } from "../ingestor/downstream-dependents.js"
 export interface GenerateMissionsOutput {
   created: number;
   updated: number;
+  /**
+   * Open/claimed missions of this repo whose (dependency_id, advisory_id)
+   * pair is no longer among the current candidates — auto-closed as
+   * "resolved" this run. For logging/visibility; ingestion_runs has no
+   * column for it (adding one would be a migration for a nice-to-have).
+   */
+  resolved: number;
   /** is_affected dependency_advisories rows found for this repo — for logging */
   candidatesFound: number;
   /** Non-fatal downstream-dependents lookup observations (ADR 0032) — for logging */
@@ -179,6 +195,7 @@ export class MissionWriter {
 
     let created = 0;
     let updated = 0;
+    let resolved = 0;
 
     await this.db.transaction(async (tx) => {
       // One bulk existence check for every candidate pair up front, instead
@@ -187,13 +204,18 @@ export class MissionWriter {
       // idx_missions_dependency_id). Runs inside the transaction, same as
       // the per-candidate check it replaces, so the check-then-write
       // semantics don't widen.
-      const existingMissionIds = await this.selectExistingMissionIds(
+      const existingMissions = await this.selectExistingMissions(
         tx,
         candidateRows.map((row) => ({
           dependencyId: row.dependency.id,
           advisoryId: row.advisory.id,
         })),
       );
+
+      // Every mission this run refreshes or creates — the complement of
+      // this set (among the repo's open/claimed missions) is what the
+      // resolution pass below closes.
+      const processedMissionIds: string[] = [];
 
       for (const row of candidateRows) {
         const targetVersion = row.advisory.fixedVersion ?? row.dependency.latestVersion;
@@ -223,23 +245,29 @@ export class MissionWriter {
           actionHint: copy.action_hint,
         };
 
-        const existingId = existingMissionIds.get(
+        const existing = existingMissions.get(
           missionPairKey(missionInput.dependencyId, missionInput.advisoryId),
         );
 
         let missionId: string;
         let wasCreated: boolean;
-        if (existingId !== undefined) {
-          // Copy only — status/claimed_by/claimed_at/resolved_at/
-          // dismissed_at/dismiss_reason are user-driven state a re-run must
-          // never overwrite (ADR 0008 §3).
-          await this.refreshMissionCopy(tx, existingId, missionInput);
-          missionId = existingId;
+        if (existing !== undefined) {
+          // Copy only — claimed_by/claimed_at/dismissed_at/dismiss_reason
+          // are user-driven state a re-run must never overwrite (ADR 0008
+          // §3). Status is pipeline-driven since auto-resolution exists:
+          // a mission previously auto-resolved whose pair has come BACK
+          // (OSV range revised, dep re-added) is reopened — "resolved" was
+          // never a human decision for it, and leaving it closed with
+          // freshly-refreshed copy would be a silently-wrong board.
+          await this.refreshMissionCopy(tx, existing.id, missionInput, existing.status);
+          missionId = existing.id;
           wasCreated = false;
         } else {
           missionId = await this.insertMission(tx, missionInput);
           wasCreated = true;
         }
+
+        processedMissionIds.push(missionId);
 
         await this.upsertMissionScore(tx, missionId, score);
 
@@ -249,11 +277,14 @@ export class MissionWriter {
           updated++;
         }
       }
+
+      resolved = await this.resolveStaleMissions(tx, repoId, processedMissionIds);
     });
 
     return {
       created,
       updated,
+      resolved,
       candidatesFound: candidateRows.length,
       warnings: downstreamWarnings,
     };
@@ -292,17 +323,17 @@ export class MissionWriter {
 
   /**
    * Resolves which of this repo's candidate pairs already have a mission,
-   * in ONE query: SELECT id, dependency_id, advisory_id WHERE dependency_id
-   * IN (this repo's candidate dependencies) — leaning on migration 0006's
-   * idx_missions_dependency_id. Rows whose dependency_id/advisory_id were
-   * nulled by their ON DELETE SET NULL foreign keys can never match a
-   * candidate pair and are skipped.
+   * in ONE query: SELECT id, dependency_id, advisory_id, status WHERE
+   * dependency_id IN (this repo's candidate dependencies) — leaning on
+   * migration 0006's idx_missions_dependency_id. Rows whose
+   * dependency_id/advisory_id were nulled by their ON DELETE SET NULL
+   * foreign keys can never match a candidate pair and are skipped.
    */
-  private async selectExistingMissionIds(
+  private async selectExistingMissions(
     tx: DbOrTx,
     pairs: { dependencyId: string; advisoryId: string }[],
-  ): Promise<Map<string, string>> {
-    const result = new Map<string, string>();
+  ): Promise<Map<string, { id: string; status: MissionStatus }>> {
+    const result = new Map<string, { id: string; status: MissionStatus }>();
     if (pairs.length === 0) return result;
 
     const dependencyIds = [...new Set(pairs.map((p) => p.dependencyId))];
@@ -311,18 +342,27 @@ export class MissionWriter {
         id: missions.id,
         dependencyId: missions.dependencyId,
         advisoryId: missions.advisoryId,
+        status: missions.status,
       })
       .from(missions)
       .where(inArray(missions.dependencyId, dependencyIds));
 
     for (const row of rows) {
       if (row.dependencyId === null || row.advisoryId === null) continue;
-      result.set(missionPairKey(row.dependencyId, row.advisoryId), row.id);
+      result.set(missionPairKey(row.dependencyId, row.advisoryId), {
+        id: row.id,
+        status: row.status,
+      });
     }
     return result;
   }
 
-  /** Refreshes an existing mission's copy fields only (ADR 0008 §3). */
+  /**
+   * Refreshes an existing mission's copy fields only (ADR 0008 §3) — with
+   * one pipeline-driven exception: a previously auto-resolved mission whose
+   * pair is back among the candidates reopens (status "resolved" was the
+   * pipeline's own earlier conclusion, not user state; see the call site).
+   */
   private async refreshMissionCopy(
     tx: DbOrTx,
     missionId: string,
@@ -331,6 +371,7 @@ export class MissionWriter {
       description: string;
       actionHint: string | null;
     },
+    currentStatus: MissionStatus,
   ): Promise<void> {
     await tx
       .update(missions)
@@ -338,9 +379,58 @@ export class MissionWriter {
         title: input.title,
         description: input.description,
         actionHint: input.actionHint,
+        ...(currentStatus === "resolved" && {
+          status: "open" as const,
+          resolvedAt: null,
+        }),
         updatedAt: new Date(),
       })
       .where(eq(missions.id, missionId));
+  }
+
+  /**
+   * Auto-closes this repo's remaining open/claimed missions — the ones
+   * whose (dependency_id, advisory_id) pair produced no candidate this run:
+   * the dependency left the manifest, the advisory no longer matches, or
+   * OSV withdrew it. This is what makes "resolved" a reachable status and
+   * keeps the board truthful against the repo's current state instead of
+   * accumulating permanently-open missions for problems that may already
+   * be gone.
+   *
+   * Deliberate edges:
+   * - "dismissed" rows keep their human decision; "resolved" rows stay
+   *   resolved (idempotent). Only open/claimed are touched.
+   * - claimed_by/claimed_at survive on auto-resolved rows as history.
+   * - Zero candidates (e.g. every vulnerability fixed since last run)
+   *   resolves everything open/claimed for this repo.
+   */
+  private async resolveStaleMissions(
+    tx: DbOrTx,
+    repoId: string,
+    processedMissionIds: string[],
+  ): Promise<number> {
+    const conditions = [
+      eq(missions.repoId, repoId),
+      inArray(missions.status, ["open", "claimed"] as const),
+    ];
+    // notInArray with an empty list would be invalid SQL — but an empty
+    // processed set means there are no candidates at all, so the exclusion
+    // simply doesn't apply: every open/claimed mission of the repo resolves.
+    if (processedMissionIds.length > 0) {
+      conditions.push(notInArray(missions.id, processedMissionIds));
+    }
+
+    const resolvedRows = await tx
+      .update(missions)
+      .set({
+        status: "resolved",
+        resolvedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(and(...conditions))
+      .returning({ id: missions.id });
+
+    return resolvedRows.length;
   }
 
   private async insertMission(

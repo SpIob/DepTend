@@ -16,9 +16,9 @@ function extractErrorMessage(data: unknown): string | null {
 
 /**
  * Save/unsave a repo for quicker access (ADR 0027) — same self-contained
- * fetch + request-state shape as ClaimAction (mission-card.tsx). Local
+ * fetch + request-state shape as MissionActions (mission-card.tsx). Local
  * optimistic-ish state (set only after a confirmed 2xx, same as
- * ClaimAction) rather than a callback into a parent list, since — unlike
+ * MissionActions) rather than a callback into a parent list, since — unlike
  * a mission's claim status — nothing else on the page needs to react to
  * one card's bookmark state changing.
  */
