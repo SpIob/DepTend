@@ -12,6 +12,23 @@ All notable changes to DepTend, condensed to one entry per phase.
 
 ## [Unreleased]
 
+**Security hardening pass II: origin validation, nonce CSP (staged), URL-encoding discipline (ADR 0037)**
+
+### Added
+
+- Origin validation on all eight mutating API routes: a shared `isSameOrigin()` gate rejects cross-origin POSTs with 403 before any other check — defense-in-depth on top of next-auth's `SameSite=Lax` cookie default, which had been the sole CSRF layer. Absent `Origin` stays allowed (non-browser clients can't be CSRF victims); hosts are compared scheme-insensitively via `x-forwarded-host`/`Host`. All eight colocated route suites now send same-origin Origin+Host and pin the cross-origin rejection.
+- Nonce-based CSP middleware (`app/src/middleware.ts`), shipping **report-only** by design: per-request nonce, policy stamped onto App Router bootstrap scripts via request headers, emitted as `Content-Security-Policy-Report-Only` until the deployed site runs it clean — flipping `CSP_ENFORCED = true` is the entire rollout step. Replaces next.config's old `'unsafe-inline'` report-only policy; dev keeps `'unsafe-eval' 'unsafe-inline'`.
+- `fetchWithRetry` gains `maxRetryAfterMs`: caps how long a server's `Retry-After` may delay the single retry. The submission pre-check passes 2 s, so a 403/429 carrying `Retry-After: 120` can no longer stall the submitter's POST for ~2 minutes against the pre-check's stated 10-second posture. Background ingestion keeps the unchanged 120 s default.
+- `buildRawContentBase()` in core (`github-meta.ts`): percent-encodes each segment of raw.githubusercontent.com base URLs. A repo-controlled branch ref containing `%` (legal in git refnames) previously reached raw.githubusercontent.com unencoded and was decoded server-side into path structure — e.g. `x%2F..%2Fother` → `x/../other` — potentially attributing another path's manifest to the submitting repo. Used by both `manifest-check.ts` and `scripts/ingest.js`.
+
+### Changed
+
+- Go module-path validation rejects bare-dot segments (`.`/`..`): they were interpolated into proxy.golang.org URLs where path normalization silently resolved them to a different module than the go.mod line named. Domain-style single dots (`example.com`) unaffected.
+- GitHub profile-page links in mission cards and the repo page encode owner/name segments (defense-in-depth; values are charset-validated at submission).
+- Deprecated `X-XSS-Protection` header dropped; ADR 0036 (dependency hygiene) flipped Proposed → Accepted after live verification.
+
+---
+
 **Data-lifecycle pass: re-ingestion, dependency pruning, reachable mission outcomes**
 
 ### Added
@@ -28,6 +45,10 @@ All notable changes to DepTend, condensed to one entry per phase.
 ### Changed
 
 - `docs/data-model/README.md`: repos status lifecycle (staleness re-pick, terminal `skipped`), dependencies reconciliation note, and the missions status-lifecycle paragraph added in the same pass as the behavior.
+
+### Security
+
+- Security hygiene pass (ADR 0036): production dependency vulnerabilities reduced from 20 findings (1 critical / 9 high) to 1 known false positive — `next-auth` ≥4.24.15 and `next` ≥15.5.x via lockfile update, plus three pnpm overrides (`postcss`, `nanoid`, `sharp`) past the floors `next` itself pins. New weekly Dependabot config (npm + github-actions) and an advisory `pnpm audit --prod` step in CI. Both workflows now run least-privilege with explicit `permissions: contents: read`.
 
 **Correctness pass: submission identity, board navigation races, dispatch visibility**
 

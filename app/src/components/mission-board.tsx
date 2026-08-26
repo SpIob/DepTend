@@ -301,6 +301,22 @@ export function MissionBoard({
     selectedEfforts.size > 0 ||
     searchQuery.trim() !== "";
 
+  // A per-repo board whose missions all share one ecosystem gets nothing
+  // out of the ecosystem chip row — hide it unless a URL-supplied ecosystem
+  // selection is active (which must stay visible or it becomes an
+  // invisible filter).
+  const availableEcosystems = useMemo(() => {
+    const set = new Set<Ecosystem>();
+    for (const mission of missions) {
+      const ecosystem = ecosystemOf(mission);
+      if (ecosystem !== null) {
+        set.add(ecosystem);
+      }
+    }
+    return set;
+  }, [missions]);
+  const hideEcosystemAxis = selectedEcosystems.size === 0 && availableEcosystems.size <= 1;
+
   return (
     <div className="flex flex-col gap-4">
       <div className="bg-bg border-border sticky top-0 z-10 flex flex-col gap-3 border-b py-3">
@@ -315,6 +331,7 @@ export function MissionBoard({
           selectedEfforts={selectedEfforts}
           onToggleEffort={toggleEffort}
           effortCounts={effortCounts}
+          hideEcosystemAxis={hideEcosystemAxis}
           onClear={clearFilters}
         />
         <div
@@ -378,13 +395,18 @@ export function MissionBoard({
           ))}
         </div>
       ) : (
-        <ul className="flex flex-col gap-3">
-          {sorted.map((mission) => (
-            <li key={mission.id}>
-              <MissionCard mission={mission} onStatusChange={handleStatusChange} />
-            </li>
-          ))}
-        </ul>
+        <>
+          {/* Cards are h3 (mission-card.tsx); this gives the flat list its
+              h2 parent so the page's heading outline stays h1 → h2 → h3. */}
+          <h2 className="sr-only">Missions</h2>
+          <ul className="flex flex-col gap-3">
+            {sorted.map((mission) => (
+              <li key={mission.id}>
+                <MissionCard mission={mission} onStatusChange={handleStatusChange} />
+              </li>
+            ))}
+          </ul>
+        </>
       )}
     </div>
   );

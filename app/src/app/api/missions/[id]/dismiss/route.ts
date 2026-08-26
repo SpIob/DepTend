@@ -5,11 +5,16 @@ import { authOptions } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { dismissMission, isValidMissionId } from "@deptend/core/db/missions.js";
 import { checkMissionActionLimit } from "@/lib/rate-limit";
+import { isSameOrigin } from "@/lib/request-origin";
 
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ): Promise<Response> {
+  if (!isSameOrigin(request)) {
+    return NextResponse.json({ error: "Cross-origin request rejected." }, { status: 403 });
+  }
+
   const session = await getServerSession(authOptions);
   const login = session?.user?.login;
   if (login === undefined) {

@@ -1,30 +1,12 @@
 import type { Ecosystem, EffortLabel, Severity } from "@deptend/core/db/schema.js";
-
-const SEVERITY_OPTIONS: readonly Severity[] = ["critical", "high", "medium", "low", "unknown"];
-const SEVERITY_LABELS: Record<Severity, string> = {
-  critical: "Critical",
-  high: "High",
-  medium: "Medium",
-  low: "Low",
-  unknown: "Unknown",
-};
-
-const EFFORT_OPTIONS: readonly EffortLabel[] = ["trivial", "low", "medium", "high"];
-const EFFORT_LABELS: Record<EffortLabel, string> = {
-  trivial: "Trivial",
-  low: "Low",
-  medium: "Medium",
-  high: "High",
-};
-
-// Static, like SEVERITY_OPTIONS/EFFORT_OPTIONS above — adding a fourth
-// ecosystem later means adding it here, same as it would for severity/effort.
-const ECOSYSTEM_OPTIONS: readonly Ecosystem[] = ["npm", "pypi", "go"];
-const ECOSYSTEM_LABELS: Record<Ecosystem, string> = {
-  npm: "npm",
-  pypi: "PyPI",
-  go: "Go",
-};
+import {
+  ECOSYSTEM_LABELS,
+  ECOSYSTEM_OPTIONS,
+  EFFORT_LABELS,
+  EFFORT_OPTIONS,
+  SEVERITY_LABELS,
+  SEVERITY_OPTIONS,
+} from "@/lib/mission-filter-options";
 
 function Chip({
   label,
@@ -64,6 +46,7 @@ export function MissionFilterBar({
   selectedEfforts,
   onToggleEffort,
   effortCounts,
+  hideEcosystemAxis = false,
   onClear,
 }: {
   selectedSeverities: ReadonlySet<Severity>;
@@ -75,6 +58,13 @@ export function MissionFilterBar({
   selectedEfforts: ReadonlySet<EffortLabel>;
   onToggleEffort: (effort: EffortLabel) => void;
   effortCounts: Partial<Record<EffortLabel, number>>;
+  /**
+   * Hides the ecosystem chip row — for boards where the axis carries no
+   * information (a per-repo board whose missions are all one ecosystem).
+   * Forced off while an ecosystem filter is active, so a URL-supplied
+   * selection can never become an invisible filter.
+   */
+  hideEcosystemAxis?: boolean;
   onClear: () => void;
 }): React.JSX.Element {
   const hasFilters =
@@ -98,22 +88,24 @@ export function MissionFilterBar({
           />
         ))}
       </div>
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-ink-muted w-20 shrink-0 font-mono text-xs uppercase tracking-wide">
-          Ecosystem
-        </span>
-        {ECOSYSTEM_OPTIONS.map((ecosystem) => (
-          <Chip
-            key={ecosystem}
-            label={ECOSYSTEM_LABELS[ecosystem]}
-            count={ecosystemCounts[ecosystem]}
-            active={selectedEcosystems.has(ecosystem)}
-            onToggle={() => {
-              onToggleEcosystem(ecosystem);
-            }}
-          />
-        ))}
-      </div>
+      {!hideEcosystemAxis && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-ink-muted w-20 shrink-0 font-mono text-xs uppercase tracking-wide">
+            Ecosystem
+          </span>
+          {ECOSYSTEM_OPTIONS.map((ecosystem) => (
+            <Chip
+              key={ecosystem}
+              label={ECOSYSTEM_LABELS[ecosystem]}
+              count={ecosystemCounts[ecosystem]}
+              active={selectedEcosystems.has(ecosystem)}
+              onToggle={() => {
+                onToggleEcosystem(ecosystem);
+              }}
+            />
+          ))}
+        </div>
+      )}
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-ink-muted w-20 shrink-0 font-mono text-xs uppercase tracking-wide">
           Effort

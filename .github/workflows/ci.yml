@@ -14,6 +14,8 @@ jobs:
   ci:
     name: Lint · Typecheck · Test
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout
@@ -54,3 +56,11 @@ jobs:
 
       - name: Test
         run: pnpm test
+
+      # Advisory signal, not a gate — fails loudly in the log without
+      # breaking solo-dev CI on every future advisory. Known false
+      # positive: GHSA-6cpc-mj5c-m9rq matches our own private package
+      # literally named "cli", so expect 1 low finding at all times.
+      - name: Dependency audit (advisory)
+        continue-on-error: true
+        run: pnpm audit --prod

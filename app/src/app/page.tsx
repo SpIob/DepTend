@@ -67,12 +67,12 @@ export default async function RepoDirectoryPage(): Promise<React.JSX.Element> {
   const sorted = [...repos].sort(compareRepos);
 
   return (
-    <main className="mx-auto flex max-w-6xl flex-col gap-8 px-4 py-8 sm:px-6 sm:py-12">
+    <main id="main" className="mx-auto flex max-w-6xl flex-col gap-8 px-4 py-8 sm:px-6 sm:py-12">
       <header className="border-border flex flex-col gap-5 border-b pb-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2">
             <span className="bg-accent inline-block h-2.5 w-2.5" aria-hidden="true" />
-            <h1 className="text-ink font-mono text-xl font-bold tracking-tight">deptend.dev</h1>
+            <h1 className="text-ink font-mono text-xl font-bold tracking-tight">DepTend</h1>
           </div>
           <div className="text-ink-muted flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-xs">
             <span>

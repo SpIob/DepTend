@@ -31,9 +31,18 @@ function signedIn(login = `user-${crypto.randomUUID()}`): string {
 }
 
 function post(id: string): Promise<Response> {
-  return POST(new Request("http://localhost/api/repos/x/bookmark", { method: "POST" }), {
-    params: Promise.resolve({ id }),
-  });
+  return POST(
+    new Request("http://localhost/api/repos/x/bookmark", {
+      method: "POST",
+      // Same-origin Origin+Host pair on every request — exercises the
+      // route's origin gate's positive path; its negative path has its own
+      // case below.
+      headers: { origin: "http://localhost", host: "localhost" },
+    }),
+    {
+      params: Promise.resolve({ id }),
+    },
+  );
 }
 
 beforeEach(() => {
@@ -41,6 +50,19 @@ beforeEach(() => {
 });
 
 describe("POST /api/repos/[id]/bookmark", () => {
+  it("returns 403 for a cross-origin POST before any other gate", async () => {
+    signedIn();
+    const response = await POST(
+      new Request("http://localhost/api/repos/x/bookmark", {
+        method: "POST",
+        headers: { origin: "https://evil.example", host: "localhost" },
+      }),
+      { params: Promise.resolve({ id: VALID_ID }) },
+    );
+    expect(response.status).toBe(403);
+    expect(bookmarkRepo).not.toHaveBeenCalled();
+  });
+
   it("returns 401 with no session", async () => {
     getServerSession.mockResolvedValue(null);
     const response = await post(VALID_ID);

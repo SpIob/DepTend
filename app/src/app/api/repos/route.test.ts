@@ -52,7 +52,9 @@ function signedIn(login = `user-${crypto.randomUUID()}`): string {
 function postJson(body: unknown): Request {
   return new Request("http://localhost/api/repos", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    // Same-origin Origin+Host pair on every request — exercises the route's
+    // origin gate's positive path; its negative path has its own case below.
+    headers: { "content-type": "application/json", origin: "http://localhost", host: "localhost" },
     body: typeof body === "string" ? body : JSON.stringify(body),
   });
 }
@@ -100,6 +102,24 @@ afterEach(() => {
 });
 
 describe("POST /api/repos", () => {
+  it("returns 403 for a cross-origin POST before any other gate", async () => {
+    signedIn();
+    const response = await POST(
+      new Request("http://localhost/api/repos", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          origin: "https://evil.example",
+          host: "localhost",
+        },
+        body: JSON.stringify({ githubUrl: "https://github.com/a/b" }),
+      }),
+    );
+    expect(response.status).toBe(403);
+    expect(checkSubmittableRepo).not.toHaveBeenCalled();
+    expect(submitRepo).not.toHaveBeenCalled();
+  });
+
   it("returns 401 with no session", async () => {
     getServerSession.mockResolvedValue(null);
     const response = await POST(postJson({ githubUrl: "https://github.com/a/b" }));

@@ -6,7 +6,7 @@
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fetchGitHubRepoMeta, GitHubMetaError } from "./github-meta.js";
+import { buildRawContentBase, fetchGitHubRepoMeta, GitHubMetaError } from "./github-meta.js";
 
 const OWNER = "owner";
 const NAME = "repo";
@@ -218,6 +218,41 @@ describe("fetchGitHubRepoMeta", () => {
 
     await expect(fetchGitHubRepoMeta(OWNER, NAME, null, NO_DELAY)).rejects.toThrow(
       /Network error calling GitHub API for owner\/repo.*ECONNRESET/s,
+    );
+  });
+});
+
+describe("buildRawContentBase", () => {
+  it("builds the plain URL for ordinary owner/name/branch values", () => {
+    expect(buildRawContentBase("octocat", "hello-world", "main")).toBe(
+      "https://raw.githubusercontent.com/octocat/hello-world/main",
+    );
+  });
+
+  it("encodes each segment of a slash-containing branch ref, not the whole ref", () => {
+    // Feature branches legitimately contain slashes — the path structure
+    // must survive, only the segments get encoded.
+    expect(buildRawContentBase("owner", "repo", "feature/foo-bar")).toBe(
+      "https://raw.githubusercontent.com/owner/repo/feature/foo-bar",
+    );
+  });
+
+  it("percent-encodes a literal % in a branch ref so it survives as itself", () => {
+    // Git permits '%' in refnames; raw.githubusercontent.com decodes path
+    // segments server-side. Unencoded, `x%2F..%2Fother` would be
+    // re-interpreted there as `x/../other` — a different file than the one
+    // the repo's own settings named (ADR 0037). Encoded, the ref is fetched
+    // literally or simply misses — never redirected.
+    expect(buildRawContentBase("owner", "repo", "x%2F..%2Fother")).toBe(
+      "https://raw.githubusercontent.com/owner/repo/x%252F..%252Fother",
+    );
+  });
+
+  it("encodes spaces and other characters git allows in refnames", () => {
+    // Git forbids most of these in practice at push time but permits them in
+    // loose-ref files; encoding is cheap regardless.
+    expect(buildRawContentBase("owner", "repo", "a b~c")).toBe(
+      "https://raw.githubusercontent.com/owner/repo/a%20b~c",
     );
   });
 });

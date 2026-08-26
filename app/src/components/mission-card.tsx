@@ -126,9 +126,7 @@ function MissionActions({
           </button>
         )}
         <div role="alert">
-          {errorMessage !== null && (
-            <p className="text-severity-critical text-xs">{errorMessage}</p>
-          )}
+          {errorMessage !== null && <p className="text-status-error text-xs">{errorMessage}</p>}
         </div>
       </div>
     );
@@ -148,9 +146,7 @@ function MissionActions({
           {pending ? "Releasing…" : "Unclaim"}
         </button>
         <div role="alert">
-          {errorMessage !== null && (
-            <p className="text-severity-critical text-xs">{errorMessage}</p>
-          )}
+          {errorMessage !== null && <p className="text-status-error text-xs">{errorMessage}</p>}
         </div>
       </div>
     );
@@ -205,7 +201,7 @@ function MissionActions({
         </button>
       </div>
       <div role="alert">
-        {errorMessage !== null && <p className="text-severity-critical text-xs">{errorMessage}</p>}
+        {errorMessage !== null && <p className="text-status-error text-xs">{errorMessage}</p>}
       </div>
     </div>
   );
@@ -266,7 +262,7 @@ export function MissionCard({
 
           <span className="flex min-w-0 flex-col gap-0.5 sm:flex-1">
             <span className="flex min-w-0 items-baseline gap-2">
-              <h2 className="text-ink min-w-0 truncate text-sm font-semibold">{mission.title}</h2>
+              <h3 className="text-ink min-w-0 truncate text-sm font-semibold">{mission.title}</h3>
               {advisory?.fixedVersion != null && (
                 <FixedVersionTag version={advisory.fixedVersion} />
               )}
@@ -329,7 +325,7 @@ export function MissionCard({
             </span>
             <span aria-hidden="true">·</span>
             <a
-              href={`https://github.com/${repo.owner}/${repo.name}`}
+              href={`https://github.com/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.name)}`}
               className="hover:text-accent underline decoration-dotted underline-offset-2"
             >
               {repo.owner}/{repo.name}

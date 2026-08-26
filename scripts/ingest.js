@@ -82,6 +82,7 @@ import { GoRegistryFetcher } from "../packages/core/dist/ingestor/go-registry.js
 import { IngestionWriter } from "../packages/core/dist/ingestor/writer.js";
 import { MissionWriter } from "../packages/core/dist/scorer/writer.js";
 import {
+  buildRawContentBase,
   fetchGitHubRepoMeta,
   GitHubMetaError,
 } from "../packages/core/dist/ingestor/github-meta.js";
@@ -145,6 +146,13 @@ async function main() {
   if (args.repoUrl) {
     // --repo-url: convenience for local testing — doesn't require the repo
     // to already be in the database.
+    //
+    // SECURITY NOTE (ADR 0037): this path bypasses the NEXT_PUBLIC_MAX_REPOS
+    // repo cap — resolveByUrl() returns a stub for ANY GitHub URL and the
+    // writer upserts a brand-new row for it. That is safe only because this
+    // flag requires shell access + DATABASE_URL (an operator action) and is
+    // deliberately NOT exposed as a workflow_dispatch input. Do not wire
+    // this flag to any untrusted trigger without adding cap enforcement.
     targetRepos = await resolveByUrl(db, args.repoUrl);
   } else if (args.repoId) {
     // --repo-id: process one specific repo by UUID.
@@ -271,8 +279,10 @@ async function ingestRepo(
       submittedBy: repo.submittedBy ?? null,
     };
 
-    // 2. Build the raw content base URL for the ingestors
-    const rawBase = `https://raw.githubusercontent.com/${owner}/${name}/${repoInput.defaultBranch}`;
+    // 2. Build the raw content base URL for the ingestors — branch is
+    // repo-controlled and percent-encoded per segment so a crafted refname
+    // can't redirect the probe's path (ADR 0037).
+    const rawBase = buildRawContentBase(owner, name, repoInput.defaultBranch);
 
     // 3. Detect ecosystem + parse dependencies. Ordered probing (ADR
     // 0022, extended in ADR 0024): npm first, then PyPI, then Go.

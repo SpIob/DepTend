@@ -5,11 +5,16 @@ import { getDb } from "@/lib/db";
 import { unbookmarkRepo } from "@deptend/core/db/bookmarks.js";
 import { isValidUuid } from "@deptend/core/db/validation.js";
 import { checkMissionActionLimit } from "@/lib/rate-limit";
+import { isSameOrigin } from "@/lib/request-origin";
 
 export async function POST(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> },
 ): Promise<Response> {
+  if (!isSameOrigin(request)) {
+    return NextResponse.json({ error: "Cross-origin request rejected." }, { status: 403 });
+  }
+
   const session = await getServerSession(authOptions);
   const login = session?.user?.login;
   if (login === undefined) {

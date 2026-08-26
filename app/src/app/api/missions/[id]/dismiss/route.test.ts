@@ -41,12 +41,15 @@ function post(id: string, body?: unknown): Promise<Response> {
   return POST(
     new Request("http://localhost/api/missions/x/dismiss", {
       method: "POST",
-      ...(body !== undefined
-        ? {
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify(body),
-          }
-        : {}),
+      // Same-origin Origin+Host pair on every request — exercises the
+      // route's origin gate's positive path; its negative path has its own
+      // case below.
+      headers: {
+        origin: "http://localhost",
+        host: "localhost",
+        ...(body !== undefined ? { "content-type": "application/json" } : {}),
+      },
+      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
     }),
     { params: Promise.resolve({ id }) },
   );
@@ -57,6 +60,19 @@ beforeEach(() => {
 });
 
 describe("POST /api/missions/[id]/dismiss", () => {
+  it("returns 403 for a cross-origin POST before any other gate", async () => {
+    signedIn();
+    const response = await POST(
+      new Request("http://localhost/api/missions/x/dismiss", {
+        method: "POST",
+        headers: { origin: "https://evil.example", host: "localhost" },
+      }),
+      { params: Promise.resolve({ id: VALID_ID }) },
+    );
+    expect(response.status).toBe(403);
+    expect(dismissMission).not.toHaveBeenCalled();
+  });
+
   it("returns 401 with no session", async () => {
     getServerSession.mockResolvedValue(null);
     const response = await post(VALID_ID);

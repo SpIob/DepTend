@@ -32,7 +32,7 @@ export function MissionSearchInput({
         onChange={(event) => {
           onChange(event.target.value);
         }}
-        placeholder="Search by package, repo, or advisory id"
+        placeholder="Search package, repo, or advisory"
         aria-label="Search missions"
         className="border-border bg-surface text-ink placeholder:text-ink-muted focus-visible:outline-accent w-full rounded-md border py-1.5 pl-8 pr-8 font-mono text-sm"
       />

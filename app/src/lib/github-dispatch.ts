@@ -1,5 +1,5 @@
 /**
- * Triggers the ingest.yml workflow_dispatch event on deptend.dev's own
+ * Triggers the ingest.yml workflow_dispatch event on DepTend's own
  * GitHub repo (not the submitted target repo) so a freshly submitted repo
  * doesn't have to wait for the next 04:00 UTC cron run.
  *
@@ -7,7 +7,7 @@
  * is the auto-injected Actions token (only valid inside a workflow run,
  * not usable from Vercel), so this is a separate, new secret:
  * GH_DISPATCH_TOKEN. GH_REPO identifies which repo to dispatch against
- * ("owner/name" — deptend.dev's own repo, not configurable per-request).
+ * ("owner/name" — DepTend's own repo, not configurable per-request).
  *
  * Best-effort: if this fails, the repo row is still created and the daily
  * cron will pick it up regardless — see submitRepo() in

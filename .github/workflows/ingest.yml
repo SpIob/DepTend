@@ -28,6 +28,11 @@ concurrency:
   group: ingest
   cancel-in-progress: false
 
+# Least privilege — checkout + authenticated reads of public repos via
+# github.token are all the job needs (no writes to repo state).
+permissions:
+  contents: read
+
 jobs:
   ingest:
     name: Run ingestion job

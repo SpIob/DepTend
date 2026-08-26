@@ -10,7 +10,7 @@ export default function Loading(): React.JSX.Element {
         </div>
         <div className="bg-surface h-10 w-full max-w-xl animate-pulse rounded-md" />
       </div>
-      <ul className="grid grid-cols-1 gap-4 md:grid-cols-2">
+      <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {[0, 1, 2, 3].map((i) => (
           <li key={i} className="border-border bg-surface h-36 animate-pulse rounded-md border" />
         ))}

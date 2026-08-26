@@ -31,7 +31,12 @@
  * 0025), so this can't be hammered independently of that.
  */
 
-import { fetchGitHubRepoMeta, GitHubMetaError, type GitHubRepoMeta } from "./github-meta.js";
+import {
+  buildRawContentBase,
+  fetchGitHubRepoMeta,
+  GitHubMetaError,
+  type GitHubRepoMeta,
+} from "./github-meta.js";
 import { detectEcosystem } from "./detect.js";
 import { NpmIngestor } from "./npm.js";
 import { PyPIIngestor } from "./pypi.js";
@@ -51,8 +56,21 @@ export type ManifestCheckResult =
  * user-facing POST request, so a retry backoff or hung socket must not
  * stall it the way a 30 s default would. One quick retry, ten-second
  * deadline, then the route's existing 404/503 mapping takes over.
+ *
+ * maxRetryAfterMs matters as much as the deadline here: without it, a 403/
+ * 429 carrying `Retry-After: 120` (the shared unauthenticated GitHub
+ * budget's signature) would override the intent above and sleep ~2 minutes
+ * inside the submitter's request — fetch-retry.ts honors server Retry-After
+ * up to its own cap unless told otherwise (ADR 0037). Capped at the same
+ * value as retryDelayMs: if the window is genuinely longer than that, the
+ * retry fails fast and the route's 503 "try again later" is the honest
+ * answer anyway.
  */
-const REQUEST_CONTEXT_TRANSPORT = { retryDelayMs: 2_000, timeoutMs: 10_000 } as const;
+const REQUEST_CONTEXT_TRANSPORT = {
+  retryDelayMs: 2_000,
+  timeoutMs: 10_000,
+  maxRetryAfterMs: 2_000,
+} as const;
 
 /**
  * @param token - passed straight through to fetchGitHubRepoMeta; null runs
@@ -85,7 +103,9 @@ export async function checkSubmittableRepo(
     return { ok: false, reason: "verification_failed", message };
   }
 
-  const rawBase = `https://raw.githubusercontent.com/${owner}/${name}/${meta.default_branch}`;
+  // Branch is repo-controlled and git permits `%` in refnames — encoded per
+  // segment so a crafted refname can't redirect the probe's path (ADR 0037).
+  const rawBase = buildRawContentBase(owner, name, meta.default_branch);
   const result = await detectEcosystem(
     [
       new NpmIngestor(REQUEST_CONTEXT_TRANSPORT),

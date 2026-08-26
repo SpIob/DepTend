@@ -7,6 +7,7 @@ import { getRepoByOwnerAndName, parseGithubUrl, submitRepo } from "@deptend/core
 import { checkSubmittableRepo } from "@deptend/core/ingestor/manifest-check.js";
 import { triggerIngestion } from "@/lib/github-dispatch";
 import { checkRepoSubmissionLimit } from "@/lib/rate-limit";
+import { isSameOrigin } from "@/lib/request-origin";
 
 interface SubmitBody {
   githubUrl?: unknown;
@@ -17,6 +18,10 @@ function isSubmitBody(value: unknown): value is SubmitBody {
 }
 
 export async function POST(request: Request): Promise<Response> {
+  if (!isSameOrigin(request)) {
+    return NextResponse.json({ error: "Cross-origin request rejected." }, { status: 403 });
+  }
+
   const session = await getServerSession(authOptions);
   const login = session?.user?.login;
   if (login === undefined) {
@@ -141,7 +146,7 @@ export async function POST(request: Request): Promise<Response> {
 
   if (result.outcome === "cap_reached") {
     return NextResponse.json(
-      { error: `deptend.dev indexes a maximum of ${maxRepos.toString()} repos during MVP.` },
+      { error: `DepTend indexes a maximum of ${maxRepos.toString()} repos during MVP.` },
       { status: 409 },
     );
   }

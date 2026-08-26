@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import {
   getBoardMissionsPage,
@@ -20,6 +21,10 @@ function firstValue(value: string | string[] | undefined): string | undefined {
 
 // Live data on every request, same reasoning as the repo directory (page.tsx).
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = {
+  title: "All missions",
+};
 
 function EmptyState(): React.JSX.Element {
   return (
@@ -91,15 +96,13 @@ export default async function AllMissionsPage({
     query.q.trim() !== "";
 
   return (
-    <main className="mx-auto flex max-w-3xl flex-col gap-8 px-4 py-8 sm:px-6 sm:py-12">
+    <main id="main" className="mx-auto flex max-w-3xl flex-col gap-8 px-4 py-8 sm:px-6 sm:py-12">
       <header className="border-border flex flex-col gap-5 border-b pb-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex min-w-0 items-center gap-3">
             <Link href="/" className="flex items-center gap-2">
               <span className="bg-accent inline-block h-2.5 w-2.5" aria-hidden="true" />
-              <span className="text-ink font-mono text-xl font-bold tracking-tight">
-                deptend.dev
-              </span>
+              <span className="text-ink font-mono text-xl font-bold tracking-tight">DepTend</span>
             </Link>
             <span className="text-border" aria-hidden="true">
               /

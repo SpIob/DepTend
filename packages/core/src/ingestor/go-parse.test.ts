@@ -202,6 +202,24 @@ require (
       expect(result.dependencies).toEqual([]);
       expect(result.warnings.some((w) => w.includes("invalid module path"))).toBe(true);
     });
+
+    it("skips an entry with a dot-segment path traversal, with a warning", () => {
+      // Dot segments would be normalized away by the proxy URL's parser,
+      // silently resolving to a different module than the line names
+      // (ADR 0037) — rejected rather than resolved.
+      const goMod = `module example.com/x\n\ngo 1.22\n\nrequire (\n\tevil.com/x/../../../real/module v1.0.0\n)\n`;
+      const result = parse(goMod);
+      expect(result.dependencies).toEqual([]);
+      expect(result.warnings.some((w) => w.includes("invalid module path"))).toBe(true);
+    });
+
+    it("still accepts single dots inside segments (ordinary domain-style paths)", () => {
+      const goMod = `module example.com/x\n\ngo 1.22\n\nrequire (\n\tgithub.com/foo.bar/baz v1.0.0\n)\n`;
+      const result = parse(goMod);
+      expect(result.dependencies).toEqual([
+        { package_name: "github.com/foo.bar/baz", version_spec: "v1.0.0", dep_type: "production" },
+      ]);
+    });
   });
 
   describe("non-require directives are inert", () => {

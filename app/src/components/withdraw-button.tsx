@@ -97,7 +97,7 @@ export function WithdrawButton({
             type="button"
             disabled={pending}
             onClick={() => void withdraw()}
-            className="text-severity-critical font-mono text-xs underline decoration-dotted underline-offset-2 disabled:opacity-50"
+            className="text-status-error font-mono text-xs underline decoration-dotted underline-offset-2 disabled:opacity-50"
           >
             {pending ? "Removing…" : "Yes, remove it"}
           </button>
@@ -124,7 +124,7 @@ export function WithdrawButton({
       )}
       <div role="status" aria-live="polite">
         {errorMessage !== null && (
-          <p className="text-severity-critical text-[10px] leading-tight">{errorMessage}</p>
+          <p className="text-status-error text-[10px] leading-tight">{errorMessage}</p>
         )}
       </div>
     </div>

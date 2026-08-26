@@ -62,6 +62,33 @@ export class GitHubMetaError extends Error {
 }
 
 /**
+ * Builds the raw.githubusercontent.com base URL for a repo, percent-encoding
+ * every path segment.
+ *
+ * Owner and repo name are charset-validated long before they reach here
+ * (parseGithubUrl's GITHUB_URL_PATTERN), so their encoding is a no-op
+ * formality — the segment that actually needs it is the branch ref. Git
+ * permits `%` inside refnames (unlike `..`, `~`, `^` etc.), and
+ * raw.githubusercontent.com URL-decodes each path segment server-side, so
+ * an unencoded branch like `x%2F..%2Fother` would be silently re-interpreted
+ * as `x/../other` on their end — pointing the manifest probe at a different
+ * path than the one the repo's own settings named. Encoding here means a
+ * literal-percent refname survives as itself and nothing attacker-chosen in
+ * a repo's default_branch setting can change which files get fetched.
+ *
+ * Branch refs may legitimately contain `/` (feature branches), so encoding
+ * is per-slash-separated-segment, never on the whole string.
+ */
+export function buildRawContentBase(owner: string, name: string, branch: string): string {
+  const encodeSegments = (value: string): string =>
+    value
+      .split("/")
+      .map((segment) => encodeURIComponent(segment))
+      .join("/");
+  return `https://raw.githubusercontent.com/${encodeSegments(owner)}/${encodeSegments(name)}/${encodeSegments(branch)}`;
+}
+
+/**
  * Fetch repository metadata from the GitHub REST API.
  *
  * Routed through the shared transient-failure retry policy (one retry,

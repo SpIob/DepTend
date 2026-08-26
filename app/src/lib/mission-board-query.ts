@@ -1,4 +1,5 @@
 import type { Ecosystem, EffortLabel, Severity } from "@deptend/core/db/schema.js";
+import { ECOSYSTEM_OPTIONS, EFFORT_OPTIONS, SEVERITY_OPTIONS } from "./mission-filter-options";
 
 // Deliberately NOT "use client" — page.tsx (a Server Component) calls
 // parseMissionBoardQuery() directly, and mission-board.tsx (a Client
@@ -7,16 +8,6 @@ import type { Ecosystem, EffortLabel, Severity } from "@deptend/core/db/schema.j
 // invoked as a plain function from server code. Keeping this parsing logic
 // in its own client-agnostic module lets both sides share one source of
 // truth without crossing that boundary.
-
-export const SEVERITY_VALUES: readonly Severity[] = [
-  "critical",
-  "high",
-  "medium",
-  "low",
-  "unknown",
-];
-export const ECOSYSTEM_VALUES: readonly Ecosystem[] = ["npm", "pypi", "go"];
-export const EFFORT_VALUES: readonly EffortLabel[] = ["trivial", "low", "medium", "high"];
 
 export type SortMode = "priority" | "quick-wins" | "newest";
 export const SORT_MODES: readonly SortMode[] = ["priority", "quick-wins", "newest"];
@@ -95,9 +86,9 @@ export function parseMissionBoardQuery(params: {
 }): MissionBoardQuery {
   return {
     q: params.q ?? "",
-    severity: parseSetParam(params.severity ?? null, SEVERITY_VALUES),
-    ecosystem: parseSetParam(params.ecosystem ?? null, ECOSYSTEM_VALUES),
-    effort: parseSetParam(params.effort ?? null, EFFORT_VALUES),
+    severity: parseSetParam(params.severity ?? null, SEVERITY_OPTIONS),
+    ecosystem: parseSetParam(params.ecosystem ?? null, ECOSYSTEM_OPTIONS),
+    effort: parseSetParam(params.effort ?? null, EFFORT_OPTIONS),
     sort: parseSortParam(params.sort ?? null),
     group: params.group === "1",
     page: parsePageParam(params.page),

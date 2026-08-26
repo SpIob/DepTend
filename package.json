@@ -46,6 +46,13 @@
     ]
   },
   "packageManager": "pnpm@9.15.0",
+  "pnpm": {
+    "overrides": {
+      "postcss": "^8.5.23",
+      "nanoid": "^3.3.18",
+      "sharp": "^0.35.3"
+    }
+  },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",
     "@renovatebot/pep440": "^5.0.0",

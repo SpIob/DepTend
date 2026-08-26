@@ -28,6 +28,16 @@ const config: Config = {
           pypi: "#2F855A",
           go: "#0E7C86",
         },
+        // Form/request feedback — its own tokens, not the severity palette:
+        // "critical" means advisory severity on this site, and an error
+        // message shouldn't shift color if the severity scale is ever
+        // retuned. Red still reads as "error" (universal convention);
+        // success green is a deeper hue than ecosystem.pypi so the two
+        // greens don't read as related.
+        status: {
+          error: "#B3261E",
+          success: "#18794E",
+        },
       },
       fontFamily: {
         // Monospace-forward on purpose: this is a page about package names,

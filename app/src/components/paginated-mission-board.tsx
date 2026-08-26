@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import type { Ecosystem, EffortLabel, Severity } from "@deptend/core/db/schema.js";
 import type { BoardFacets } from "@deptend/core/db/queries.js";
 import type { MissionWithScore } from "@deptend/core";
 import {
@@ -14,8 +13,19 @@ import {
   type MissionBoardQueryState,
   type SortMode,
 } from "@/lib/mission-board-query";
+import {
+  ECOSYSTEM_LABELS,
+  ECOSYSTEM_OPTIONS,
+  EFFORT_LABELS,
+  EFFORT_OPTIONS,
+  SEVERITY_LABELS,
+  SEVERITY_OPTIONS,
+} from "@/lib/mission-filter-options";
 import { MissionCard, type MissionClaimPatch } from "./mission-card";
 import { MissionSearchInput } from "./mission-search";
+
+/** Milliseconds of search-input idle time before the debounced navigation fires. */
+const SEARCH_DEBOUNCE_MS = 300;
 
 /**
  * The board-wide /missions listing (ADR 0031). Filtering, searching,
@@ -36,31 +46,6 @@ import { MissionSearchInput } from "./mission-search";
  * shape (mission-board-query.ts), but deliberately not filtering logic —
  * one is bounded by a single repo's mission count, the other isn't.
  */
-
-const SEVERITY_OPTIONS: readonly Severity[] = ["critical", "high", "medium", "low", "unknown"];
-const SEVERITY_LABELS: Record<Severity, string> = {
-  critical: "Critical",
-  high: "High",
-  medium: "Medium",
-  low: "Low",
-  unknown: "Unknown",
-};
-const EFFORT_OPTIONS: readonly EffortLabel[] = ["trivial", "low", "medium", "high"];
-const EFFORT_LABELS: Record<EffortLabel, string> = {
-  trivial: "Trivial",
-  low: "Low",
-  medium: "Medium",
-  high: "High",
-};
-const ECOSYSTEM_OPTIONS: readonly Ecosystem[] = ["npm", "pypi", "go"];
-const ECOSYSTEM_LABELS: Record<Ecosystem, string> = {
-  npm: "npm",
-  pypi: "PyPI",
-  go: "Go",
-};
-
-/** Milliseconds of search-input idle time before the debounced navigation fires. */
-const SEARCH_DEBOUNCE_MS = 300;
 
 const CHIP_ACTIVE_CLASS = "border-accent bg-accent text-white";
 const CHIP_IDLE_CLASS = "border-border text-ink-muted hover:text-ink hover:border-ink-muted";
@@ -412,13 +397,18 @@ export function PaginatedMissionBoard({
           ))}
         </div>
       ) : (
-        <ul className="flex flex-col gap-3">
-          {missions.map((mission) => (
-            <li key={mission.id}>
-              <MissionCard mission={mission} onStatusChange={handleStatusChange} />
-            </li>
-          ))}
-        </ul>
+        <>
+          {/* Cards are h3 (mission-card.tsx); this gives the flat list its
+              h2 parent so the page's heading outline stays h1 → h2 → h3. */}
+          <h2 className="sr-only">Missions</h2>
+          <ul className="flex flex-col gap-3">
+            {missions.map((mission) => (
+              <li key={mission.id}>
+                <MissionCard mission={mission} onStatusChange={handleStatusChange} />
+              </li>
+            ))}
+          </ul>
+        </>
       )}
 
       {pageCount > 1 && (

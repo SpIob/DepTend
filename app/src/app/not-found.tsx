@@ -2,7 +2,7 @@ import Link from "next/link";
 
 export default function NotFound(): React.JSX.Element {
   return (
-    <main className="mx-auto flex max-w-3xl flex-col gap-6 px-4 py-16 sm:px-6 sm:py-24">
+    <main id="main" className="mx-auto flex max-w-3xl flex-col gap-6 px-4 py-16 sm:px-6 sm:py-24">
       <div className="border-border bg-surface rounded-md border p-8 text-center">
         <h1 className="text-ink font-mono text-lg font-bold">404 — not found</h1>
         <p className="text-ink-muted mx-auto mt-2 max-w-md text-sm leading-relaxed">

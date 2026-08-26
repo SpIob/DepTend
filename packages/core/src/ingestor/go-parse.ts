@@ -291,5 +291,12 @@ function isValidGoModulePath(path: string): boolean {
   // pattern); unescaping that quoted form is out of scope here, so such an
   // entry is treated as unparseable rather than silently mishandled.
   if (/["'`]/.test(path)) return false;
-  return /^[A-Za-z0-9][A-Za-z0-9\-._~/!]*$/.test(path);
+  if (!/^[A-Za-z0-9][A-Za-z0-9\-._~/!]*$/.test(path)) return false;
+  // Reject dot segments (`.` / `..`): the module path is interpolated into
+  // a proxy.golang.org URL path (go-registry.ts), and the URL parser
+  // normalizes dot segments away — so `evil/x/../../../foo` would silently
+  // resolve to a different module than the go.mod line named (ADR 0037).
+  // No legitimate module path contains a bare-dot segment; single dots
+  // inside a segment (example.com, lodash.com) are unaffected.
+  return path.split("/").every((segment) => segment !== "." && segment !== "..");
 }

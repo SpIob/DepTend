@@ -387,4 +387,56 @@ describe("fetchWithRetry", () => {
       expect(MAX_RETRY_AFTER_MS).toBe(120_000);
     });
   });
+
+  describe("maxRetryAfterMs", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("caps the honored Retry-After sleep at the caller's budget, not the server's", async () => {
+      // A 403 with Retry-After: 120 — the unauthenticated GitHub budget's
+      // signature. An interactive caller must not sleep two minutes inside
+      // its own request just because the header says so (ADR 0037).
+      fetchMock
+        .mockImplementationOnce(() => Promise.resolve(jsonResponse(403, { "retry-after": "120" })))
+        .mockImplementationOnce(() => Promise.resolve(jsonResponse(200)));
+
+      const pending = fetchWithRetry(URL, undefined, {
+        retryDelayMs: 30_000,
+        maxRetryAfterMs: 2_000,
+      });
+
+      // The capped wait (2 s), not the server's (120 s), elapses before the
+      // retry fires.
+      await vi.advanceTimersByTimeAsync(1_999);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1);
+      const result = await pending;
+
+      expect(result.status).toBe(200);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it("keeps the full MAX_RETRY_AFTER_MS window when no budget is given", async () => {
+      fetchMock
+        .mockImplementationOnce(() => Promise.resolve(jsonResponse(429, { "retry-after": "60" })))
+        .mockImplementationOnce(() => Promise.resolve(jsonResponse(200)));
+
+      const pending = fetchWithRetry(URL, undefined, {});
+
+      // Background ingestion's contract is unchanged: a 60 s Retry-After is
+      // honored in full when the caller hasn't opted into a tighter cap.
+      await vi.advanceTimersByTimeAsync(59_999);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1);
+      const result = await pending;
+
+      expect(result.status).toBe(200);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+  });
 });

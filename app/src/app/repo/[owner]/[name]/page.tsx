@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
+import type { Metadata } from "next";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import {
@@ -24,6 +25,17 @@ function firstValue(value: string | string[] | undefined): string | undefined {
 }
 
 export const dynamic = "force-dynamic";
+
+// Title from route params only — no DB read, so a not-yet-ingested or
+// mistyped repo still gets a correct browser-tab title on its 404.
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ owner: string; name: string }>;
+}): Promise<Metadata> {
+  const { owner, name } = await params;
+  return { title: `${owner}/${name}` };
+}
 
 function EmptyState({ note }: { note: string | null }): React.JSX.Element {
   return (
@@ -78,15 +90,13 @@ export default async function RepoPage({
   const statusNote = ingestionStatusNote(repo.ingestionStatus);
 
   return (
-    <main className="mx-auto flex max-w-3xl flex-col gap-8 px-4 py-8 sm:px-6 sm:py-12">
+    <main id="main" className="mx-auto flex max-w-3xl flex-col gap-8 px-4 py-8 sm:px-6 sm:py-12">
       <header className="border-border flex flex-col gap-5 border-b pb-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex min-w-0 items-center gap-3">
             <Link href="/" className="flex shrink-0 items-center gap-2">
               <span className="bg-accent inline-block h-2.5 w-2.5" aria-hidden="true" />
-              <span className="text-ink font-mono text-xl font-bold tracking-tight">
-                deptend.dev
-              </span>
+              <span className="text-ink font-mono text-xl font-bold tracking-tight">DepTend</span>
             </Link>
             <span className="text-border" aria-hidden="true">
               /
@@ -97,8 +107,15 @@ export default async function RepoPage({
             <BookmarkToggle repoId={repo.id} initialBookmarked={bookmarkedIds.has(repo.id)} />
           </div>
           <div className="text-ink-muted flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-xs">
+            <span>★ {repo.stars.toLocaleString()}</span>
+            {repo.lastIngestedAt !== null && (
+              <span>Ingested {repo.lastIngestedAt.toLocaleDateString()}</span>
+            )}
+            <span className="text-border" aria-hidden="true">
+              |
+            </span>
             <a
-              href={`https://github.com/${repo.owner}/${repo.name}`}
+              href={`https://github.com/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.name)}`}
               className="hover:text-ink underline decoration-dotted underline-offset-2"
             >
               View on GitHub

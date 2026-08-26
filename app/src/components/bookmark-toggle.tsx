@@ -88,7 +88,7 @@ export function BookmarkToggle({
       </button>
       <div role="status" aria-live="polite">
         {errorMessage !== null && (
-          <p className="text-severity-critical text-[10px] leading-tight">{errorMessage}</p>
+          <p className="text-status-error text-[10px] leading-tight">{errorMessage}</p>
         )}
       </div>
     </div>

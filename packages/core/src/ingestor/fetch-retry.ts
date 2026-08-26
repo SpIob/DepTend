@@ -47,6 +47,18 @@ export interface FetchRetryOptions {
    * can too).
    */
   timeoutMs?: number;
+  /**
+   * Cap on how long a server's Retry-After header may make this call sleep
+   * before its single retry. Default MAX_RETRY_AFTER_MS (120 s) — right for
+   * background ingestion, where waiting out a documented rate-limit window
+   * is cheaper than failing the whole run. Interactive callers (running
+   * inside a user-facing request) set this near their own retryDelayMs so a
+   * server shouting "wait 120 s" can't stall the request past usefulness —
+   * without it, the header cap silently overrides whatever deadline intent
+   * timeoutMs expresses (ADR 0037). The retry still happens after the
+   * capped wait; only the sleep is bounded.
+   */
+  maxRetryAfterMs?: number;
 }
 
 export function parseRetryAfterMs(response: Response, maxMs: number): number {
@@ -94,6 +106,7 @@ export async function fetchWithRetry(
 ): Promise<Response> {
   const retryDelayMs = options.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS;
   const timeoutMs = options.timeoutMs ?? DEFAULT_FETCH_TIMEOUT_MS;
+  const maxRetryAfterMs = options.maxRetryAfterMs ?? MAX_RETRY_AFTER_MS;
   const callerAborted = (): boolean => init?.signal?.aborted === true;
 
   const attempt = (): Promise<Response> => fetch(url, buildAttemptInit(init, timeoutMs));
@@ -108,7 +121,7 @@ export async function fetchWithRetry(
     return await attempt(); // second failure propagates to the caller
   }
 
-  const retryAfterMs = response.ok ? -1 : parseRetryAfterMs(response, MAX_RETRY_AFTER_MS);
+  const retryAfterMs = response.ok ? -1 : parseRetryAfterMs(response, maxRetryAfterMs);
   const transient = RETRYABLE_STATUS_CODES.has(response.status) || retryAfterMs >= 0;
 
   if (!transient) {
