@@ -1,11 +1,13 @@
 /**
  * Per-request nonce + Content-Security-Policy middleware (ADR 0037).
  *
- * STAGED ROLLOUT — currently REPORT-ONLY. The policy below is the real,
- * enforced-shaped policy (nonce-based script-src, no 'unsafe-inline'), but
- * it is emitted as `Content-Security-Policy-Report-Only` so violations show
- * up in the browser console without breaking anything. To flip to enforced:
- * change CSP_ENFORCED to true. That is the entire rollout step.
+ * ENFORCED since 2026-08-26. The policy is nonce-based (`script-src 'self'
+ * 'nonce-…'`, no 'unsafe-inline' in production); browsers block inline
+ * scripts that don't carry the request's nonce. It shipped report-only
+ * first, per the staged rollout: `/` and `/missions` verified on the
+ * deployed site with every inline script nonce-stamped (17/17 and 16/16),
+ * zero console errors, zero violation reports — then CSP_ENFORCED flipped.
+ * To roll back: set CSP_ENFORCED to false.
  *
  * How the nonce reaches Next's scripts: setting a `Content-Security-Policy`
  * header on the REQUEST headers passed to NextResponse.next() makes the
@@ -31,9 +33,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 /**
- * The single rollout switch. Report-Only now; flip to true after the
- * deployed site has run this exact policy in report mode clean of script/
- * style violations (the ADR 0037 acceptance check).
+ * The single rollout switch. Flipped to true on 2026-08-26 after the
+ * deployed report-only soak came back clean (see header note). Setting it
+ * back to false returns the site to report-only without any other change.
  *
  * The `as boolean` assertion is load-bearing: a bare `false` literal gives
  * the constant a literal type, no-unnecessary-condition reads the

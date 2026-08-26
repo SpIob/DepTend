@@ -26,6 +26,7 @@ All notable changes to DepTend, condensed to one entry per phase.
 - Go module-path validation rejects bare-dot segments (`.`/`..`): they were interpolated into proxy.golang.org URLs where path normalization silently resolved them to a different module than the go.mod line named. Domain-style single dots (`example.com`) unaffected.
 - GitHub profile-page links in mission cards and the repo page encode owner/name segments (defense-in-depth; values are charset-validated at submission).
 - Deprecated `X-XSS-Protection` header dropped; ADR 0036 (dependency hygiene) flipped Proposed → Accepted after live verification.
+- CSP enforcement flipped on the same day it shipped: report-only phase verified clean on the deployed site (`/` and `/missions`, all inline scripts nonce-stamped, zero violations in a real browser), then `CSP_ENFORCED = true` and ADR 0037 → Accepted. Rollback is the one constant, documented in `app/src/middleware.ts`.
 
 ---
 

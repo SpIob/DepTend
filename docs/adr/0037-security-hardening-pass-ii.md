@@ -1,7 +1,9 @@
 # ADR 0037 — Security Hardening Pass II: Origin Validation, Nonce CSP, URL-Encoding Discipline
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-08-26
+
+> Flipped from Proposed → Accepted on the same day: the staged rollout's report-only phase was verified on the deployed site (real-browser check of `/` and `/missions` — every inline script nonce-stamped, zero console errors, zero violation reports), and `CSP_ENFORCED` flipped to true immediately after. Enforced mode was then re-verified live post-deploy.
 
 ---
 

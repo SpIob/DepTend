@@ -107,15 +107,8 @@ export default async function RepoPage({
             <BookmarkToggle repoId={repo.id} initialBookmarked={bookmarkedIds.has(repo.id)} />
           </div>
           <div className="text-ink-muted flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-xs">
-            <span>★ {repo.stars.toLocaleString()}</span>
-            {repo.lastIngestedAt !== null && (
-              <span>Ingested {repo.lastIngestedAt.toLocaleDateString()}</span>
-            )}
-            <span className="text-border" aria-hidden="true">
-              |
-            </span>
             <a
-              href={`https://github.com/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.name)}`}
+              href={`https://github.com/${repo.owner}/${repo.name}`}
               className="hover:text-ink underline decoration-dotted underline-offset-2"
             >
               View on GitHub
@@ -133,6 +126,14 @@ export default async function RepoPage({
             ))}
           </div>
         )}
+        {/* Same stats the repo card shows on the directory, mirrored here —
+            on their own line so the title row never truncates to fit them. */}
+        <div className="text-ink-muted flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-xs">
+          <span>★ {repo.stars.toLocaleString()}</span>
+          {repo.lastIngestedAt !== null && (
+            <span>Ingested {repo.lastIngestedAt.toLocaleDateString()}</span>
+          )}
+        </div>
         <p className="text-ink-muted max-w-xl text-sm leading-relaxed">
           {repo.description ?? "Prioritized maintenance missions for this repo."}
         </p>
