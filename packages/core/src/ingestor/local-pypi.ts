@@ -21,11 +21,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { EcosystemIngestor, IngestorResult } from "./interface.js";
 import { PYTHON_LOCK_FILE_NAMES, parsePyPIManifests } from "./pypi-parse.js";
-
-/** Node fs errors carry a `code` string; narrow rather than trusting `any`. */
-function isNodeErrnoException(err: unknown): err is NodeJS.ErrnoException {
-  return err instanceof Error && "code" in err;
-}
+import { isNodeErrnoException } from "./parse-guards.js";
 
 export class LocalPyPIIngestor implements EcosystemIngestor {
   readonly ecosystem = "pypi" as const;

@@ -62,6 +62,17 @@ export const UNAVAILABLE_SIGNALS: Readonly<EffortSignals> = Object.freeze({
   source_available: false,
 });
 
+/**
+ * Canonical key shape for prefetchEffortSignals() — the same map
+ * writer.ts and analyze.ts look results up by. Exported so neither
+ * pipeline can drift from the request key the result map is keyed on.
+ * "null" is a safe sentinel (not a real npm/PyPI/Go version string),
+ * not an accident of String(null).
+ */
+export function buildSignalKey(dependencyId: string, targetVersion: string | null): string {
+  return `${dependencyId}:${targetVersion ?? "null"}`;
+}
+
 // ---------------------------------------------------------------------------
 // Per-ecosystem version parsing/comparison (release-tag matching only —
 // NOT the semver_bump inference mission-scorer.ts owns; see module docstring)

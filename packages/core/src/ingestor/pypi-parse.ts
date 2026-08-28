@@ -47,6 +47,7 @@ import { parsePoetryLockContent } from "./poetry-lock-parse.js";
 import { parsePipfileLockContent } from "./pipfile-lock-parse.js";
 import { parsePdmLockContent } from "./pdm-lock-parse.js";
 import { mergeManifestWithLock } from "./lock-parse.js";
+import { isStringRecord } from "./parse-guards.js";
 
 /** Minimal shape we care about from a pyproject.toml */
 interface PyProjectToml {
@@ -476,10 +477,6 @@ function pushParsedPep508(
 // ---------------------------------------------------------------------------
 // Guards
 // ---------------------------------------------------------------------------
-
-function isStringRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 /**
  * Validates PyPI package names against PEP 503's normalization grammar:

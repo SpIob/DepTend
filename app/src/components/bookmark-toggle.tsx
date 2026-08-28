@@ -2,17 +2,10 @@
 
 import { useState } from "react";
 import { signIn, useSession } from "next-auth/react";
+import { extractErrorMessage } from "@/lib/fetch-error";
 
 type BookmarkRequestState =
   { kind: "idle" } | { kind: "pending" } | { kind: "error"; message: string };
-
-function extractErrorMessage(data: unknown): string | null {
-  if (typeof data !== "object" || data === null) {
-    return null;
-  }
-  const record = data as Record<string, unknown>;
-  return typeof record.error === "string" ? record.error : null;
-}
 
 /**
  * Save/unsave a repo for quicker access (ADR 0027) — same self-contained

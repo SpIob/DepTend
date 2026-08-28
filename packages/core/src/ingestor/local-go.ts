@@ -19,11 +19,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { EcosystemIngestor, IngestorResult } from "./interface.js";
 import { GO_LOCK_FILE_NAMES, parseGoModContent } from "./go-parse.js";
-
-/** Node fs errors carry a `code` string; narrow rather than trusting `any`. */
-function isNodeErrnoException(err: unknown): err is NodeJS.ErrnoException {
-  return err instanceof Error && "code" in err;
-}
+import { isNodeErrnoException } from "./parse-guards.js";
 
 export class LocalGoIngestor implements EcosystemIngestor {
   readonly ecosystem = "go" as const;

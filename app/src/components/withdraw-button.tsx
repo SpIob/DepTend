@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useSession } from "next-auth/react";
 import type { IngestionStatus } from "@deptend/core/db/schema.js";
+import { extractErrorMessage } from "@/lib/fetch-error";
 
 type WithdrawRequestState =
   | { kind: "idle" }
@@ -10,14 +11,6 @@ type WithdrawRequestState =
   | { kind: "pending" }
   | { kind: "done" }
   | { kind: "error"; message: string };
-
-function extractErrorMessage(data: unknown): string | null {
-  if (typeof data !== "object" || data === null) {
-    return null;
-  }
-  const record = data as Record<string, unknown>;
-  return typeof record.error === "string" ? record.error : null;
-}
 
 // Kept in sync with the server-side guard in db/repos.ts's withdrawOwnRepo()
 // — not the source of truth, just avoids showing a button that would 409.

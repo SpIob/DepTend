@@ -35,6 +35,7 @@ import { PyPIRegistryFetcher } from "@deptend/core/ingestor/pypi-registry.js";
 import { GoRegistryFetcher } from "@deptend/core/ingestor/go-registry.js";
 import { fetchGitHubRepoMeta } from "@deptend/core/ingestor/github-meta.js";
 import {
+  buildSignalKey,
   prefetchEffortSignals,
   type EffortSignalRequest,
   type EffortSignals,
@@ -229,24 +230,12 @@ export async function analyze(options: AnalyzeOptions): Promise<AnalyzeResult> {
 }
 
 /**
- * Same key shape writer.ts's buildSignalKey() uses — kept here rather
- * than exported/shared across a DB-backed vs. in-memory pipeline that
- * otherwise have nothing else in common at this level. "null" is a safe
- * sentinel (not a real npm/PyPI/Go version string), not an accident of
- * String(null).
- */
-function buildSignalKey(dependencyId: string, targetVersion: string | null): string {
-  return `${dependencyId}:${targetVersion ?? "null"}`;
-}
-
-/**
  * Builds one EffortSignalRequest per candidate — sourceRepo looked up by
  * package name, currentFloor derived via mission-scorer.ts's own
  * extractVersionFloor() — and resolves them all through
- * changelog-signals.ts's bounded-concurrency batch fetch. Mirrors
- * writer.ts's identical private method; kept separate rather than shared
- * since the two pipelines' candidate row shapes (DB-backed Dependency vs.
- * in-memory CandidatePair) already diverge everywhere else in this file.
+ * changelog-signals.ts's bounded-concurrency batch fetch. buildSignalKey
+ * itself is imported from changelog-signals.ts so the cli's key shape
+ * can't drift from the request key the result map is keyed on.
  */
 async function prefetchEffortSignalsForCandidates(
   candidates: CandidatePair[],

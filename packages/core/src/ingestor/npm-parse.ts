@@ -19,6 +19,7 @@ import type { IngestorResult, ParsedDependency } from "./interface.js";
 import { parsePackageLockJson } from "./npm-lock-parse.js";
 import { parseYarnLockContent } from "./yarn-lock-parse.js";
 import { mergeManifestWithLock } from "./lock-parse.js";
+import { isStringRecord } from "./parse-guards.js";
 
 /** Minimal shape we care about from a package.json */
 export interface PackageJson {
@@ -182,10 +183,6 @@ export function parsePackageJsonContent(
 // ---------------------------------------------------------------------------
 // Guards
 // ---------------------------------------------------------------------------
-
-function isStringRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 /**
  * Validates npm package names against the npm registry spec:

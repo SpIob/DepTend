@@ -3,23 +3,13 @@
 import { useState, memo } from "react";
 import { signIn, useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import type {
-  EffortLabel,
-  MissionStatus,
-  MissionType,
-  ScoreConfidence,
-} from "@deptend/core/db/schema.js";
+import type { MissionStatus, MissionType, ScoreConfidence } from "@deptend/core/db/schema.js";
 import type { MissionWithScore } from "@deptend/core";
 import { SeverityMark, severityBarClass } from "./severity-mark";
 import { EcosystemBadge } from "./ecosystem-badge";
 import { Tag } from "./tag";
-
-const EFFORT_LABEL_TEXT: Record<EffortLabel, string> = {
-  trivial: "Trivial effort",
-  low: "Low effort",
-  medium: "Medium effort",
-  high: "High effort",
-};
+import { EFFORT_LABELS } from "@/lib/mission-filter-options";
+import { extractErrorMessage } from "@/lib/fetch-error";
 
 const CONFIDENCE_TEXT: Record<ScoreConfidence, string> = {
   high: "High confidence",
@@ -60,14 +50,6 @@ export interface MissionClaimPatch {
 
 type ClaimRequestState =
   { kind: "idle" } | { kind: "pending" } | { kind: "error"; message: string };
-
-function extractErrorMessage(data: unknown): string | null {
-  if (typeof data !== "object" || data === null) {
-    return null;
-  }
-  const record = data as Record<string, unknown>;
-  return typeof record.error === "string" ? record.error : null;
-}
 
 /**
  * Claim/unclaim/dismiss/undismiss UI for one mission — a self-contained
@@ -298,8 +280,8 @@ export function MissionCard({
                 staying together) instead of every "·" and its neighbor
                 landing on its own line on a narrow viewport. */}
             <p className="text-ink-muted font-mono text-[11px] leading-relaxed">
-              {EFFORT_LABEL_TEXT[score.effortLabel]} <span aria-hidden="true">·</span> {repo.owner}/
-              {repo.name}
+              {`${EFFORT_LABELS[score.effortLabel]} effort`} <span aria-hidden="true">·</span>{" "}
+              {repo.owner}/{repo.name}
               {isLowConfidence && (
                 <>
                   {" "}

@@ -11,12 +11,12 @@
  * - license_issue: license incompatibility (requires license detection)
  */
 
-import type { Dependency, Advisory } from "../db/schema.js";
+import type { Dependency, Advisory, MissionType } from "../db/schema.js";
 import semver from "semver";
 import { compare as pep440Compare, validRange as pep440ValidRange } from "@renovatebot/pep440";
 import { extractPep440Floor } from "./mission-scorer.js";
 
-export type MissionType = "vulnerability_fix" | "dep_update" | "maintenance" | "license_issue";
+export type { MissionType };
 
 export interface MissionTypeClassification {
   type: MissionType;

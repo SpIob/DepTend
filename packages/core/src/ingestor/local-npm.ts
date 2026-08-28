@@ -24,11 +24,7 @@ import { access, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { EcosystemIngestor, IngestorResult } from "./interface.js";
 import { LOCK_FILE_NAMES, parsePackageJsonContent } from "./npm-parse.js";
-
-/** Node fs errors carry a `code` string; narrow rather than trusting `any`. */
-function isNodeErrnoException(err: unknown): err is NodeJS.ErrnoException {
-  return err instanceof Error && "code" in err;
-}
+import { isNodeErrnoException } from "./parse-guards.js";
 
 export class LocalNpmIngestor implements EcosystemIngestor {
   readonly ecosystem = "npm" as const;

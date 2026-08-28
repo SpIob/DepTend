@@ -75,6 +75,7 @@ import { classifyAllMissions } from "./mission-type-detector.js";
 // call the prefetch, rather than adding a new cross-layer edge anywhere
 // else.
 import {
+  buildSignalKey,
   prefetchEffortSignals,
   type EffortSignalRequest,
   type EffortSignals,
@@ -112,17 +113,6 @@ type DbOrTx = AnyNeonDb | AnyNeonTx;
 // ---------------------------------------------------------------------------
 // MissionWriter
 // ---------------------------------------------------------------------------
-
-/**
- * Same key shape prefetchEffortSignalsForCandidates() builds requests
- * under and generateMissionsForRepo()'s per-candidate loop looks results
- * up by — kept as one function so the two can never drift apart. "null"
- * is a safe sentinel here (not a real npm/PyPI/Go version string) rather
- * than String(null) === "null" being an accident.
- */
-function buildSignalKey(dependencyId: string, targetVersion: string | null): string {
-  return `${dependencyId}:${targetVersion ?? "null"}`;
-}
 
 /** Key shape for the bulk existing-missions lookup — see selectExistingMissionIds(). */
 function missionPairKey(dependencyId: string, advisoryId: string): string {
