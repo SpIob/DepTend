@@ -8,15 +8,23 @@ import { defineConfig } from "drizzle-kit";
 // environment variable).
 config({ path: ".env.local" });
 
+// drizzle-kit's TypeScript types require a non-null connection URL on the
+// `dbCredentials` field, but `drizzle-kit check` (added by ADR 0040) only
+// compares schema.ts to the committed journal — it never opens a connection.
+// A placeholder when the URL is missing keeps `check` runnable in CI without
+// changing the other commands' failure mode: `migrate` and any future
+// connection-using command still throw if DATABASE_URL_UNPOOLED is unset.
+const isCheck = process.argv.includes("check");
+const databaseUrl = process.env.DATABASE_URL_UNPOOLED;
+if (databaseUrl === undefined && !isCheck) {
+  throw new Error("DATABASE_URL_UNPOOLED is not set");
+}
+
 export default defineConfig({
   schema: "./packages/core/src/db/schema.ts",
   out: "./packages/core/src/db/migrations",
   dialect: "postgresql",
   dbCredentials: {
-    url:
-      process.env.DATABASE_URL_UNPOOLED ??
-      ((): never => {
-        throw new Error("DATABASE_URL_UNPOOLED is not set");
-      })(),
+    url: databaseUrl ?? "postgresql://placeholder@localhost:5432/placeholder",
   },
 });
