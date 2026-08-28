@@ -109,6 +109,7 @@ function makeRepoRow(overrides: Partial<Repo> = {}): Repo {
     lastIngestedAt: null,
     ingestionError: null,
     submittedBy: "octocat",
+    orgId: null,
     createdAt: new Date("2026-07-11"),
     updatedAt: new Date("2026-07-11"),
     ...overrides,

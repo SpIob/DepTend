@@ -84,6 +84,18 @@ function reviveValue(value: unknown): unknown {
   return revived;
 }
 
+/** Build a deterministic cache key from BoardFilters — arrays are sorted to ensure consistent ordering. */
+function boardFiltersCacheKey(filters: BoardFilters): string {
+  return JSON.stringify({
+    q: filters.q,
+    severities: [...filters.severities].sort(),
+    ecosystems: [...filters.ecosystems].sort(),
+    efforts: [...filters.efforts].sort(),
+    missionTypes: [...filters.missionTypes].sort(),
+    sort: filters.sort,
+  });
+}
+
 /** unstable_cache wrapper for one cached read: fixed key parts + tag + TTL.
  *
  * reviveDates runs on the RESULT of cached() — outside unstable_cache —
@@ -112,7 +124,7 @@ function cachedRead<T>(
  * Cached under the "missions" tag (ADR 0033).
  */
 export function getBoardMissionsPage(filters: BoardFilters, page: number): Promise<BoardPage> {
-  return cachedRead(["board-page", JSON.stringify(filters), String(page)], "missions", () =>
+  return cachedRead(["board-page", boardFiltersCacheKey(filters), String(page)], "missions", () =>
     coreGetBoardMissionsWithScoresPage(getDb(), filters, {
       limit: BOARD_PAGE_SIZE,
       offset: (page - 1) * BOARD_PAGE_SIZE,

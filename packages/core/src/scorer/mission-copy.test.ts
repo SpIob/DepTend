@@ -64,6 +64,7 @@ function makeRepo(overrides: Partial<Repo> = {}): Repo {
     lastIngestedAt: new Date("2026-07-01"),
     ingestionError: null,
     submittedBy: null,
+    orgId: null,
     createdAt: new Date("2026-06-01"),
     updatedAt: new Date("2026-07-01"),
     ...overrides,

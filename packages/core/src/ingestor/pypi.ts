@@ -13,28 +13,20 @@
  *     https://raw.githubusercontent.com/<owner>/<name>/<branch>
  *
  *   Fetches /pyproject.toml and /requirements.txt in parallel (independent
- *   requests, no reason to serialize them), and checks for the presence of
- *   a Python lock file (without parsing it — same "detect, don't parse"
- *   treatment npm's lock files get). Both manifests are always fetched
- *   unconditionally, even when pyproject.toml alone would resolve —
- *   simpler than a "fetch requirements.txt only if needed" two-stage flow,
- *   and keeps 100% of the fallback decision inside parsePyPIManifests
- *   rather than splitting it across this file too. Costs at most one extra
- *   HTTP request per repo; negligible at the current repo cap (ADR 0022).
+ *   requests, no reason to serialize them), and fetches the first available
+ *   Python lock file (poetry.lock, Pipfile.lock, pdm.lock) for parsing.
+ *   Both manifests are always fetched unconditionally, even when pyproject.toml
+ *   alone would resolve — simpler than a "fetch requirements.txt only if needed"
+ *   two-stage flow, and keeps 100% of the fallback decision inside
+ *   parsePyPIManifests rather than splitting it across this file too.
  *
  * Fetching (this file) and parsing (pypi-parse.ts's parsePyPIManifests) are
  * deliberately separate — LocalPyPIIngestor reads the same manifest shapes
  * from a local filesystem path instead, and shares the exact same parsing
  * logic rather than duplicating it.
  *
- * What this does NOT do (out of scope for Phase 6, see ADR 0022):
- *   - Parse or resolve lock files (poetry.lock, Pipfile.lock, pdm.lock)
- *   - Parse Poetry's [tool.poetry.dependencies] table
- *   - Fetch transitive dependencies
- *   - Resolve version ranges to concrete versions (that's the registry
- *     fetcher's job)
- *
  * ADR: docs/adr/0022-phase6-pypi-ecosystem.md
+ *      docs/adr/0038-lock-file-parsing.md
  */
 
 import type { EcosystemIngestor, IngestorResult } from "./interface.js";
@@ -72,13 +64,15 @@ export class PyPIIngestor implements EcosystemIngestor {
       this.fetchRaw(requirementsUrl),
     ]);
 
-    // Skip the lock-file HEAD requests entirely when neither candidate
+    // Skip the lock-file fetch entirely when neither candidate
     // manifest was found — parsePyPIManifests ignores lockFilePresent in
     // that case anyway (nothing to resolve confidence against), so there's
     // no point making the extra network calls. Mirrors NpmIngestor's same
     // optimization, just checking both sources instead of one.
-    const lockFilePresent =
-      pyprojectRaw === null && requirementsRaw === null ? false : await this.detectLockFile(base);
+    const { lockFileContent, lockFileName, lockFilePresent } =
+      pyprojectRaw === null && requirementsRaw === null
+        ? { lockFileContent: null, lockFileName: null, lockFilePresent: false }
+        : await this.fetchLockFile(base);
 
     return parsePyPIManifests(
       pyprojectRaw,
@@ -86,6 +80,8 @@ export class PyPIIngestor implements EcosystemIngestor {
       lockFilePresent,
       pyprojectUrl,
       requirementsUrl,
+      lockFileContent,
+      lockFileName,
     );
   }
 
@@ -125,25 +121,28 @@ export class PyPIIngestor implements EcosystemIngestor {
   }
 
   /**
-   * HEAD-request each known Python lock file name. Returns true if any is
-   * present. Intentionally silent — absence is not an error, just recorded
-   * as a warning by parsePyPIManifests.
+   * Fetch the lock file content (poetry.lock, Pipfile.lock, or pdm.lock) and detect presence.
+   * Returns the content (for parsable formats), the name of the file found, and a boolean for presence.
+   * Tries poetry.lock first, then Pipfile.lock, then pdm.lock.
    */
-  private async detectLockFile(base: string): Promise<boolean> {
-    const checks = PYTHON_LOCK_FILE_NAMES.map(async (name) => {
+  private async fetchLockFile(base: string): Promise<{
+    lockFileContent: string | null;
+    lockFileName: string | null;
+    lockFilePresent: boolean;
+  }> {
+    // First, try to fetch and parse known lock files
+    for (const name of PYTHON_LOCK_FILE_NAMES) {
       try {
-        const res = await fetchWithRetry(
-          `${base}/${name}`,
-          { method: "HEAD" },
-          this.fetchRetryOptions,
-        );
-        return res.ok;
+        const res = await fetchWithRetry(`${base}/${name}`, undefined, this.fetchRetryOptions);
+        if (res.ok) {
+          const content = await res.text();
+          return { lockFileContent: content, lockFileName: name, lockFilePresent: true };
+        }
       } catch {
-        return false;
+        // Continue to next lock file
       }
-    });
+    }
 
-    const results = await Promise.all(checks);
-    return results.some(Boolean);
+    return { lockFileContent: null, lockFileName: null, lockFilePresent: false };
   }
 }

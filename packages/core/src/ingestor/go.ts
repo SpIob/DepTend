@@ -8,9 +8,8 @@
  *   repoPath is a GitHub raw content base URL of the form:
  *     https://raw.githubusercontent.com/<owner>/<name>/<branch>
  *
- *   The ingestor appends /go.mod to fetch the manifest, and checks for the
- *   presence of go.sum (without parsing it — lock file parsing is deferred,
- *   same standing scope limit every ecosystem here has).
+ *   The ingestor appends /go.mod to fetch the manifest, and fetches go.sum
+ *   for parsing.
  *
  * Single-source shape (like npm.ts), not the primary/fallback shape pypi.ts
  * needed — go.mod has no equivalent of a requirements.txt fallback.
@@ -20,17 +19,8 @@
  * a local filesystem path instead, and shares the exact same parsing logic
  * rather than duplicating it, mirroring npm.ts/local-npm.ts's split.
  *
- * What this does NOT do (out of scope for Phase 7, same shape of deferral
- * as npm/PyPI):
- *   - Parse or resolve go.sum
- *   - Fetch transitive (indirect) dependencies
- *   - Resolve version ranges to concrete versions (that's the Go module
- *     proxy, done by GoRegistryFetcher, a later step)
- *   - Multi-module repos (a nested go.mod outside the repo root) — only the
- *     repo-root go.mod is read, same "root-only" scope every ecosystem here
- *     has had since Phase 1
- *
  * ADR: docs/adr/0024-phase7-go-ecosystem.md
+ *      docs/adr/0038-lock-file-parsing.md
  */
 
 import type { EcosystemIngestor, IngestorResult } from "./interface.js";
@@ -64,13 +54,16 @@ export class GoIngestor implements EcosystemIngestor {
 
     const raw = await this.fetchGoModRaw(url);
 
-    // Skip the lock-file HEAD request entirely when there's no go.mod to
+    // Skip the lock-file fetch entirely when there's no go.mod to
     // resolve confidence against — parseGoModContent would ignore
     // lockFilePresent in that case anyway, so there's no point making the
     // extra network call.
-    const lockFilePresent = raw === null ? false : await this.detectLockFile(base);
+    const { lockFileContent, lockFileName, lockFilePresent } =
+      raw === null
+        ? { lockFileContent: null, lockFileName: null, lockFilePresent: false }
+        : await this.fetchLockFile(base);
 
-    return parseGoModContent(raw, lockFilePresent, url);
+    return parseGoModContent(raw, lockFilePresent, url, lockFileContent, lockFileName);
   }
 
   // ---------------------------------------------------------------------------
@@ -109,27 +102,26 @@ export class GoIngestor implements EcosystemIngestor {
   }
 
   /**
-   * HEAD-request each known Go lock file name (just go.sum today, but kept
-   * as a loop over GO_LOCK_FILE_NAMES for shape-consistency with npm/PyPI's
-   * multi-name equivalents). Returns true if any is present. Intentionally
-   * silent — absence is not an error, just recorded as a warning by
-   * parseGoModContent.
+   * Fetch the lock file content (go.sum) and detect presence.
+   * Returns the content, the name of the file found, and a boolean for presence.
    */
-  private async detectLockFile(base: string): Promise<boolean> {
-    const checks = GO_LOCK_FILE_NAMES.map(async (name) => {
+  private async fetchLockFile(base: string): Promise<{
+    lockFileContent: string | null;
+    lockFileName: string | null;
+    lockFilePresent: boolean;
+  }> {
+    for (const name of GO_LOCK_FILE_NAMES) {
       try {
-        const res = await fetchWithRetry(
-          `${base}/${name}`,
-          { method: "HEAD" },
-          this.fetchRetryOptions,
-        );
-        return res.ok;
+        const res = await fetchWithRetry(`${base}/${name}`, undefined, this.fetchRetryOptions);
+        if (res.ok) {
+          const content = await res.text();
+          return { lockFileContent: content, lockFileName: name, lockFilePresent: true };
+        }
       } catch {
-        return false;
+        // Continue to next lock file
       }
-    });
+    }
 
-    const results = await Promise.all(checks);
-    return results.some(Boolean);
+    return { lockFileContent: null, lockFileName: null, lockFilePresent: false };
   }
 }

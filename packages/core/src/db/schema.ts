@@ -22,6 +22,7 @@ import {
   unique,
   uuid,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import type {
   ConfidenceFlags,
   EcosystemValueInputs,
@@ -109,6 +110,9 @@ export const repos = pgTable(
 
     submittedBy: text("submitted_by"),
 
+    // Added in migration 0009 for organization support
+    orgId: uuid("org_id").references(() => organizations.id, { onDelete: "set null" }),
+
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -116,6 +120,7 @@ export const repos = pgTable(
     unique("repos_owner_name_unique").on(table.owner, table.name),
     index("idx_repos_ingestion_status").on(table.ingestionStatus),
     index("idx_repos_last_ingested_at").on(table.lastIngestedAt),
+    index("idx_repos_org_id").on(table.orgId),
   ],
 );
 
@@ -161,6 +166,7 @@ export const dependencies = pgTable(
     index("idx_dependencies_repo_ecosystem").on(table.repoId, table.ecosystem),
     index("idx_dependencies_package_name").on(table.packageName),
     index("idx_dependencies_ecosystem").on(table.ecosystem),
+    index("idx_dependencies_ecosystem_id").on(table.ecosystem, table.id),
   ],
 );
 
@@ -207,6 +213,7 @@ export const advisories = pgTable(
     index("idx_advisories_ecosystem").on(table.ecosystem),
     index("idx_advisories_severity").on(table.severity),
     index("idx_advisories_modified_at").on(table.modifiedAt),
+    index("idx_advisories_severity_id").on(table.severity, table.id),
   ],
 );
 
@@ -277,6 +284,7 @@ export const missions = pgTable(
     index("idx_missions_mission_type").on(table.missionType),
     index("idx_missions_advisory_id").on(table.advisoryId),
     index("idx_missions_dependency_id").on(table.dependencyId),
+    index("idx_missions_status_repo").on(table.status, table.repoId),
   ],
 );
 
@@ -338,6 +346,7 @@ export const missionScores = pgTable(
     index("idx_mission_scores_mission_id").on(table.missionId),
     index("idx_mission_scores_composite_score").on(table.compositeScore),
     index("idx_mission_scores_confidence").on(table.confidence),
+    index("idx_mission_scores_effort_composite").on(table.effortLabel, table.compositeScore.desc()),
   ],
 );
 
@@ -407,6 +416,84 @@ export const repoBookmarks = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// organizations
+// ---------------------------------------------------------------------------
+
+export const organizations = pgTable(
+  "organizations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+
+    githubLogin: text("github_login").notNull().unique(),
+    name: text("name"),
+    avatarUrl: text("avatar_url"),
+
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("idx_organizations_github_login").on(table.githubLogin)],
+);
+
+// ---------------------------------------------------------------------------
+// organization_members
+// ---------------------------------------------------------------------------
+
+export const organizationMembers = pgTable(
+  "organization_members",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    userLogin: text("user_login").notNull(),
+    role: text("role").notNull().default("member"), // 'owner' | 'admin' | 'member'
+
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    unique("organization_members_org_user_unique").on(table.organizationId, table.userLogin),
+    index("idx_organization_members_user_login").on(table.userLogin),
+    index("idx_organization_members_org_id").on(table.organizationId),
+  ],
+);
+
+// Add org_id to repos
+// This is done via migration 0009, but we declare the column here for type inference
+// The repos table already exists, so we just add the column reference
+// export const repos = ... (already defined above)
+
+// ---------------------------------------------------------------------------
+// notification_subscriptions
+// ---------------------------------------------------------------------------
+
+export const notificationSubscriptions = pgTable(
+  "notification_subscriptions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+
+    userLogin: text("user_login").notNull(),
+    repoId: uuid("repo_id")
+      .notNull()
+      .references(() => repos.id, { onDelete: "cascade" }),
+    eventTypes: text("event_types")
+      .array()
+      .notNull()
+      .default(sql`ARRAY['new_mission', 'claimed', 'resolved']`),
+    githubIssueNumber: integer("github_issue_number"),
+
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    unique("notification_subscriptions_user_repo_unique").on(table.userLogin, table.repoId),
+    index("idx_notification_subscriptions_repo_id").on(table.repoId),
+    index("idx_notification_subscriptions_user_login").on(table.userLogin),
+  ],
+);
+
+// ---------------------------------------------------------------------------
+// Enum value types
+// ---------------------------------------------------------------------------
 // Enum value types
 // ---------------------------------------------------------------------------
 // Derived from the pgEnum objects above so enum unions never need a
@@ -450,3 +537,12 @@ export type NewIngestionRun = typeof ingestionRuns.$inferInsert;
 
 export type RepoBookmark = typeof repoBookmarks.$inferSelect;
 export type NewRepoBookmark = typeof repoBookmarks.$inferInsert;
+
+export type Organization = typeof organizations.$inferSelect;
+export type NewOrganization = typeof organizations.$inferInsert;
+
+export type OrganizationMember = typeof organizationMembers.$inferSelect;
+export type NewOrganizationMember = typeof organizationMembers.$inferInsert;
+
+export type NotificationSubscription = typeof notificationSubscriptions.$inferSelect;
+export type NewNotificationSubscription = typeof notificationSubscriptions.$inferInsert;

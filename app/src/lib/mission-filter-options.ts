@@ -1,4 +1,4 @@
-import type { Ecosystem, EffortLabel, Severity } from "@deptend/core/db/schema.js";
+import type { Ecosystem, EffortLabel, MissionType, Severity } from "@deptend/core/db/schema.js";
 
 // Client-agnostic (no "use client"), same reason as mission-board-query.ts —
 // both server pages and client boards consume these. One source of truth for
@@ -38,4 +38,18 @@ export const EFFORT_LABELS: Record<EffortLabel, string> = {
   low: "Low",
   medium: "Medium",
   high: "High",
+};
+
+export const MISSION_TYPE_OPTIONS: readonly MissionType[] = [
+  "vulnerability_fix",
+  "dep_update",
+  "maintenance",
+  "license_issue",
+];
+
+export const MISSION_TYPE_LABELS: Record<MissionType, string> = {
+  vulnerability_fix: "Vulnerability Fix",
+  dep_update: "Dependency Update",
+  maintenance: "Maintenance",
+  license_issue: "License Issue",
 };

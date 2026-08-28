@@ -35,6 +35,22 @@
       "import": "./dist/db/validation.js",
       "types": "./dist/db/validation.d.ts"
     },
+    "./db/organizations.js": {
+      "import": "./dist/db/organizations.js",
+      "types": "./dist/db/organizations.d.ts"
+    },
+    "./db/organization-members.js": {
+      "import": "./dist/db/organization-members.js",
+      "types": "./dist/db/organization-members.d.ts"
+    },
+    "./notifications/subscriptions.js": {
+      "import": "./dist/notifications/subscriptions.js",
+      "types": "./dist/notifications/subscriptions.d.ts"
+    },
+    "./notifications/github-issues.js": {
+      "import": "./dist/notifications/github-issues.js",
+      "types": "./dist/notifications/github-issues.d.ts"
+    },
     "./ingestor/interface.js": {
       "import": "./dist/ingestor/interface.js",
       "types": "./dist/ingestor/interface.d.ts"

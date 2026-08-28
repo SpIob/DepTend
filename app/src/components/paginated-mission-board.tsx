@@ -18,10 +18,12 @@ import {
   ECOSYSTEM_OPTIONS,
   EFFORT_LABELS,
   EFFORT_OPTIONS,
+  MISSION_TYPE_LABELS,
+  MISSION_TYPE_OPTIONS,
   SEVERITY_LABELS,
   SEVERITY_OPTIONS,
 } from "@/lib/mission-filter-options";
-import { MissionCard, type MissionClaimPatch } from "./mission-card";
+import { MissionCardMemo as MissionCard, type MissionClaimPatch } from "./mission-card";
 import { MissionSearchInput } from "./mission-search";
 
 /** Milliseconds of search-input idle time before the debounced navigation fires. */
@@ -157,6 +159,7 @@ export function PaginatedMissionBoard({
     initialQuery.severity.size > 0 ||
     initialQuery.ecosystem.size > 0 ||
     initialQuery.effort.size > 0 ||
+    initialQuery.missionType.size > 0 ||
     initialQuery.q.trim() !== "";
 
   // The not-yet-fired debounced search navigation, if any. Explicit user
@@ -202,6 +205,7 @@ export function PaginatedMissionBoard({
       severity: initialQuery.severity,
       ecosystem: initialQuery.ecosystem,
       effort: initialQuery.effort,
+      missionType: initialQuery.missionType,
       sort: initialQuery.sort,
       group: groupByRepo,
       ...overrides,
@@ -314,6 +318,23 @@ export function PaginatedMissionBoard({
               />
             ))}
           </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-ink-muted w-20 shrink-0 font-mono text-xs uppercase tracking-wide">
+              Type
+            </span>
+            {MISSION_TYPE_OPTIONS.map((type) => (
+              <FilterChip
+                key={type}
+                onToggle={() => {
+                  navigate(buildHref({ missionType: toggledSet(initialQuery.missionType, type) }));
+                }}
+                label={MISSION_TYPE_LABELS[type]}
+                count={facets.missionType[type]}
+                active={initialQuery.missionType.has(type)}
+                disabled={isPending}
+              />
+            ))}
+          </div>
           {isFiltered && (
             <button
               type="button"
@@ -324,6 +345,7 @@ export function PaginatedMissionBoard({
                     severity: new Set(),
                     ecosystem: new Set(),
                     effort: new Set(),
+                    missionType: new Set(),
                   }),
                 );
               }}

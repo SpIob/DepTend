@@ -3,6 +3,7 @@ import type { Severity } from "@deptend/core/db/schema.js";
 import type { RepoWithMissionSummary } from "@deptend/core";
 import { EcosystemBadge } from "./ecosystem-badge";
 import { BookmarkToggle } from "./bookmark-toggle";
+import { NotificationToggle } from "./notification-toggle";
 import { ingestionStatusNote } from "@/lib/ingestion-status";
 
 const SEVERITY_ORDER: readonly Severity[] = ["critical", "high", "medium", "low", "unknown"];
@@ -50,7 +51,12 @@ export function RepoCard({ repo }: { repo: RepoWithMissionSummary }): React.JSX.
         >
           {repo.owner}/{repo.name}
         </Link>
-        <BookmarkToggle repoId={repo.id} initialBookmarked={repo.isBookmarked} />
+        <div className="flex items-center gap-1">
+          <BookmarkToggle repoId={repo.id} initialBookmarked={repo.isBookmarked} />
+          {repo.isSubscribed !== undefined && (
+            <NotificationToggle repoId={repo.id} initialSubscribed={repo.isSubscribed} />
+          )}
+        </div>
       </div>
 
       {repo.description !== null && repo.description !== "" && (

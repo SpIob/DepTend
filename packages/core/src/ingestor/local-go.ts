@@ -4,23 +4,18 @@
  * Implements EcosystemIngestor for the Go ecosystem via local filesystem
  * reads, for the CLI: a repo path on disk has no GitHub URL and no existing
  * DB row, so there's nothing to fetch remotely — this reads go.mod (and
- * detects go.sum) directly from the cloned repo on disk instead.
+ * reads/parses go.sum) directly from the cloned repo on disk instead.
  *
  * Shares parseGoModContent (go-parse.ts) with GoIngestor (the HTTP-based
  * ingestor) so a go.mod is interpreted identically regardless of source —
  * only how the raw bytes and lock-file presence are obtained differs
  * between the two. Mirrors local-npm.ts's split from npm.ts exactly.
  *
- * What this does NOT do (same scope limits as GoIngestor):
- *   - Parse or resolve go.sum
- *   - Fetch transitive (indirect) dependencies
- *   - Resolve version ranges to concrete versions
- *   - Multi-module repos (a nested go.mod outside repoPath's root)
- *
  * ADR: docs/adr/0024-phase7-go-ecosystem.md
+ *      docs/adr/0038-lock-file-parsing.md
  */
 
-import { access, readFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { EcosystemIngestor, IngestorResult } from "./interface.js";
 import { GO_LOCK_FILE_NAMES, parseGoModContent } from "./go-parse.js";
@@ -44,12 +39,15 @@ export class LocalGoIngestor implements EcosystemIngestor {
 
     const raw = await this.readGoModRaw(goModPath);
 
-    // Skip the lock-file existence check entirely when there's no go.mod to
+    // Skip the lock-file read entirely when there's no go.mod to
     // resolve confidence against — same optimization as GoIngestor, and
     // parseGoModContent would ignore the value anyway when raw is null.
-    const lockFilePresent = raw === null ? false : await this.detectLockFile(repoPath);
+    const { lockFileContent, lockFileName, lockFilePresent } =
+      raw === null
+        ? { lockFileContent: null, lockFileName: null, lockFilePresent: false }
+        : await this.readLockFile(repoPath);
 
-    return parseGoModContent(raw, lockFilePresent, goModPath);
+    return parseGoModContent(raw, lockFilePresent, goModPath, lockFileContent, lockFileName);
   }
 
   // ---------------------------------------------------------------------------
@@ -75,22 +73,23 @@ export class LocalGoIngestor implements EcosystemIngestor {
   }
 
   /**
-   * Checks for each known Go lock file name in the repo root (just go.sum
-   * today — see GoIngestor's equivalent for why this stays a loop). Returns
-   * true if any is present. Intentionally silent — absence is not an
-   * error, just recorded as a warning by parseGoModContent.
+   * Read the lock file content (go.sum) from disk.
+   * Returns the content, the name of the file found, and a boolean for presence.
    */
-  private async detectLockFile(repoPath: string): Promise<boolean> {
-    const checks = GO_LOCK_FILE_NAMES.map(async (name) => {
+  private async readLockFile(repoPath: string): Promise<{
+    lockFileContent: string | null;
+    lockFileName: string | null;
+    lockFilePresent: boolean;
+  }> {
+    for (const name of GO_LOCK_FILE_NAMES) {
       try {
-        await access(join(repoPath, name));
-        return true;
+        const content = await readFile(join(repoPath, name), "utf-8");
+        return { lockFileContent: content, lockFileName: name, lockFilePresent: true };
       } catch {
-        return false;
+        // Continue to next lock file
       }
-    });
+    }
 
-    const results = await Promise.all(checks);
-    return results.some(Boolean);
+    return { lockFileContent: null, lockFileName: null, lockFilePresent: false };
   }
 }

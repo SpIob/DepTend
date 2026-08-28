@@ -65,9 +65,12 @@ export const EMPTY_REPO_MISSION_COUNTS: RepoMissionCounts = {
  * carries counts and the set of ecosystems present, not every mission's
  * full payload. isBookmarked is only meaningful when the query was run
  * for a signed-in user; false otherwise, not a tri-state.
+ * isSubscribed is only meaningful for signed-in users with notifications
+ * enabled for the repo.
  */
 export interface RepoWithMissionSummary extends Repo {
   ecosystems: Ecosystem[];
   missionCounts: RepoMissionCounts;
   isBookmarked: boolean;
+  isSubscribed?: boolean;
 }

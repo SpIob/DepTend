@@ -1,9 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useState, memo } from "react";
 import { signIn, useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import type { EffortLabel, MissionStatus, ScoreConfidence } from "@deptend/core/db/schema.js";
+import type {
+  EffortLabel,
+  MissionStatus,
+  MissionType,
+  ScoreConfidence,
+} from "@deptend/core/db/schema.js";
 import type { MissionWithScore } from "@deptend/core";
 import { SeverityMark, severityBarClass } from "./severity-mark";
 import { EcosystemBadge } from "./ecosystem-badge";
@@ -26,6 +31,20 @@ const CONFIDENCE_CLASS: Record<ScoreConfidence, string> = {
   high: "text-ink-muted",
   medium: "text-severity-medium",
   low: "text-severity-high",
+};
+
+const MISSION_TYPE_LABELS: Record<MissionType, string> = {
+  vulnerability_fix: "Vulnerability Fix",
+  dep_update: "Dependency Update",
+  maintenance: "Maintenance",
+  license_issue: "License Issue",
+};
+
+const MISSION_TYPE_CLASS: Record<MissionType, string> = {
+  vulnerability_fix: "bg-severity-high/10 text-severity-high border-severity-high/20",
+  dep_update: "bg-accent/10 text-accent border-accent/20",
+  maintenance: "bg-severity-medium/10 text-severity-medium border-severity-medium/20",
+  license_issue: "bg-severity-low/10 text-severity-low border-severity-low/20",
 };
 
 function osvUrl(osvId: string): string {
@@ -258,6 +277,13 @@ export function MissionCard({
             </span>
             <SeverityMark severity={severity} />
             {dependency !== null && <EcosystemBadge ecosystem={dependency.ecosystem} />}
+            <span
+              className={`shrink-0 rounded-sm border px-1.5 py-0.5 font-mono text-[11px] ${
+                MISSION_TYPE_CLASS[mission.missionType]
+              }`}
+            >
+              {MISSION_TYPE_LABELS[mission.missionType]}
+            </span>
           </div>
 
           <span className="flex min-w-0 flex-col gap-0.5 sm:flex-1">
@@ -441,3 +467,26 @@ export function MissionCard({
     </article>
   );
 }
+
+function areMissionsEqual(
+  prev: {
+    mission: MissionWithScore;
+    onStatusChange?: ((missionId: string, patch: MissionClaimPatch) => void) | undefined;
+  },
+  next: {
+    mission: MissionWithScore;
+    onStatusChange?: ((missionId: string, patch: MissionClaimPatch) => void) | undefined;
+  },
+): boolean {
+  // Mission identity is stable — only re-render if the mission data actually changed
+  if (prev.mission.id !== next.mission.id) return false;
+  if (prev.mission.status !== next.mission.status) return false;
+  if (prev.mission.claimedBy !== next.mission.claimedBy) return false;
+  if (prev.mission.claimedAt?.getTime() !== next.mission.claimedAt?.getTime()) return false;
+  if (prev.mission.score.compositeScore !== next.mission.score.compositeScore) return false;
+  if (prev.mission.score.confidence !== next.mission.score.confidence) return false;
+  // onStatusChange is a stable function reference from parent
+  return prev.onStatusChange === next.onStatusChange;
+}
+
+export const MissionCardMemo = memo(MissionCard, areMissionsEqual);

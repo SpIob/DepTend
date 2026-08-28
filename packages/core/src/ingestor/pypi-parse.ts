@@ -43,6 +43,10 @@
 
 import { parse as parseToml, TomlError } from "smol-toml";
 import type { IngestorResult, ParsedDependency } from "./interface.js";
+import { parsePoetryLockContent } from "./poetry-lock-parse.js";
+import { parsePipfileLockContent } from "./pipfile-lock-parse.js";
+import { parsePdmLockContent } from "./pdm-lock-parse.js";
+import { mergeManifestWithLock } from "./lock-parse.js";
 
 /** Minimal shape we care about from a pyproject.toml */
 interface PyProjectToml {
@@ -80,6 +84,8 @@ export const PYTHON_LOCK_FILE_NAMES = ["poetry.lock", "Pipfile.lock", "pdm.lock"
  * @param pyprojectSource - human-readable description of where the
  *   pyproject.toml content came from, used only in warning messages.
  * @param requirementsSource - same, for requirements.txt.
+ * @param lockFileContent - optional raw content of the lock file
+ * @param lockFileName - name of the lock file (used to select the right parser)
  */
 export function parsePyPIManifests(
   pyprojectRaw: string | null,
@@ -87,11 +93,19 @@ export function parsePyPIManifests(
   lockFilePresent: boolean,
   pyprojectSource: string,
   requirementsSource: string,
+  lockFileContent: string | null = null,
+  lockFileName: string | null = null,
 ): IngestorResult {
   const pyprojectAttempt = attemptPyprojectToml(pyprojectRaw, pyprojectSource);
 
   if (pyprojectAttempt.resolved) {
-    return finish(pyprojectAttempt.dependencies, pyprojectAttempt.warnings, lockFilePresent);
+    return finish(
+      pyprojectAttempt.dependencies,
+      pyprojectAttempt.warnings,
+      lockFilePresent,
+      lockFileContent,
+      lockFileName,
+    );
   }
 
   // pyproject.toml didn't yield a definitive PEP 621 dependency list —
@@ -101,7 +115,13 @@ export function parsePyPIManifests(
   const warnings = [...pyprojectAttempt.warnings, ...requirementsAttempt.warnings];
 
   if (requirementsAttempt.resolved) {
-    return finish(requirementsAttempt.dependencies, warnings, lockFilePresent);
+    return finish(
+      requirementsAttempt.dependencies,
+      warnings,
+      lockFilePresent,
+      lockFileContent,
+      lockFileName,
+    );
   }
 
   warnings.push("No usable pyproject.toml or requirements.txt found. Repository skipped.");
@@ -118,8 +138,31 @@ function finish(
   dependencies: ParsedDependency[],
   warnings: string[],
   lockFilePresent: boolean,
+  lockFileContent: string | null,
+  lockFileName: string | null,
 ): IngestorResult {
   const allWarnings = [...warnings];
+
+  // If lock file content was provided, parse and merge it
+  if (lockFileContent && lockFileName && lockFilePresent) {
+    let lockResult;
+    if (lockFileName === "poetry.lock") {
+      lockResult = parsePoetryLockContent(lockFileContent);
+    } else if (lockFileName === "Pipfile.lock") {
+      lockResult = parsePipfileLockContent(lockFileContent);
+    } else if (lockFileName === "pdm.lock") {
+      lockResult = parsePdmLockContent(lockFileContent);
+    } else {
+      allWarnings.push(
+        `Lock file format ${lockFileName} not yet supported for parsing — falling back to manifest only.`,
+      );
+      lockResult = null;
+    }
+
+    if (lockResult) {
+      return mergeManifestWithLock(dependencies, lockResult, "pypi", allWarnings);
+    }
+  }
 
   if (!lockFilePresent) {
     allWarnings.push(

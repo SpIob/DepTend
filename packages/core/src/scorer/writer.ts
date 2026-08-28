@@ -58,6 +58,7 @@ import {
   type Advisory,
   type Dependency,
   type MissionStatus,
+  type MissionType,
 } from "../db/schema.js";
 import {
   computeMissionScore,
@@ -65,7 +66,8 @@ import {
   type MissionScoreComputation,
   type MissionScoringContext,
 } from "./mission-scorer.js";
-import { generateMissionCopy } from "./mission-copy.js";
+import { generateMissionCopy, type MissionCopyInput } from "./mission-copy.js";
+import { classifyAllMissions } from "./mission-type-detector.js";
 // Scorer -> ingestor, same direction (and same reasoning) as
 // mission-scorer.ts's own EffortSignals type import — writer.ts is the
 // glue point ADR 0029 Decision 2 names explicitly: it already imports
@@ -131,9 +133,9 @@ export class MissionWriter {
   constructor(private readonly db: AnyNeonDb) {}
 
   /**
-   * Generates/refreshes vulnerability_fix missions for every is_affected
-   * dependency_advisories row belonging to this repo. All-or-nothing per
-   * repo: the DB writes are wrapped in a single transaction.
+   * Generates/refreshes missions for every dependency of this repo.
+   * Mission types: vulnerability_fix, dep_update, maintenance, license_issue.
+   * All-or-nothing per repo: the DB writes are wrapped in a single transaction.
    *
    * sourceRepoByPackage, githubToken, and librariesIoApiKey are all
    * optional (ADR 0029 Step 5 / ADR 0032) — omit them (or call with just
@@ -155,36 +157,65 @@ export class MissionWriter {
       throw new Error(`generateMissionsForRepo: no repo found for id ${repoId}`);
     }
 
-    const candidateRows = await this.db
-      .select({ dependency: dependencies, advisory: advisories })
-      .from(dependencyAdvisories)
-      .innerJoin(dependencies, eq(dependencyAdvisories.dependencyId, dependencies.id))
-      .innerJoin(advisories, eq(dependencyAdvisories.advisoryId, advisories.id))
-      .where(and(eq(dependencies.repoId, repoId), eq(dependencyAdvisories.isAffected, true)));
+    // Fetch ALL dependencies for this repo (not just those with advisories)
+    const allDeps = await this.db
+      .select()
+      .from(dependencies)
+      .where(eq(dependencies.repoId, repoId));
 
-    // ADR 0029, Step 5: prefetch BEFORE the transaction opens — see the
-    // module docstring for why this can't happen inside it. Undefined
-    // sourceRepoByPackage short-circuits to an empty map with zero
-    // network calls, not just zero resolved signals — the whole point of
-    // an optional parameter is that omitting it costs nothing.
+    // Fetch advisories for these dependencies
+    const depIds = allDeps.map((d) => d.id);
+    const advisoryRows =
+      depIds.length > 0
+        ? await this.db
+            .select({ dependency: dependencies, advisory: advisories })
+            .from(dependencyAdvisories)
+            .innerJoin(dependencies, eq(dependencyAdvisories.dependencyId, dependencies.id))
+            .innerJoin(advisories, eq(dependencyAdvisories.advisoryId, advisories.id))
+            .where(and(inArray(dependencies.id, depIds), eq(dependencyAdvisories.isAffected, true)))
+        : [];
+
+    // Group advisories by package name — matches the lookup key used by
+    // classifyAllMissions() in mission-type-detector.ts.
+    const advisoryMap = new Map<string, Advisory[]>();
+    for (const row of advisoryRows) {
+      const existing = advisoryMap.get(row.dependency.packageName) ?? [];
+      existing.push(row.advisory);
+      advisoryMap.set(row.dependency.packageName, existing);
+    }
+
+    // Build registry metadata map for deprecation/archival info
+    const registryMetadata = new Map<string, { isDeprecated?: boolean; isArchived?: boolean }>();
+    for (const dep of allDeps) {
+      if (dep.isDeprecated) {
+        registryMetadata.set(dep.packageName, { isDeprecated: true });
+      }
+    }
+
+    // Classify all dependencies into mission types
+    const classifications = classifyAllMissions(allDeps, advisoryMap, registryMetadata);
+
+    // Prepare candidate rows for prefetch (only vulnerability_fix for effort signals)
+    const vulnCandidates = advisoryRows.filter((r) =>
+      classifications.some(
+        (c) => c.dependencyId === r.dependency.id && c.classification.type === "vulnerability_fix",
+      ),
+    );
+
+    // ADR 0029, Step 5: prefetch BEFORE the transaction opens
     const effortSignalsByKey =
-      sourceRepoByPackage === undefined
+      sourceRepoByPackage === undefined || vulnCandidates.length === 0
         ? new Map<string, EffortSignals>()
         : await this.prefetchEffortSignalsForCandidates(
-            candidateRows,
+            vulnCandidates,
             sourceRepoByPackage,
             githubToken ?? null,
           );
 
-    // ADR 0032: one paced libraries.io listing (1–5 requests) for the
-    // analyzed repo's own published package(s) — also before the
-    // transaction opens, same reasoning as above. Skipped entirely with
-    // zero network calls when no key was passed or when there are no
-    // candidates to score; any failure inside fetchDownstreamDependents
-    // is non-fatal by contract and surfaces as warnings instead.
+    // ADR 0032: one paced libraries.io listing for the analyzed repo's own published package(s)
     let downstreamDependents: number | undefined;
     let downstreamWarnings: string[] = [];
-    if (librariesIoApiKey != null && candidateRows.length > 0) {
+    if (librariesIoApiKey != null && allDeps.length > 0) {
       const dependentsResult = await fetchDownstreamDependents(
         { owner: repoRow.owner, name: repoRow.name },
         librariesIoApiKey,
@@ -198,68 +229,102 @@ export class MissionWriter {
     let resolved = 0;
 
     await this.db.transaction(async (tx) => {
-      // One bulk existence check for every candidate pair up front, instead
-      // of one SELECT per candidate inside the write loop — N round trips
-      // became 1 (the pair lookup leans on migration 0006's
-      // idx_missions_dependency_id). Runs inside the transaction, same as
-      // the per-candidate check it replaces, so the check-then-write
-      // semantics don't widen.
-      const existingMissions = await this.selectExistingMissions(
-        tx,
-        candidateRows.map((row) => ({
-          dependencyId: row.dependency.id,
-          advisoryId: row.advisory.id,
-        })),
-      );
+      // Build pairs for existing mission lookup (all classified dependencies)
+      const classificationPairs = classifications.map((c) => ({
+        dependencyId: c.dependencyId,
+        advisoryId: c.classification.advisory?.id ?? null,
+        type: c.classification.type,
+      }));
 
-      // Every mission this run refreshes or creates — the complement of
-      // this set (among the repo's open/claimed missions) is what the
-      // resolution pass below closes.
+      const existingMissions = await this.selectExistingMissions(tx, classificationPairs);
+
       const processedMissionIds: string[] = [];
 
-      for (const row of candidateRows) {
-        const targetVersion = row.advisory.fixedVersion ?? row.dependency.latestVersion;
-        const signals = effortSignalsByKey.get(buildSignalKey(row.dependency.id, targetVersion));
-        // exactOptionalPropertyTypes: effortSignals?: EffortSignals means
-        // "may be absent," not "may be undefined" — Map.get()'s
-        // `T | undefined` return can't be assigned directly. Spreading
-        // conditionally omits the key entirely when there's nothing to
-        // report, rather than setting it to undefined.
+      for (const { dependencyId, classification } of classifications) {
+        const dependency = allDeps.find((d) => d.id === dependencyId);
+        if (!dependency) continue;
+
+        // Build effort signals for vulnerability_fix only
+        let signals: EffortSignals | undefined;
+        if (classification.type === "vulnerability_fix" && classification.advisory) {
+          const advTargetVersion = classification.advisory.fixedVersion ?? dependency.latestVersion;
+          signals = effortSignalsByKey.get(buildSignalKey(dependency.id, advTargetVersion));
+        }
+
         const ctx: MissionScoringContext = {
-          dependency: row.dependency,
-          advisory: row.advisory,
+          dependency,
+          advisory: classification.advisory ?? {
+            id: "00000000-0000-0000-0000-000000000000",
+            osvId: "N/A",
+            source: "osv",
+            ecosystem: dependency.ecosystem,
+            packageName: dependency.packageName,
+            severity: "unknown",
+            cvssScore: null,
+            epssScore: null,
+            summary: "No advisory",
+            details: null,
+            affectedVersions: [],
+            fixedVersion: null,
+            publishedAt: null,
+            modifiedAt: null,
+            rawData: {},
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          },
           repo: repoRow,
           ...(signals !== undefined && { effortSignals: signals }),
           ...(downstreamDependents !== undefined && { downstreamDependents }),
         };
 
         const score = computeMissionScore(ctx);
-        const copy = generateMissionCopy(ctx, score);
+
+        // Build mission copy input based on type
+        const copyInput: MissionCopyInput = {
+          type: classification.type,
+          ctx,
+          score,
+          ...(classification.targetVersion !== undefined && {
+            targetVersion: classification.targetVersion,
+          }),
+          ...(classification.maintenanceReason !== undefined && {
+            maintenanceReason: classification.maintenanceReason,
+          }),
+        };
+
+        const copy = generateMissionCopy(copyInput);
 
         const missionInput = {
           repoId,
-          dependencyId: ctx.dependency.id,
-          advisoryId: ctx.advisory.id,
+          dependencyId: dependency.id,
+          advisoryId: classification.advisory?.id ?? null,
           title: copy.title,
           description: copy.description,
           actionHint: copy.action_hint,
+          missionType: classification.type,
         };
 
-        const existing = existingMissions.get(
-          missionPairKey(missionInput.dependencyId, missionInput.advisoryId),
-        );
+        // Look up existing mission by dependency_id + advisory_id (or just dependency_id for non-vuln)
+        let existingKey: string;
+        if (classification.advisory) {
+          existingKey = missionPairKey(dependency.id, classification.advisory.id);
+        } else {
+          // For non-vulnerability missions, match by dependency_id only (advisory_id is null)
+          existingKey = `dep-only:${dependency.id}:${classification.type}`;
+        }
+
+        const existing = existingMissions.get(existingKey);
 
         let missionId: string;
         let wasCreated: boolean;
         if (existing !== undefined) {
-          // Copy only — claimed_by/claimed_at/dismissed_at/dismiss_reason
-          // are user-driven state a re-run must never overwrite (ADR 0008
-          // §3). Status is pipeline-driven since auto-resolution exists:
-          // a mission previously auto-resolved whose pair has come BACK
-          // (OSV range revised, dep re-added) is reopened — "resolved" was
-          // never a human decision for it, and leaving it closed with
-          // freshly-refreshed copy would be a silently-wrong board.
-          await this.refreshMissionCopy(tx, existing.id, missionInput, existing.status);
+          await this.refreshMissionCopy(
+            tx,
+            existing.id,
+            missionInput,
+            existing.status,
+            classification.type,
+          );
           missionId = existing.id;
           wasCreated = false;
         } else {
@@ -285,7 +350,7 @@ export class MissionWriter {
       created,
       updated,
       resolved,
-      candidatesFound: candidateRows.length,
+      candidatesFound: classifications.length,
       warnings: downstreamWarnings,
     };
   }
@@ -323,7 +388,7 @@ export class MissionWriter {
 
   /**
    * Resolves which of this repo's candidate pairs already have a mission,
-   * in ONE query: SELECT id, dependency_id, advisory_id, status WHERE
+   * in ONE query: SELECT id, dependency_id, advisory_id, mission_type, status WHERE
    * dependency_id IN (this repo's candidate dependencies) — leaning on
    * migration 0006's idx_missions_dependency_id. Rows whose
    * dependency_id/advisory_id were nulled by their ON DELETE SET NULL
@@ -331,7 +396,7 @@ export class MissionWriter {
    */
   private async selectExistingMissions(
     tx: DbOrTx,
-    pairs: { dependencyId: string; advisoryId: string }[],
+    pairs: { dependencyId: string; advisoryId: string | null; type: string }[],
   ): Promise<Map<string, { id: string; status: MissionStatus }>> {
     const result = new Map<string, { id: string; status: MissionStatus }>();
     if (pairs.length === 0) return result;
@@ -342,17 +407,21 @@ export class MissionWriter {
         id: missions.id,
         dependencyId: missions.dependencyId,
         advisoryId: missions.advisoryId,
+        missionType: missions.missionType,
         status: missions.status,
       })
       .from(missions)
       .where(inArray(missions.dependencyId, dependencyIds));
 
     for (const row of rows) {
-      if (row.dependencyId === null || row.advisoryId === null) continue;
-      result.set(missionPairKey(row.dependencyId, row.advisoryId), {
-        id: row.id,
-        status: row.status,
-      });
+      if (row.dependencyId === null) continue;
+      let key: string;
+      if (row.advisoryId) {
+        key = missionPairKey(row.dependencyId, row.advisoryId);
+      } else {
+        key = `dep-only:${row.dependencyId}:${row.missionType}`;
+      }
+      result.set(key, { id: row.id, status: row.status });
     }
     return result;
   }
@@ -370,8 +439,10 @@ export class MissionWriter {
       title: string;
       description: string;
       actionHint: string | null;
+      missionType: MissionType;
     },
     currentStatus: MissionStatus,
+    _missionType: MissionType,
   ): Promise<void> {
     await tx
       .update(missions)
@@ -379,6 +450,7 @@ export class MissionWriter {
         title: input.title,
         description: input.description,
         actionHint: input.actionHint,
+        missionType: input.missionType,
         ...(currentStatus === "resolved" && {
           status: "open" as const,
           resolvedAt: null,
@@ -438,10 +510,11 @@ export class MissionWriter {
     input: {
       repoId: string;
       dependencyId: string;
-      advisoryId: string;
+      advisoryId: string | null;
       title: string;
       description: string;
       actionHint: string | null;
+      missionType: MissionType;
     },
   ): Promise<string> {
     const inserted = await tx
@@ -451,7 +524,7 @@ export class MissionWriter {
         title: input.title,
         description: input.description,
         actionHint: input.actionHint,
-        missionType: "vulnerability_fix",
+        missionType: input.missionType,
         advisoryId: input.advisoryId,
         dependencyId: input.dependencyId,
       })
@@ -460,7 +533,7 @@ export class MissionWriter {
     const insertedRow = inserted[0];
     if (insertedRow === undefined) {
       throw new Error(
-        `insertMission: insert returned no row for dependency ${input.dependencyId} / advisory ${input.advisoryId}`,
+        `insertMission: insert returned no row for dependency ${input.dependencyId} / advisory ${input.advisoryId ?? "null"}`,
       );
     }
 

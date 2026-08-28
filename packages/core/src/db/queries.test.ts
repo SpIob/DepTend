@@ -169,6 +169,7 @@ const REPO_VALUES: Record<string, unknown> = {
   lastIngestedAt: NOW,
   ingestionError: null,
   submittedBy: null,
+  orgId: null,
   createdAt: NOW,
   updatedAt: NOW,
 };
@@ -217,6 +218,7 @@ const EMPTY_FILTERS: BoardFilters = {
   severities: [],
   ecosystems: [],
   efforts: [],
+  missionTypes: [],
   sort: "priority",
 };
 
@@ -340,6 +342,7 @@ describe("getBoardMissionsWithScoresPage filters", () => {
       severities: ["high", "critical"],
       ecosystems: ["npm"],
       efforts: ["trivial"],
+      missionTypes: [],
       sort: "priority",
     };
     const { db, calls } = makeDb(boardRouter({}));
@@ -372,8 +375,8 @@ describe("getBoardMissionsWithScoresPage filters", () => {
     }
 
     // One FILTER column per known enum value plus the total:
-    // 5 severities + 3 ecosystems + 4 efforts + 1 total.
-    expect(tally.sql.match(/filter \(where/g)).toHaveLength(13);
+    // 5 severities + 3 ecosystems + 4 efforts + 4 missionTypes + 1 total.
+    expect(tally.sql.match(/filter \(where/g)).toHaveLength(17);
 
     // Each facet bucket is an equality against its own expression — the
     // facet answers "how many rows are this severity under the other
@@ -494,7 +497,7 @@ describe("getBoardMissionsWithScoresPage result shaping", () => {
 
     expect(result.total).toBe(0);
     expect(result.missions).toEqual([]);
-    expect(result.facets).toEqual({ severity: {}, ecosystem: {}, effort: {} });
+    expect(result.facets).toEqual({ severity: {}, ecosystem: {}, effort: {}, missionType: {} });
   });
 });
 
@@ -660,6 +663,7 @@ describe.skipIf(LIVE_DATABASE_URL === "")(
           severities: [],
           ecosystems: [],
           efforts: [],
+          missionTypes: [],
           sort: "priority",
         };
 

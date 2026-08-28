@@ -215,7 +215,7 @@ const PEP440_CLAUSE_RE = /^(===|~=|==|!=|<=|>=|<|>)\s*(.+)$/;
  * legal — e.g. ">=1.0,>=2.0"), the most restrictive (highest) one wins,
  * using the library's public, stable compare().
  */
-function extractPep440Floor(specifier: string): string | null {
+export function extractPep440Floor(specifier: string): string | null {
   const clauses = specifier
     .split(",")
     .map((clause) => clause.trim())

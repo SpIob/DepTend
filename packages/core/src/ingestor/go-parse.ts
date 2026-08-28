@@ -64,6 +64,8 @@
  */
 
 import type { IngestorResult, ParsedDependency } from "./interface.js";
+import { parseGoSumContent } from "./go-sum-parse.js";
+import { mergeManifestWithLock } from "./lock-parse.js";
 
 /**
  * Go's lock-file equivalent — presence detected but not parsed, same
@@ -86,11 +88,15 @@ export const GO_LOCK_FILE_NAMES = ["go.sum"] as const;
  * @param source - human-readable description of where this content came
  *   from, used only in warning messages — a URL for HTTP fetches, a file
  *   path for local reads.
+ * @param lockFileContent - optional raw content of the lock file (go.sum)
+ * @param lockFileName - name of the lock file (always "go.sum" if provided)
  */
 export function parseGoModContent(
   raw: string | null,
   lockFilePresent: boolean,
   source: string,
+  lockFileContent: string | null = null,
+  lockFileName: string | null = null,
 ): IngestorResult {
   const warnings: string[] = [];
 
@@ -158,6 +164,18 @@ export function parseGoModContent(
       `No "module" directive found in go.mod at ${source} — this doesn't look like a valid go.mod file. Repository skipped.`,
     );
     return unresolved(warnings);
+  }
+
+  // If lock file content was provided, parse and merge it
+  if (lockFileContent && lockFileName && lockFilePresent) {
+    if (lockFileName === "go.sum") {
+      const lockResult = parseGoSumContent(lockFileContent);
+      return mergeManifestWithLock(dependencies, lockResult, "go", warnings);
+    } else {
+      warnings.push(
+        `Lock file format ${lockFileName} not yet supported for parsing — falling back to manifest only.`,
+      );
+    }
   }
 
   if (!lockFilePresent) {

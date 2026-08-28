@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
-import type { Ecosystem, EffortLabel, Severity } from "@deptend/core/db/schema.js";
+import type { Ecosystem, EffortLabel, MissionType, Severity } from "@deptend/core/db/schema.js";
 import type { MissionWithScore } from "@deptend/core";
 import {
   parseSortParam,
@@ -11,7 +11,7 @@ import {
   type MissionBoardQuery,
   type SortMode,
 } from "@/lib/mission-board-query";
-import { MissionCard, type MissionClaimPatch } from "./mission-card";
+import { MissionCardMemo as MissionCard, type MissionClaimPatch } from "./mission-card";
 import { MissionFilterBar } from "./mission-filter-bar";
 import { MissionSearchInput } from "./mission-search";
 
@@ -145,8 +145,29 @@ export function MissionBoard({
   const [selectedSeverities, setSelectedSeverities] = useState(initialQuery.severity);
   const [selectedEcosystems, setSelectedEcosystems] = useState(initialQuery.ecosystem);
   const [selectedEfforts, setSelectedEfforts] = useState(initialQuery.effort);
+  const [selectedMissionTypes, setSelectedMissionTypes] = useState(initialQuery.missionType);
   const [sortMode, setSortMode] = useState(initialQuery.sort);
   const [groupByRepo, setGroupByRepo] = useState(showGroupByRepo && initialQuery.group);
+
+  // Stabilize mission array reference: if initialMissions has the same mission IDs
+  // and key fields as the current missions state, keep the existing reference.
+  // This prevents unnecessary re-renders of memoized MissionCard components
+  // when the server re-sends identical data.
+  const stabilizedMissions = useMemo(() => {
+    if (missions.length !== initialMissions.length) return initialMissions;
+    for (let i = 0; i < missions.length; i++) {
+      const a = missions[i];
+      const b = initialMissions[i];
+      if (!a || !b) return initialMissions;
+      if (a.id !== b.id) return initialMissions;
+      if (a.status !== b.status) return initialMissions;
+      if (a.claimedBy !== b.claimedBy) return initialMissions;
+      if (a.claimedAt?.getTime() !== b.claimedAt?.getTime()) return initialMissions;
+      if (a.score.compositeScore !== b.score.compositeScore) return initialMissions;
+      if (a.score.confidence !== b.score.confidence) return initialMissions;
+    }
+    return missions;
+  }, [missions, initialMissions]);
 
   // Keeps the URL shareable/bookmarkable/refresh-safe. Deliberately
   // `window.history.replaceState` rather than next/navigation's router —
@@ -167,6 +188,9 @@ export function MissionBoard({
     if (selectedEfforts.size > 0) {
       params.set("effort", Array.from(selectedEfforts).join(","));
     }
+    if (selectedMissionTypes.size > 0) {
+      params.set("missionType", Array.from(selectedMissionTypes).join(","));
+    }
     if (sortMode !== "priority") {
       params.set("sort", sortMode);
     }
@@ -180,6 +204,7 @@ export function MissionBoard({
     selectedSeverities,
     selectedEcosystems,
     selectedEfforts,
+    selectedMissionTypes,
     sortMode,
     groupByRepo,
     pathname,
@@ -221,10 +246,23 @@ export function MissionBoard({
     });
   }
 
+  function toggleMissionType(type: MissionType): void {
+    setSelectedMissionTypes((prev) => {
+      const next = new Set(prev);
+      if (next.has(type)) {
+        next.delete(type);
+      } else {
+        next.add(type);
+      }
+      return next;
+    });
+  }
+
   function clearFilters(): void {
     setSelectedSeverities(new Set());
     setSelectedEcosystems(new Set());
     setSelectedEfforts(new Set());
+    setSelectedMissionTypes(new Set());
   }
 
   function handleStatusChange(missionId: string, patch: MissionClaimPatch): void {
@@ -235,28 +273,31 @@ export function MissionBoard({
   // every mission for every derived value. The haystack map is keyed by
   // mission id and only rebuilt when the missions array itself changes.
   const haystacksById = useMemo(
-    () => new Map(missions.map((mission) => [mission.id, haystackOf(mission)])),
-    [missions],
+    () => new Map(stabilizedMissions.map((mission) => [mission.id, haystackOf(mission)])),
+    [stabilizedMissions],
   );
 
   const searchMatched = useMemo(() => {
     const needle = searchQuery.trim().toLowerCase();
     if (needle === "") {
-      return missions;
+      return stabilizedMissions;
     }
-    return missions.filter((mission) => (haystacksById.get(mission.id) ?? "").includes(needle));
-  }, [missions, searchQuery, haystacksById]);
+    return stabilizedMissions.filter((mission) =>
+      (haystacksById.get(mission.id) ?? "").includes(needle),
+    );
+  }, [stabilizedMissions, searchQuery, haystacksById]);
 
   // Each axis's chip counts are computed against every *other* active axis
   // (but not itself), so a count reflects "how many results if I also
   // picked this," not a static total that never moves.
-  const { severityCounts, ecosystemCounts, effortCounts, filtered } = useMemo(
+  const { severityCounts, ecosystemCounts, effortCounts, missionTypeCounts, filtered } = useMemo(
     () => ({
       severityCounts: countBy(
         searchMatched.filter(
           (mission) =>
             matchesSet(mission.score.effortLabel, selectedEfforts) &&
-            matchesSet(ecosystemOf(mission), selectedEcosystems),
+            matchesSet(ecosystemOf(mission), selectedEcosystems) &&
+            matchesSet(mission.missionType, selectedMissionTypes),
         ),
         severityOf,
       ),
@@ -264,7 +305,8 @@ export function MissionBoard({
         searchMatched.filter(
           (mission) =>
             matchesSet(severityOf(mission), selectedSeverities) &&
-            matchesSet(mission.score.effortLabel, selectedEfforts),
+            matchesSet(mission.score.effortLabel, selectedEfforts) &&
+            matchesSet(mission.missionType, selectedMissionTypes),
         ),
         ecosystemOf,
       ),
@@ -272,18 +314,29 @@ export function MissionBoard({
         searchMatched.filter(
           (mission) =>
             matchesSet(severityOf(mission), selectedSeverities) &&
-            matchesSet(ecosystemOf(mission), selectedEcosystems),
+            matchesSet(ecosystemOf(mission), selectedEcosystems) &&
+            matchesSet(mission.missionType, selectedMissionTypes),
         ),
         (mission) => mission.score.effortLabel,
+      ),
+      missionTypeCounts: countBy(
+        searchMatched.filter(
+          (mission) =>
+            matchesSet(severityOf(mission), selectedSeverities) &&
+            matchesSet(ecosystemOf(mission), selectedEcosystems) &&
+            matchesSet(mission.score.effortLabel, selectedEfforts),
+        ),
+        (mission) => mission.missionType,
       ),
       filtered: searchMatched.filter(
         (mission) =>
           matchesSet(severityOf(mission), selectedSeverities) &&
           matchesSet(ecosystemOf(mission), selectedEcosystems) &&
-          matchesSet(mission.score.effortLabel, selectedEfforts),
+          matchesSet(mission.score.effortLabel, selectedEfforts) &&
+          matchesSet(mission.missionType, selectedMissionTypes),
       ),
     }),
-    [searchMatched, selectedSeverities, selectedEcosystems, selectedEfforts],
+    [searchMatched, selectedSeverities, selectedEcosystems, selectedEfforts, selectedMissionTypes],
   );
 
   const sorted = useMemo(
@@ -299,6 +352,7 @@ export function MissionBoard({
     selectedSeverities.size > 0 ||
     selectedEcosystems.size > 0 ||
     selectedEfforts.size > 0 ||
+    selectedMissionTypes.size > 0 ||
     searchQuery.trim() !== "";
 
   // A per-repo board whose missions all share one ecosystem gets nothing
@@ -307,14 +361,14 @@ export function MissionBoard({
   // invisible filter).
   const availableEcosystems = useMemo(() => {
     const set = new Set<Ecosystem>();
-    for (const mission of missions) {
+    for (const mission of stabilizedMissions) {
       const ecosystem = ecosystemOf(mission);
       if (ecosystem !== null) {
         set.add(ecosystem);
       }
     }
     return set;
-  }, [missions]);
+  }, [stabilizedMissions]);
   const hideEcosystemAxis = selectedEcosystems.size === 0 && availableEcosystems.size <= 1;
 
   return (
@@ -331,6 +385,9 @@ export function MissionBoard({
           selectedEfforts={selectedEfforts}
           onToggleEffort={toggleEffort}
           effortCounts={effortCounts}
+          selectedMissionTypes={selectedMissionTypes}
+          onToggleMissionType={toggleMissionType}
+          missionTypeCounts={missionTypeCounts}
           hideEcosystemAxis={hideEcosystemAxis}
           onClear={clearFilters}
         />
@@ -369,7 +426,7 @@ export function MissionBoard({
         </div>
         {isFiltered && (
           <p className="text-ink-muted font-mono text-xs">
-            {filtered.length} of {missions.length} missions
+            {filtered.length} of {stabilizedMissions.length} missions
           </p>
         )}
       </div>

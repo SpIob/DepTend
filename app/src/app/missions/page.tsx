@@ -60,6 +60,7 @@ export default async function AllMissionsPage({
     severity: firstValue(rawParams.severity),
     ecosystem: firstValue(rawParams.ecosystem),
     effort: firstValue(rawParams.effort),
+    missionType: firstValue(rawParams.missionType),
     sort: firstValue(rawParams.sort),
     group: firstValue(rawParams.group),
     page: firstValue(rawParams.page),
@@ -70,6 +71,7 @@ export default async function AllMissionsPage({
     severities: Array.from(query.severity),
     ecosystems: Array.from(query.ecosystem),
     efforts: Array.from(query.effort),
+    missionTypes: Array.from(query.missionType),
     sort: query.sort,
   };
 

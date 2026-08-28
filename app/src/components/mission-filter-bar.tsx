@@ -1,9 +1,11 @@
-import type { Ecosystem, EffortLabel, Severity } from "@deptend/core/db/schema.js";
+import type { Ecosystem, EffortLabel, MissionType, Severity } from "@deptend/core/db/schema.js";
 import {
   ECOSYSTEM_LABELS,
   ECOSYSTEM_OPTIONS,
   EFFORT_LABELS,
   EFFORT_OPTIONS,
+  MISSION_TYPE_LABELS,
+  MISSION_TYPE_OPTIONS,
   SEVERITY_LABELS,
   SEVERITY_OPTIONS,
 } from "@/lib/mission-filter-options";
@@ -46,6 +48,9 @@ export function MissionFilterBar({
   selectedEfforts,
   onToggleEffort,
   effortCounts,
+  selectedMissionTypes,
+  onToggleMissionType,
+  missionTypeCounts,
   hideEcosystemAxis = false,
   onClear,
 }: {
@@ -58,6 +63,9 @@ export function MissionFilterBar({
   selectedEfforts: ReadonlySet<EffortLabel>;
   onToggleEffort: (effort: EffortLabel) => void;
   effortCounts: Partial<Record<EffortLabel, number>>;
+  selectedMissionTypes: ReadonlySet<MissionType>;
+  onToggleMissionType: (type: MissionType) => void;
+  missionTypeCounts: Partial<Record<MissionType, number>>;
   /**
    * Hides the ecosystem chip row — for boards where the axis carries no
    * information (a per-repo board whose missions are all one ecosystem).
@@ -68,7 +76,10 @@ export function MissionFilterBar({
   onClear: () => void;
 }): React.JSX.Element {
   const hasFilters =
-    selectedSeverities.size > 0 || selectedEcosystems.size > 0 || selectedEfforts.size > 0;
+    selectedSeverities.size > 0 ||
+    selectedEcosystems.size > 0 ||
+    selectedEfforts.size > 0 ||
+    selectedMissionTypes.size > 0;
 
   return (
     <div className="flex flex-col gap-2.5">
@@ -118,6 +129,22 @@ export function MissionFilterBar({
             active={selectedEfforts.has(effort)}
             onToggle={() => {
               onToggleEffort(effort);
+            }}
+          />
+        ))}
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-ink-muted w-20 shrink-0 font-mono text-xs uppercase tracking-wide">
+          Type
+        </span>
+        {MISSION_TYPE_OPTIONS.map((type) => (
+          <Chip
+            key={type}
+            label={MISSION_TYPE_LABELS[type]}
+            count={missionTypeCounts[type]}
+            active={selectedMissionTypes.has(type)}
+            onToggle={() => {
+              onToggleMissionType(type);
             }}
           />
         ))}

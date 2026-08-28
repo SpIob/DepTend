@@ -51,6 +51,8 @@ export function buildRepo(ghMeta: GitHubRepoMeta): Repo {
     ingestionError: null,
     // No submitting user in a local CLI run.
     submittedBy: null,
+    // No org in a local CLI run
+    orgId: null,
     createdAt: now,
     updatedAt: now,
   };

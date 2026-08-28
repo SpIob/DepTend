@@ -4,7 +4,7 @@
  * Implements EcosystemIngestor for the PyPI ecosystem via local filesystem
  * reads, for the CLI: a repo path on disk has no GitHub URL and no
  * existing DB row, so there's nothing to fetch remotely — this reads
- * pyproject.toml and requirements.txt (and detects lock files) directly
+ * pyproject.toml and requirements.txt (and reads/parses lock files) directly
  * from the cloned repo on disk instead. Mirrors LocalNpmIngestor's shape
  * exactly.
  *
@@ -13,16 +13,11 @@
  * identically regardless of source — only how the raw bytes and lock-file
  * presence are obtained differs between the two.
  *
- * What this does NOT do (same scope limits as PyPIIngestor):
- *   - Parse or resolve lock files
- *   - Parse Poetry's [tool.poetry.dependencies] table
- *   - Fetch transitive dependencies
- *   - Resolve version ranges to concrete versions
- *
  * ADR: docs/adr/0022-phase6-pypi-ecosystem.md
+ *      docs/adr/0038-lock-file-parsing.md
  */
 
-import { access, readFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { EcosystemIngestor, IngestorResult } from "./interface.js";
 import { PYTHON_LOCK_FILE_NAMES, parsePyPIManifests } from "./pypi-parse.js";
@@ -51,13 +46,13 @@ export class LocalPyPIIngestor implements EcosystemIngestor {
       this.readRaw(requirementsPath),
     ]);
 
-    // Skip the lock-file existence checks entirely when neither candidate
+    // Skip the lock-file read entirely when neither candidate
     // manifest was found — same optimization as PyPIIngestor, and
     // parsePyPIManifests would ignore the value anyway in that case.
-    const lockFilePresent =
+    const { lockFileContent, lockFileName, lockFilePresent } =
       pyprojectRaw === null && requirementsRaw === null
-        ? false
-        : await this.detectLockFile(repoPath);
+        ? { lockFileContent: null, lockFileName: null, lockFilePresent: false }
+        : await this.readLockFile(repoPath);
 
     return parsePyPIManifests(
       pyprojectRaw,
@@ -65,6 +60,8 @@ export class LocalPyPIIngestor implements EcosystemIngestor {
       lockFilePresent,
       pyprojectPath,
       requirementsPath,
+      lockFileContent,
+      lockFileName,
     );
   }
 
@@ -91,21 +88,25 @@ export class LocalPyPIIngestor implements EcosystemIngestor {
   }
 
   /**
-   * Checks for each known Python lock file name in the repo root. Returns
-   * true if any is present. Intentionally silent — absence is not an
-   * error, just recorded as a warning by parsePyPIManifests.
+   * Read the lock file content (poetry.lock, Pipfile.lock, or pdm.lock) from disk.
+   * Returns the content, the name of the file found, and a boolean for presence.
+   * Tries poetry.lock first, then Pipfile.lock, then pdm.lock.
    */
-  private async detectLockFile(repoPath: string): Promise<boolean> {
-    const checks = PYTHON_LOCK_FILE_NAMES.map(async (name) => {
+  private async readLockFile(repoPath: string): Promise<{
+    lockFileContent: string | null;
+    lockFileName: string | null;
+    lockFilePresent: boolean;
+  }> {
+    // First, try to read and parse known lock files
+    for (const name of PYTHON_LOCK_FILE_NAMES) {
       try {
-        await access(join(repoPath, name));
-        return true;
+        const content = await readFile(join(repoPath, name), "utf-8");
+        return { lockFileContent: content, lockFileName: name, lockFilePresent: true };
       } catch {
-        return false;
+        // Continue to next lock file
       }
-    });
+    }
 
-    const results = await Promise.all(checks);
-    return results.some(Boolean);
+    return { lockFileContent: null, lockFileName: null, lockFilePresent: false };
   }
 }

@@ -362,6 +362,10 @@ export class OsvFetcher {
    * `this.concurrency` requests in flight at once. A single failed fetch is
    * warned about and excluded from the result — it does not throw or stop
    * the other ids from being processed.
+   *
+   * Uses a semaphore pattern with Promise.allSettled for better throughput
+   * than the worker-pool approach: faster requests free up concurrency slots
+   * immediately rather than waiting for slower ones in the same worker.
    */
   private async fetchFullDetails(
     ids: string[],
@@ -372,32 +376,54 @@ export class OsvFetcher {
     const advisories = new Map<string, NewAdvisory>();
     const failedIds = new Set<string>();
 
-    let index = 0;
+    // Semaphore for bounded concurrency
+    let running = 0;
+    const queue: (() => Promise<void>)[] = [];
 
-    const worker = async (): Promise<void> => {
-      while (index < ids.length) {
-        const current = index++;
-        const id = ids[current];
-        if (id === undefined) continue;
-
-        try {
-          const vuln = await this.fetchVulnById(id);
-          // Guaranteed present: every id here came from firstPackageForId's
-          // own key set (built from the same ids in fetchAdvisories).
-          const packageName = firstPackageForId.get(id) ?? "";
-          advisories.set(id, this.mapVulnToAdvisory(vuln, packageName, ecosystem, warnings));
-        } catch (err) {
-          failedIds.add(id);
-          warnings.push(
-            `Failed to fetch full details for advisory ${id}: ${String(err)}. ` +
-              `Skipped — this advisory will not appear in results this run.`,
-          );
-        }
+    const runNext = async (): Promise<void> => {
+      if (queue.length === 0) return;
+      running++;
+      const task = queue.shift();
+      if (task === undefined) {
+        running--;
+        return;
+      }
+      try {
+        await task();
+      } finally {
+        running--;
+        await runNext();
       }
     };
 
-    const workers = Array.from({ length: Math.min(this.concurrency, ids.length) }, () => worker());
-    await Promise.all(workers);
+    const enqueue = (task: () => Promise<void>): void => {
+      queue.push(task);
+      if (running < this.concurrency) {
+        void runNext();
+      }
+    };
+
+    await Promise.all(
+      ids.map(
+        (id) =>
+          new Promise<void>((resolve) => {
+            enqueue(async () => {
+              try {
+                const vuln = await this.fetchVulnById(id);
+                const packageName = firstPackageForId.get(id) ?? "";
+                advisories.set(id, this.mapVulnToAdvisory(vuln, packageName, ecosystem, warnings));
+              } catch (err) {
+                failedIds.add(id);
+                warnings.push(
+                  `Failed to fetch full details for advisory ${id}: ${String(err)}. ` +
+                    `Skipped — this advisory will not appear in results this run.`,
+                );
+              }
+              resolve();
+            });
+          }),
+      ),
+    );
 
     return { advisories, failedIds };
   }

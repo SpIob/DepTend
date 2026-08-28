@@ -1,5 +1,10 @@
-import type { Ecosystem, EffortLabel, Severity } from "@deptend/core/db/schema.js";
-import { ECOSYSTEM_OPTIONS, EFFORT_OPTIONS, SEVERITY_OPTIONS } from "./mission-filter-options";
+import type { Ecosystem, EffortLabel, MissionType, Severity } from "@deptend/core/db/schema.js";
+import {
+  ECOSYSTEM_OPTIONS,
+  EFFORT_OPTIONS,
+  MISSION_TYPE_OPTIONS,
+  SEVERITY_OPTIONS,
+} from "./mission-filter-options";
 
 // Deliberately NOT "use client" — page.tsx (a Server Component) calls
 // parseMissionBoardQuery() directly, and mission-board.tsx (a Client
@@ -25,6 +30,7 @@ export interface MissionBoardQuery {
   severity: ReadonlySet<Severity>;
   ecosystem: ReadonlySet<Ecosystem>;
   effort: ReadonlySet<EffortLabel>;
+  missionType: ReadonlySet<MissionType>;
   sort: SortMode;
   group: boolean;
   /**
@@ -45,6 +51,7 @@ export interface MissionBoardQueryState {
   severity?: ReadonlySet<Severity> | undefined;
   ecosystem?: ReadonlySet<Ecosystem> | undefined;
   effort?: ReadonlySet<EffortLabel> | undefined;
+  missionType?: ReadonlySet<MissionType> | undefined;
   sort?: SortMode | undefined;
   group?: boolean | undefined;
   page?: number | undefined;
@@ -80,6 +87,7 @@ export function parseMissionBoardQuery(params: {
   severity?: string | undefined;
   ecosystem?: string | undefined;
   effort?: string | undefined;
+  missionType?: string | undefined;
   sort?: string | undefined;
   group?: string | undefined;
   page?: string | undefined;
@@ -89,6 +97,7 @@ export function parseMissionBoardQuery(params: {
     severity: parseSetParam(params.severity ?? null, SEVERITY_OPTIONS),
     ecosystem: parseSetParam(params.ecosystem ?? null, ECOSYSTEM_OPTIONS),
     effort: parseSetParam(params.effort ?? null, EFFORT_OPTIONS),
+    missionType: parseSetParam(params.missionType ?? null, MISSION_TYPE_OPTIONS),
     sort: parseSortParam(params.sort ?? null),
     group: params.group === "1",
     page: parsePageParam(params.page),
@@ -116,6 +125,9 @@ export function serializeMissionBoardQuery(state: MissionBoardQueryState): strin
   }
   if (state.effort !== undefined && state.effort.size > 0) {
     params.set("effort", Array.from(state.effort).join(","));
+  }
+  if (state.missionType !== undefined && state.missionType.size > 0) {
+    params.set("missionType", Array.from(state.missionType).join(","));
   }
   if (state.sort !== undefined && state.sort !== "priority") {
     params.set("sort", state.sort);
