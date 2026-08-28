@@ -50,6 +50,13 @@
       "when": 1787642908455,
       "tag": "0006_add_missions_dependency_id_index",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1787891872493,
+      "tag": "0007_foamy_chimera",
+      "breakpoints": true
     }
   ]
 }

@@ -12,6 +12,22 @@ All notable changes to DepTend, condensed to one entry per phase.
 
 ## [Unreleased]
 
+**Migration bookkeeping recovery (ADR 0040)**
+
+### Fixed
+
+- `/repo/[owner]/[name]` (and every other page that selects from `repos`) was failing on production with the "Something went wrong" route-segment error boundary. The dev server threw `column "org_id" does not exist` — the same Neon error, just exposed locally. Root cause: commit `a539d8e` had added four migration `.sql` files (`0007_add_transitive_dep_type`, `0008_board_query_composite_indexes`, `0009_organizations`, `0010_notification_subscriptions`) without registering any of them in `packages/core/src/db/migrations/meta/_journal.json`. Drizzle's migrator reads the journal as the source of truth; orphan `.sql` files are ignored. `drizzle-kit migrate` completed with `[✓] migrations applied successfully!` and zero rows changed, on every environment. Consolidated the four hand-written files into a single auto-generated migration (`0007_foamy_chimera.sql`) registered in the journal, applied to dev and to production.
+
+### Added
+
+- `drizzle-kit check` step in CI: fails the build if `packages/core/src/db/schema.ts` drifts from the committed migrations. Catches the whole class of bug above (hand-written SQL files committed without journal entries, or schema.ts changed without a matching migration). No DB connection required.
+
+### Changed
+
+- `docs/data-model/README.md`: `repos.org_id` FK, new `organizations` / `organization_members` / `notification_subscriptions` tables, `transitive` value on `dep_type`, `advisories.epss_score` column, schema changelog row 0.1.8 — all in the same pass as the schema change, per the standing rule.
+
+---
+
 **Security hardening pass II: origin validation, nonce CSP (staged), URL-encoding discipline (ADR 0037)**
 
 ### Added

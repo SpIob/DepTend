@@ -57,6 +57,17 @@ jobs:
       - name: Test
         run: pnpm test
 
+      # Drizzle migration consistency: fails if packages/core/src/db/schema.ts
+      # has drifted from the committed migrations. Catches a whole class of
+      # bug (ADR 0040) where schema.ts and the migration SQL files diverged
+      # silently — hand-written SQL files were committed without their
+      # journal entry, so drizzle-kit migrate silently did nothing while
+      # the deployed site started selecting from columns that didn't exist.
+      # No DB connection required (checks against the local schema vs.
+      # committed journal).
+      - name: Migrations match schema
+        run: pnpm exec drizzle-kit check
+
       # Advisory signal, not a gate — fails loudly in the log without
       # breaking solo-dev CI on every future advisory. Known false
       # positive: GHSA-6cpc-mj5c-m9rq matches our own private package

@@ -1,1 +1,0 @@
-ALTER TYPE "public"."dep_type" ADD VALUE 'transitive';

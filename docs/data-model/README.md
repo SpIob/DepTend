@@ -21,7 +21,15 @@ repos
   │
   ├─── repo_bookmarks (one repo → many user bookmarks)
   │
-  └─── ingestion_runs (one repo → many runs, append-only)
+  ├─── ingestion_runs (one repo → many runs, append-only)
+  │
+  └─── notification_subscriptions (one repo → many user notification prefs)
+
+organizations
+  │
+  └─── organization_members (one org → many user memberships)
+  │
+  └─── repos (one org → many repos, via repos.org_id)
 ```
 
 ---
@@ -32,24 +40,25 @@ repos
 
 Tracks GitHub repositories submitted for analysis.
 
-| Column              | Type         | Notes                                                     |
-| ------------------- | ------------ | --------------------------------------------------------- |
-| `id`                | uuid PK      | gen_random_uuid()                                         |
-| `github_url`        | text UNIQUE  | `https://github.com/{owner}/{name}`                       |
-| `owner`             | text         | GitHub org or username                                    |
-| `name`              | text         | Repo name                                                 |
-| `default_branch`    | text         | Default: `'main'`                                         |
-| `description`       | text?        | From GitHub API                                           |
-| `stars`             | integer      | Refreshed each ingestion                                  |
-| `open_issues_count` | integer      | Refreshed each ingestion                                  |
-| `topics`            | text[]       | GitHub repo topics                                        |
-| `homepage_url`      | text?        | From GitHub API                                           |
-| `ingestion_status`  | enum         | `pending \| running \| complete \| failed \| skipped`     |
-| `last_ingested_at`  | timestamptz? | NULL until first completed run; drives stale re-ingestion |
-| `ingestion_error`   | text?        | Last error message; also holds the reason for `skipped`   |
-| `submitted_by`      | text?        | GitHub username; NULL for CLI-submitted                   |
-| `created_at`        | timestamptz  |                                                           |
-| `updated_at`        | timestamptz  | Managed by trigger                                        |
+| Column              | Type                     | Notes                                                      |
+| ------------------- | ------------------------ | ---------------------------------------------------------- |
+| `id`                | uuid PK                  | gen_random_uuid()                                          |
+| `github_url`        | text UNIQUE              | `https://github.com/{owner}/{name}`                        |
+| `owner`             | text                     | GitHub org or username                                     |
+| `name`              | text                     | Repo name                                                  |
+| `default_branch`    | text                     | Default: `'main'`                                          |
+| `description`       | text?                    | From GitHub API                                            |
+| `stars`             | integer                  | Refreshed each ingestion                                   |
+| `open_issues_count` | integer                  | Refreshed each ingestion                                   |
+| `topics`            | text[]                   | GitHub repo topics                                         |
+| `homepage_url`      | text?                    | From GitHub API                                            |
+| `ingestion_status`  | enum                     | `pending \| running \| complete \| failed \| skipped`      |
+| `last_ingested_at`  | timestamptz?             | NULL until first completed run; drives stale re-ingestion  |
+| `ingestion_error`   | text?                    | Last error message; also holds the reason for `skipped`    |
+| `submitted_by`      | text?                    | GitHub username; NULL for CLI-submitted                    |
+| `org_id`            | uuid? FK → organizations | SET NULL on delete; added in 0.1.8 (organizations feature) |
+| `created_at`        | timestamptz              |                                                            |
+| `updated_at`        | timestamptz              | Managed by trigger                                         |
 
 **MVP constraint:** Maximum 150 rows (`NEXT_PUBLIC_MAX_REPOS`, raised from 3 to 10 -- ADR 0020 -- then 10 to 150 for launch -- ADR 0028). Enforced at application layer.
 
@@ -63,20 +72,20 @@ One row per `(repo, package_name, dep_type)`.
 
 The set is reconciled against the manifest on every successful ingestion: rows for packages the manifest no longer lists are deleted (cascading their `dependency_advisories`; missions survive via SET NULL on `dependency_id`). A run that couldn't read the manifest never prunes — an unreadable manifest defines nothing.
 
-| Column             | Type            | Notes                                           |
-| ------------------ | --------------- | ----------------------------------------------- |
-| `id`               | uuid PK         |                                                 |
-| `repo_id`          | uuid FK → repos | CASCADE on delete                               |
-| `ecosystem`        | enum            | `npm \| pypi \| go`                             |
-| `package_name`     | text            | e.g. `lodash`                                   |
-| `version_spec`     | text            | Range from package.json, e.g. `^4.17.0`         |
-| `resolved_version` | text?           | From lock file; NULL in Phase 1 baseline        |
-| `dep_type`         | enum            | `production \| development \| peer \| optional` |
-| `latest_version`   | text?           | Fetched from registry at ingest time            |
-| `is_deprecated`    | boolean         |                                                 |
-| `deprecation_note` | text?           | Registry deprecation message                    |
-| `created_at`       | timestamptz     |                                                 |
-| `updated_at`       | timestamptz     |                                                 |
+| Column             | Type            | Notes                                                         |
+| ------------------ | --------------- | ------------------------------------------------------------- |
+| `id`               | uuid PK         |                                                               |
+| `repo_id`          | uuid FK → repos | CASCADE on delete                                             |
+| `ecosystem`        | enum            | `npm \| pypi \| go`                                           |
+| `package_name`     | text            | e.g. `lodash`                                                 |
+| `version_spec`     | text            | Range from package.json, e.g. `^4.17.0`                       |
+| `resolved_version` | text?           | From lock file; NULL in Phase 1 baseline                      |
+| `dep_type`         | enum            | `production \| development \| peer \| optional \| transitive` |
+| `latest_version`   | text?           | Fetched from registry at ingest time                          |
+| `is_deprecated`    | boolean         |                                                               |
+| `deprecation_note` | text?           | Registry deprecation message                                  |
+| `created_at`       | timestamptz     |                                                               |
+| `updated_at`       | timestamptz     |                                                               |
 
 ---
 
@@ -84,24 +93,25 @@ The set is reconciled against the manifest on every successful ingestion: rows f
 
 Global advisory records from OSV and GHSA. Shared across repos.
 
-| Column              | Type          | Notes                                          |
-| ------------------- | ------------- | ---------------------------------------------- |
-| `id`                | uuid PK       |                                                |
-| `osv_id`            | text UNIQUE   | e.g. `GHSA-p6mc-r536-x9xx`                     |
-| `source`            | enum          | `osv \| ghsa`                                  |
-| `ecosystem`         | enum          | `npm \| pypi \| go`                            |
-| `package_name`      | text          |                                                |
-| `severity`          | enum          | `critical \| high \| medium \| low \| unknown` |
-| `cvss_score`        | numeric(4,1)? | 0.0–10.0; NULL when not provided               |
-| `summary`           | text          | Short title                                    |
-| `details`           | text?         | Full description                               |
-| `affected_versions` | jsonb         | OSV `ranges` array                             |
-| `fixed_version`     | text?         | First patched version; NULL if unpatched       |
-| `published_at`      | timestamptz?  |                                                |
-| `modified_at`       | timestamptz?  | Used to detect advisory updates                |
-| `raw_data`          | jsonb         | Full source payload for auditability           |
-| `created_at`        | timestamptz   |                                                |
-| `updated_at`        | timestamptz   |                                                |
+| Column              | Type          | Notes                                                                                                |
+| ------------------- | ------------- | ---------------------------------------------------------------------------------------------------- |
+| `id`                | uuid PK       |                                                                                                      |
+| `osv_id`            | text UNIQUE   | e.g. `GHSA-p6mc-r536-x9xx`                                                                           |
+| `source`            | enum          | `osv \| ghsa`                                                                                        |
+| `ecosystem`         | enum          | `npm \| pypi \| go`                                                                                  |
+| `package_name`      | text          |                                                                                                      |
+| `severity`          | enum          | `critical \| high \| medium \| low \| unknown`                                                       |
+| `cvss_score`        | numeric(4,1)? | 0.0–10.0; NULL when not provided                                                                     |
+| `epss_score`        | numeric(6,5)? | 0.00000–1.00000; EPSS exploitability probability from FIRST.org (ADR 0039). NULL when not available. |
+| `summary`           | text          | Short title                                                                                          |
+| `details`           | text?         | Full description                                                                                     |
+| `affected_versions` | jsonb         | OSV `ranges` array                                                                                   |
+| `fixed_version`     | text?         | First patched version; NULL if unpatched                                                             |
+| `published_at`      | timestamptz?  |                                                                                                      |
+| `modified_at`       | timestamptz?  | Used to detect advisory updates                                                                      |
+| `raw_data`          | jsonb         | Full source payload for auditability                                                                 |
+| `created_at`        | timestamptz   |                                                                                                      |
+| `updated_at`        | timestamptz   |                                                                                                      |
 
 ---
 
@@ -222,12 +232,70 @@ user's bookmarks" (the repo directory's read pattern) is the primary access path
 
 ---
 
+### `organizations`
+
+Optional grouping for repos under a GitHub organization login. Repos point at an org via
+`repos.org_id`; the inverse — listing an org's repos — is the read pattern behind
+`/org/[org]` (organizations directory view).
+
+| Column         | Type        | Notes                               |
+| -------------- | ----------- | ----------------------------------- |
+| `id`           | uuid PK     | gen_random_uuid()                   |
+| `github_login` | text UNIQUE | The GitHub org login, e.g. `vercel` |
+| `name`         | text?       | Display name; NULL until fetched    |
+| `avatar_url`   | text?       | From GitHub API; NULL until fetched |
+| `created_at`   | timestamptz |                                     |
+| `updated_at`   | timestamptz | Managed by trigger                  |
+
+`repos.org_id` is `SET NULL` on org delete — repos survive independently; the org reference
+just goes blank.
+
+---
+
+### `organization_members`
+
+Per-org membership (read-only; the UI doesn't gate anything on role yet — the `role`
+column is in place for the future). The `role` value is `owner | admin | member` but
+no UI surface reads it.
+
+| Column            | Type                    | Notes                      |
+| ----------------- | ----------------------- | -------------------------- |
+| `id`              | uuid PK                 |                            |
+| `organization_id` | uuid FK → organizations | CASCADE on delete          |
+| `user_login`      | text                    | GitHub login               |
+| `role`            | text                    | `owner \| admin \| member` |
+| `created_at`      | timestamptz             |                            |
+
+UNIQUE constraint on `(organization_id, user_login)`.
+
+---
+
+### `notification_subscriptions`
+
+User opt-in to be notified about repo events. Delivery is via GitHub Issues on the
+DepTend repo itself (zero-budget, per ADR 0032's standing rule). `event_types` is the
+array the user subscribed to; `github_issue_number` is the open issue DepTend uses
+as the user's "inbox" on its own repo.
+
+| Column                | Type            | Notes                                                                              |
+| --------------------- | --------------- | ---------------------------------------------------------------------------------- |
+| `id`                  | uuid PK         | gen_random_uuid()                                                                  |
+| `user_login`          | text            | GitHub login                                                                       |
+| `repo_id`             | uuid FK → repos | CASCADE on delete                                                                  |
+| `event_types`         | text[]          | One or more of `new_mission \| claimed \| resolved`; defaults to all three         |
+| `github_issue_number` | integer?        | Open issue on SpIob/DepTend used as the per-user delivery inbox; NULL until opened |
+| `created_at`          | timestamptz     |                                                                                    |
+
+UNIQUE constraint on `(user_login, repo_id)`.
+
+---
+
 ## Enum reference
 
 | Enum               | Values                                                            |
 | ------------------ | ----------------------------------------------------------------- |
 | `ingestion_status` | `pending`, `running`, `complete`, `failed`, `skipped`             |
-| `dep_type`         | `production`, `development`, `peer`, `optional`                   |
+| `dep_type`         | `production`, `development`, `peer`, `optional`, `transitive`     |
 | `ecosystem`        | `npm`, `pypi`, `go`                                               |
 | `advisory_source`  | `osv`, `ghsa`                                                     |
 | `severity`         | `critical`, `high`, `medium`, `low`, `unknown`                    |
@@ -240,13 +308,14 @@ user's bookmarks" (the repo directory's read pattern) is the primary access path
 
 ## Schema changelog
 
-| Version | Date       | Change                                                                                                                                                                                                  |
-| ------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0.1.0   | 2026-06-29 | Initial schema — Phase 0                                                                                                                                                                                |
-| 0.1.1   | 2026-07-09 | ADR 0011: schema.ts is now the sole row-type source (db/types.ts removed); jsonb columns and numeric score columns gained precise TS types via `.$type<>()` / `mode: "number"` — no DDL change          |
-| 0.1.2   | 2026-07-22 | ADR 0021 (migration `0001`): `'skipped'` added to `ingestion_status`, distinct from `'complete'`/`'failed'`; plus 3 pre-existing `SET DEFAULT` drift fixes on `mission_scores`' jsonb columns           |
-| 0.1.3   | 2026-07-25 | ADR 0022 (migration `0002`): `'pypi'` added to `ecosystem`. No `repos.ecosystem` column — ecosystem is decided per-ingestion by `detectEcosystem`, recorded per-row on `dependencies`/`advisories` only |
-| 0.1.4   | 2026-07-25 | ADR 0024 (migration `0003`): `'go'` added to `ecosystem`, same pattern as 0.1.3                                                                                                                         |
-| 0.1.5   | 2026-07-30 | ADR 0027 (migration `0004`): `repo_bookmarks` table added — per-user repo bookmarks for the directory/browse view, unique `(user_login, repo_id)`; no DDL change to existing tables                     |
-| 0.1.6   | 2026-08-23 | ADR 0034 (migration `0005`): composite index `idx_dependencies_repo_ecosystem (repo_id, ecosystem)` — index-only scan for the directory page's distinct pair; no column or row-type changes             |
-| 0.1.7   | 2026-08-25 | ADR 0035 (migration `0006`): index `idx_missions_dependency_id (dependency_id)` — serves MissionWriter's bulk existing-mission check; no column or row-type changes                                     |
+| Version | Date       | Change                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| ------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 0.1.0   | 2026-06-29 | Initial schema — Phase 0                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| 0.1.1   | 2026-07-09 | ADR 0011: schema.ts is now the sole row-type source (db/types.ts removed); jsonb columns and numeric score columns gained precise TS types via `.$type<>()` / `mode: "number"` — no DDL change                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| 0.1.2   | 2026-07-22 | ADR 0021 (migration `0001`): `'skipped'` added to `ingestion_status`, distinct from `'complete'`/`'failed'`; plus 3 pre-existing `SET DEFAULT` drift fixes on `mission_scores`' jsonb columns                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| 0.1.3   | 2026-07-25 | ADR 0022 (migration `0002`): `'pypi'` added to `ecosystem`. No `repos.ecosystem` column — ecosystem is decided per-ingestion by `detectEcosystem`, recorded per-row on `dependencies`/`advisories` only                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| 0.1.4   | 2026-07-25 | ADR 0024 (migration `0003`): `'go'` added to `ecosystem`, same pattern as 0.1.3                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| 0.1.5   | 2026-07-30 | ADR 0027 (migration `0004`): `repo_bookmarks` table added — per-user repo bookmarks for the directory/browse view, unique `(user_login, repo_id)`; no DDL change to existing tables                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| 0.1.6   | 2026-08-23 | ADR 0034 (migration `0005`): composite index `idx_dependencies_repo_ecosystem (repo_id, ecosystem)` — index-only scan for the directory page's distinct pair; no column or row-type changes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| 0.1.7   | 2026-08-25 | ADR 0035 (migration `0006`): index `idx_missions_dependency_id (dependency_id)` — serves MissionWriter's bulk existing-mission check; no column or row-type changes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| 0.1.8   | 2026-08-28 | ADR 0040 (migration `0007_foamy_chimera`): the consolidated diff of four previously-unregistered hand-written SQL files (`0007`–`0010`) that the prior commit (`a539d8e`) had added without journal entries. Adds: `organizations` + `organization_members` + `notification_subscriptions` tables, `repos.org_id` FK to organizations, `transitive` value to `dep_type`, `advisories.epss_score` column, the `mission_scores.impact_inputs` default refresh with the `epss_score` field, and the four board-query composite indexes (`idx_advisories_severity_id`, `idx_dependencies_ecosystem_id`, `idx_mission_scores_effort_composite`, `idx_missions_status_repo`, `idx_repos_org_id`) |
