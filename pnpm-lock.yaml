@@ -35,9 +35,6 @@ importers:
       '@types/node':
         specifier: ^22.0.0
         version: 22.20.0
-      '@types/yarnpkg__lockfile':
-        specifier: ^1.1.9
-        version: 1.1.9
       '@typescript-eslint/eslint-plugin':
         specifier: ^8.0.0
         version: 8.62.0(@typescript-eslint/parser@8.62.0(eslint@9.39.4(jiti@1.21.7))(typescript@5.9.3))(eslint@9.39.4(jiti@1.21.7))(typescript@5.9.3)
@@ -154,6 +151,9 @@ importers:
       '@types/semver':
         specifier: ^7.7.1
         version: 7.7.1
+      '@types/yarnpkg__lockfile':
+        specifier: ^1.1.9
+        version: 1.1.9
       typescript:
         specifier: ^5.5.0
         version: 5.9.3
