@@ -1,4 +1,4 @@
-# DepTend — Data Model Reference
+# DepTend: Data Model Reference
 
 _Auto-sync this document with `packages/core/src/db/schema.ts` on every schema change. Column types below reflect the TypeScript-level types after ADR 0011 (`schema.ts` is the sole row-type source; JSONB payload shapes live in `packages/core/src/db/json-types.ts`)._
 
@@ -62,7 +62,7 @@ Tracks GitHub repositories submitted for analysis.
 
 **MVP constraint:** Maximum 150 rows (`NEXT_PUBLIC_MAX_REPOS`, raised from 3 to 10 -- ADR 0020 -- then 10 to 150 for launch -- ADR 0028). Enforced at application layer.
 
-**Status lifecycle:** cron runs pick `pending`/`failed` first (fresh submissions, retryable errors), then up to a capped batch of `complete` repos whose `last_ingested_at` is older than the staleness threshold (`REINGEST_STALE_DAYS`, default 7) — so indexed boards keep tracking upstream reality. `skipped` is terminal on both paths into it: no analyzable manifest at ingestion time, or the repo no longer exists on GitHub (`not_found`) — neither is ever re-picked.
+**Status lifecycle:** cron runs pick `pending`/`failed` first (fresh submissions, retryable errors), then up to a capped batch of `complete` repos whose `last_ingested_at` is older than the staleness threshold (`REINGEST_STALE_DAYS`, default 7); so indexed boards keep tracking upstream reality. `skipped` is terminal on both paths into it: no analyzable manifest at ingestion time, or the repo no longer exists on GitHub (`not_found`); neither is ever re-picked.
 
 ---
 
@@ -70,7 +70,7 @@ Tracks GitHub repositories submitted for analysis.
 
 One row per `(repo, package_name, dep_type)`.
 
-The set is reconciled against the manifest on every successful ingestion: rows for packages the manifest no longer lists are deleted (cascading their `dependency_advisories`; missions survive via SET NULL on `dependency_id`). A run that couldn't read the manifest never prunes — an unreadable manifest defines nothing.
+The set is reconciled against the manifest on every successful ingestion: rows for packages the manifest no longer lists are deleted (cascading their `dependency_advisories`; missions survive via SET NULL on `dependency_id`). A run that couldn't read the manifest never prunes; an unreadable manifest defines nothing.
 
 | Column             | Type            | Notes                                                         |
 | ------------------ | --------------- | ------------------------------------------------------------- |
@@ -155,7 +155,7 @@ Ranked maintenance work items shown on the dashboard.
 | `created_at`     | timestamptz             |                                                                      |
 | `updated_at`     | timestamptz             |                                                                      |
 
-**Status lifecycle:** `resolved` and `dismissed` are both reachable. The pipeline closes open/claimed missions as `resolved` when their `(dependency_id, advisory_id)` pair produces no candidate in a re-ingestion run — dependency pruned from the manifest, advisory range no longer matching, or the advisory withdrawn; a previously auto-resolved mission whose pair returns is reopened. `dismissed` is a human decision via `POST /api/missions/[id]/dismiss` (open missions only), reversible via `/undismiss`. Claim fields survive auto-resolution as history; dismissal of claimed missions requires unclaiming first.
+**Status lifecycle:** `resolved` and `dismissed` are both reachable. The pipeline closes open/claimed missions as `resolved` when their `(dependency_id, advisory_id)` pair produces no candidate in a re-ingestion run; dependency pruned from the manifest, advisory range no longer matching, or the advisory withdrawn; a previously auto-resolved mission whose pair returns is reopened. `dismissed` is a human decision via `POST /api/missions/[id]/dismiss` (open missions only), reversible via `/undismiss`. Claim fields survive auto-resolution as history; dismissal of claimed missions requires unclaiming first.
 
 ---
 
@@ -189,7 +189,7 @@ Confidence inputs come from two data sources wired up after this table was first
 composite = (impact_score × 0.60) + (ecosystem_value_score × 0.40)
 ```
 
-`effort_label` is applied as a categorical tie-breaker in the sort order — it does not enter the numeric formula.
+`effort_label` is applied as a categorical tie-breaker in the sort order; it does not enter the numeric formula.
 
 ---
 
@@ -217,7 +217,7 @@ Append-only audit log. Rows are never updated or deleted.
 
 ### `repo_bookmarks`
 
-Per-user repo bookmarks (ADR 0027). `user_login` stores the GitHub login directly — same
+Per-user repo bookmarks (ADR 0027). `user_login` stores the GitHub login directly; same
 pattern as `missions.claimed_by` / `repos.submitted_by`; no separate users table exists.
 
 | Column       | Type            | Notes                                |
@@ -227,7 +227,7 @@ pattern as `missions.claimed_by` / `repos.submitted_by`; no separate users table
 | `user_login` | text            | GitHub login of the bookmarking user |
 | `created_at` | timestamptz     |                                      |
 
-UNIQUE constraint on `(user_login, repo_id)` — leads with `user_login`, since "list this
+UNIQUE constraint on `(user_login, repo_id)`; leads with `user_login`, since "list this
 user's bookmarks" (the repo directory's read pattern) is the primary access path.
 
 ---
@@ -235,7 +235,7 @@ user's bookmarks" (the repo directory's read pattern) is the primary access path
 ### `organizations`
 
 Optional grouping for repos under a GitHub organization login. Repos point at an org via
-`repos.org_id`; the inverse — listing an org's repos — is the read pattern behind
+`repos.org_id`; the inverse; listing an org's repos; is the read pattern behind
 `/org/[org]` (organizations directory view).
 
 | Column         | Type        | Notes                               |
@@ -247,14 +247,14 @@ Optional grouping for repos under a GitHub organization login. Repos point at an
 | `created_at`   | timestamptz |                                     |
 | `updated_at`   | timestamptz | Managed by trigger                  |
 
-`repos.org_id` is `SET NULL` on org delete — repos survive independently; the org reference
+`repos.org_id` is `SET NULL` on org delete; repos survive independently; the org reference
 just goes blank.
 
 ---
 
 ### `organization_members`
 
-Per-org membership (read-only; the UI doesn't gate anything on role yet — the `role`
+Per-org membership (read-only; the UI doesn't gate anything on role yet; the `role`
 column is in place for the future). The `role` value is `owner | admin | member` but
 no UI surface reads it.
 

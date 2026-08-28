@@ -1,8 +1,8 @@
-# ADR 0005 — Migration Tooling: Drizzle Kit
+# ADR 0005; Migration Tooling: Drizzle Kit
 
 **Status:** Accepted  
 **Date:** 2026-06-29  
-**Phase:** 0 — Foundation
+**Phase:** 0; Foundation
 
 ---
 
@@ -13,7 +13,7 @@ The initial schema was applied directly via `psql` against Neon using `packages/
 Requirements:
 
 - Free at all usage levels.
-- TypeScript-native — types should be derivable from the schema, not maintained separately.
+- TypeScript-native; types should be derivable from the schema, not maintained separately.
 - Compatible with Neon's serverless driver and PgBouncer pooling.
 - Manageable by one person without a dedicated migration server or CLI wrapper.
 
@@ -23,7 +23,7 @@ This decision was flagged as a Phase 1 gate in ADR 0002 and ADR 0004.
 
 Use **Drizzle Kit** as the migration tooling, with **Drizzle ORM** as the query layer.
 
-- Drizzle Kit generates numbered SQL migration files from a TypeScript schema definition. The generated files are committed to the repo and applied explicitly — no hidden magic.
+- Drizzle Kit generates numbered SQL migration files from a TypeScript schema definition. The generated files are committed to the repo and applied explicitly; no hidden magic.
 - The TypeScript schema in `packages/core/src/db/schema.ts` becomes the single source of truth. `packages/core/src/db/schema.sql` is retained as a reference artifact but is no longer the authoritative definition.
 - Migrations are applied via `drizzle-kit migrate` against `DATABASE_URL_UNPOOLED` (the direct Neon connection string). The pooled connection is used by the application at runtime; the unpooled connection is used for DDL operations only.
 - Drizzle ORM replaces raw `pg` queries in `/app` and `/packages/core`. All queries are written using Drizzle's query builder and are fully typed against the schema.
@@ -34,7 +34,7 @@ Use **Drizzle Kit** as the migration tooling, with **Drizzle ORM** as the query 
 2. Run `pnpm drizzle-kit generate` to produce a new numbered migration file in `packages/core/src/db/migrations/`.
 3. Commit the migration file alongside the schema change in the same PR.
 4. Run `pnpm drizzle-kit migrate` (using `DATABASE_URL_UNPOOLED`) to apply it to Neon.
-5. Vercel deployment is unaffected — migrations are never run automatically on deploy.
+5. Vercel deployment is unaffected; migrations are never run automatically on deploy.
 
 ## Alternatives considered
 
@@ -50,7 +50,7 @@ Use **Drizzle Kit** as the migration tooling, with **Drizzle ORM** as the query 
 - `packages/core/src/db/schema.ts` is created as the authoritative schema definition. It must stay in sync with all applied migrations.
 - `packages/core/src/db/migrations/` is added to the repo. Migration files are committed and never edited after they are applied.
 - `drizzle.config.ts` is added at the repo root, pointing at the schema file and migrations directory.
-- `packages/core/src/db/types.ts` is removed or replaced — Drizzle infers TypeScript types directly from the schema, making a separate types file redundant.
+- `packages/core/src/db/types.ts` is removed or replaced; Drizzle infers TypeScript types directly from the schema, making a separate types file redundant.
 - The `DATABASE_URL_UNPOOLED` environment variable is required locally and as a GitHub Actions secret for any workflow that runs migrations.
 - The initial schema applied via `psql` is treated as migration `0000_initial`. Drizzle Kit's migration table (`__drizzle_migrations`) must be seeded to acknowledge it before the next `drizzle-kit migrate` run, to prevent re-application.
 

@@ -1,4 +1,4 @@
-# ADR 0035 — Index `missions.dependency_id` + bulk mission-existence check
+# ADR 0035; Index `missions.dependency_id` + bulk mission-existence check
 
 **Status:** Proposed
 **Date:** 2026-08-25
@@ -8,15 +8,15 @@
 ## Context
 
 `MissionWriter.generateMissionsForRepo()` resolves which of a repo's candidate
-(dependency, advisory) pairs already have a mission — the manual check-then-write
+(dependency, advisory) pairs already have a mission; the manual check-then-write
 `missions` requires since it has no unique constraint (ADR 0008 §2). Two problems
 in how that check ran:
 
 1. **No index on `missions.dependency_id`.** The missions table carried indexes on
-   repo_id, status, mission_type, and advisory_id (migration `0000`) — but not the
+   repo_id, status, mission_type, and advisory_id (migration `0000`); but not the
    dependency half of the pair, even though every lookup filters on it. Same class
    of gap ADR 0034 closed on `dependencies`.
-2. **One existence SELECT per candidate.** The check ran inside the write loop —
+2. **One existence SELECT per candidate.** The check ran inside the write loop ;
    N serial round trips per repo per ingestion run, each holding the Neon
    WebSocket transaction open longer than it needs to.
 
@@ -37,7 +37,7 @@ for all of the repo's candidate dependencies, matched to candidate pairs in JS v
 `dependencyId:advisoryId` key. The loop then does only the writes: UPDATE-by-id for
 known missions, INSERT for new ones. The bulk query still runs inside the
 transaction where the per-candidate check lived, so check-then-write semantics are
-unchanged — N round trips became 1, nothing else moved.
+unchanged; N round trips became 1, nothing else moved.
 
 Rows whose `dependency_id`/`advisory_id` were nulled by their `ON DELETE SET NULL`
 foreign keys can never match a live candidate pair and are skipped explicitly.
@@ -47,9 +47,9 @@ foreign keys can never match a live candidate pair and are skipped explicitly.
 Applied to **dev** (`DATABASE_URL_UNPOOLED` from `.env.local`) via `pnpm drizzle-kit
 migrate` on 2026-08-25, then to **production** the same day during the pre-deploy
 window. Production needed one bookkeeping step first: its `__drizzle_migrations`
-journal had no row for `0004_yellow_firestar` — the table that migration creates
+journal had no row for `0004_yellow_firestar`; the table that migration creates
 (`repo_bookmarks`) had been applied out-of-band in the ADR 0027 pass, leaving schema
-ahead of journal — so drizzle-kit aborted re-running 0004's non-idempotent
+ahead of journal; so drizzle-kit aborted re-running 0004's non-idempotent
 `CREATE TABLE`. Resolved by backfilling 0004's row per the ADR 0026 procedure
 (sha256 of the migration file + its meta `when` timestamp), after which a single
 migrate run applied `0005` + `0006` cleanly. Verified against production:
@@ -62,7 +62,7 @@ Dev confirms the DDL landed cleanly: `pg_indexes` carries
 `CREATE INDEX idx_missions_dependency_id ON public.missions USING btree (dependency_id)`,
 and the writer-shaped lookup (`SELECT id, dependency_id, advisory_id WHERE
 dependency_id IN (...)`) executes without error. As with ADR 0034's verification,
-the planner seq-scans at dev-scale row counts — correct, not a defect: reading a
+the planner seq-scans at dev-scale row counts; correct, not a defect: reading a
 few heap pages beats index descent until the table crosses the planner's cost
 crossover, which is where production's mission count lives. (A session-level
 `enable_seqscan = off` proof wasn't possible here: each neon-http request is its
@@ -72,16 +72,16 @@ dev Postgres as part of this pass.
 
 ## What changed
 
-- `packages/core/src/db/schema.ts` — `idx_missions_dependency_id` added to the missions table definition.
-- `packages/core/src/db/migrations/0006_add_missions_dependency_id_index.sql` (+ meta snapshot) — the migration.
-- `packages/core/src/scorer/writer.ts` — bulk `selectExistingMissionIds()`;
+- `packages/core/src/db/schema.ts`; `idx_missions_dependency_id` added to the missions table definition.
+- `packages/core/src/db/migrations/0006_add_missions_dependency_id_index.sql` (+ meta snapshot); the migration.
+- `packages/core/src/scorer/writer.ts`; bulk `selectExistingMissionIds()`;
   `upsertMission()` split into `refreshMissionCopy()` + `insertMission()` with no
   read path of its own.
-- `docs/data-model/README.md` — schema changelog row.
+- `docs/data-model/README.md`; schema changelog row.
 
 ## Consequences
 
-- One more index to maintain on `missions` writes — same noise-level trade ADR 0034
+- One more index to maintain on `missions` writes; same noise-level trade ADR 0034
   accepted for `dependencies`; ingestion is the only writer and is already bulk.
 - Ingestion runs hold their per-repo transactions open for roughly one-third the
   previous write-phase duration (N+1 selects → 1 select), which matters because the

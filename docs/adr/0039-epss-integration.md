@@ -1,4 +1,4 @@
-# ADR 0039 — EPSS Exploitability Scoring Integration
+# ADR 0039; EPSS Exploitability Scoring Integration
 
 **Status:** Accepted
 **Date:** 2026-08-28
@@ -32,7 +32,7 @@ Integrate EPSS into the mission scoring pipeline:
 
 4. **Versioning**: Bump `scoring_version` to `1.1.0`.
 
-5. **Failure handling**: EPSS fetch failures are non-fatal — warn and continue without EPSS data for the affected CVEs. The API is free and public; no auth or rate limits beyond normal HTTP courtesy.
+5. **Failure handling**: EPSS fetch failures are non-fatal; warn and continue without EPSS data for the affected CVEs. The API is free and public; no auth or rate limits beyond normal HTTP courtesy.
 
 ---
 
@@ -50,7 +50,7 @@ Integrate EPSS into the mission scoring pipeline:
 ## Consequences
 
 - **Schema migration required**: `advisories.epss_score` column (numeric(6,5), nullable).
-- **Scoring algorithm change**: Missions with high-EPSS advisories will score higher impact. This is intentional — a critical CVSS with high exploitability _should_ outrank a critical CVSS with no known exploitation.
+- **Scoring algorithm change**: Missions with high-EPSS advisories will score higher impact. This is intentional; a critical CVSS with high exploitability _should_ outrank a critical CVSS with no known exploitation.
 - **Transparency**: `epss_score` is stored in `impact_inputs` on every mission score, so users can see exactly what EPSS value was used.
 - **No new costs**: EPSS API is free, public, no auth required.
 - **Backward compatibility**: Advisories without CVE aliases (or where EPSS fetch failed) simply have `epss_score: null` and score identically to v1.0.0.
@@ -66,11 +66,11 @@ EPSS API (https://api.first.org/data/v1/epss) is completely free, requires no AP
 ## Implementation Notes
 
 - Modified files:
-  - `packages/core/src/db/schema.ts` — added `epssScore` column to `advisories`
-  - `packages/core/src/db/json-types.ts` — added `epss_score` to `ImpactInputs`
-  - `packages/core/src/ingestor/osv.ts` — added `fetchEpssScores()` batch fetch after detail fetches
-  - `packages/core/src/scorer/impact.ts` — added `EPSS_BOOST_FACTOR` and integration in `DefaultImpactScorer`
-  - `packages/core/src/scorer/mission-scorer.ts` — pass `epss_score` through `buildImpactInputs`
-  - `docs/adr/0039-epss-integration.md` — this ADR
+  - `packages/core/src/db/schema.ts`; added `epssScore` column to `advisories`
+  - `packages/core/src/db/json-types.ts`; added `epss_score` to `ImpactInputs`
+  - `packages/core/src/ingestor/osv.ts`; added `fetchEpssScores()` batch fetch after detail fetches
+  - `packages/core/src/scorer/impact.ts`; added `EPSS_BOOST_FACTOR` and integration in `DefaultImpactScorer`
+  - `packages/core/src/scorer/mission-scorer.ts`; pass `epss_score` through `buildImpactInputs`
+  - `docs/adr/0039-epss-integration.md`; this ADR
 
 - Migration: `drizzle-kit generate` will produce a migration adding the `epss_score` column to `advisories`. Apply with `drizzle-kit migrate` against the unpooled `DATABASE_URL_UNPOOLED`.

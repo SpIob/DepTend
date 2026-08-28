@@ -1,8 +1,8 @@
-# ADR 0003 — npm as the First Supported Ecosystem
+# ADR 0003; npm as the First Supported Ecosystem
 
 **Status:** Accepted  
 **Date:** 2026-06-29  
-**Phase:** 0 — Foundation
+**Phase:** 0; Foundation
 
 ---
 
@@ -16,7 +16,7 @@ Support **npm (JavaScript/Node.js)** in Phase 1. All other ecosystems are Phase 
 
 Three factors drove this choice:
 
-1. **Largest dependency graph volume.** npm has more transitive dependencies per average project than any other ecosystem, making prioritization the most painful — and therefore most valuable — problem to solve there first.
+1. **Largest dependency graph volume.** npm has more transitive dependencies per average project than any other ecosystem, making prioritization the most painful; and therefore most valuable; problem to solve there first.
 
 2. **Best free data availability.** OSV, GHSA, and the npm registry API are all open and well-documented with no authentication required for public package data. This is ideal for a zero-budget project.
 
@@ -36,5 +36,5 @@ Three factors drove this choice:
 ## Consequences
 
 - Phase 1 ingestion parses `package.json` only. `package-lock.json` and `pnpm-lock.yaml` parsing is deferred (documented visibly in the UI as a confidence flag).
-- The `ecosystem` column in all schema tables is typed as an enum starting with `npm`. New values are added via `ALTER TYPE ecosystem ADD VALUE` — existing values are never removed or reordered.
+- The `ecosystem` column in all schema tables is typed as an enum starting with `npm`. New values are added via `ALTER TYPE ecosystem ADD VALUE`; existing values are never removed or reordered.
 - The `EcosystemIngestor` interface in `packages/core/src/ingestor/interface.ts` must remain stable across phases. Any breaking change to the interface requires an ADR.

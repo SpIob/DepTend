@@ -1,14 +1,14 @@
-# ADR 0001 — Monorepo Structure and Technology Stack
+# ADR 0001; Monorepo Structure and Technology Stack
 
 **Status:** Accepted  
 **Date:** 2026-06-29  
-**Phase:** 0 — Foundation
+**Phase:** 0; Foundation
 
 ---
 
 ## Context
 
-deptend.dev is a zero-budget, solo-developer project that shares logic across three consumers: a Next.js web application, a Node.js CLI, and scheduled ingestion scripts. Keeping these in separate repos would require publishing packages or using git submodules — both add operational overhead that is unacceptable for a solo build.
+deptend.dev is a zero-budget, solo-developer project that shares logic across three consumers: a Next.js web application, a Node.js CLI, and scheduled ingestion scripts. Keeping these in separate repos would require publishing packages or using git submodules; both add operational overhead that is unacceptable for a solo build.
 
 ## Decision
 

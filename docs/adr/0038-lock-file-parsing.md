@@ -1,4 +1,4 @@
-# ADR 0038 — Lock File Parsing: Resolved Versions and Transitive Dependencies
+# ADR 0038; Lock File Parsing: Resolved Versions and Transitive Dependencies
 
 **Status:** Proposed
 **Date:** 2026-08-28
@@ -9,13 +9,13 @@
 
 Since Phase 1, DepTend has parsed only manifest files (`package.json`, `pyproject.toml`, `requirements.txt`, `go.mod`) and explicitly deferred lock file parsing. This created several persistent limitations:
 
-1. **`dependencies.resolved_version` always `null`** — The column exists in the schema but was never populated. The "current version" for bump inference was estimated from the manifest's version range floor (`semver.minVersion()` / `inferPep440Floor()`), not the actually-installed version.
+1. **`dependencies.resolved_version` always `null`**; The column exists in the schema but was never populated. The "current version" for bump inference was estimated from the manifest's version range floor (`semver.minVersion()` / `inferPep440Floor()`), not the actually-installed version.
 
-2. **`is_transitive` always `false`** — Only direct dependencies from the manifest were ingested. Transitive dependencies (dependencies of dependencies) were never visible, so the impact scorer's transitive discount (ADR 0006) was inert.
+2. **`is_transitive` always `false`**; Only direct dependencies from the manifest were ingested. Transitive dependencies (dependencies of dependencies) were never visible, so the impact scorer's transitive discount (ADR 0006) was inert.
 
-3. **Confidence uniformly degraded** — Every mission carried `no_lock_file: true` in `confidence_flags`, capping confidence at `"medium"` (1 flag) or `"low"` (2+ flags with `breaking_change_signals_unavailable` also always set). This made confidence non-discriminating.
+3. **Confidence uniformly degraded**; Every mission carried `no_lock_file: true` in `confidence_flags`, capping confidence at `"medium"` (1 flag) or `"low"` (2+ flags with `breaking_change_signals_unavailable` also always set). This made confidence non-discriminating.
 
-4. **Effort estimation inaccuracy** — `semver_bump` was computed from the manifest range's lower bound to the target, not from the actually-installed version to the target. For a dependency on `^1.2.0` with `1.2.5` actually installed, a fix to `1.3.0` was scored as "minor" (floor `1.2.0` → `1.3.0`) instead of "patch" (`1.2.5` → `1.3.0`).
+4. **Effort estimation inaccuracy**; `semver_bump` was computed from the manifest range's lower bound to the target, not from the actually-installed version to the target. For a dependency on `^1.2.0` with `1.2.5` actually installed, a fix to `1.3.0` was scored as "minor" (floor `1.2.0` → `1.3.0`) instead of "patch" (`1.2.5` → `1.3.0`).
 
 Lock file parsing was deferred because:
 
@@ -23,7 +23,7 @@ Lock file parsing was deferred because:
 - It adds I/O (fetching/reading additional files) to the ingestion pipeline
 - The dependency graph can be large, adding DB rows for transitive deps
 
-## Decision 1 — Parse lock files for all three ecosystems
+## Decision 1; Parse lock files for all three ecosystems
 
 **Scope for this ADR (MVP):**
 
@@ -40,7 +40,7 @@ Start with `package-lock.json` and `yarn.lock` as they cover the vast majority o
 - Ingestors (`npm.ts`, `local-npm.ts`) fetch/read lock file content and pass to parser
 - Graceful degradation: if lock file parsing fails, fall back to manifest-only (current behavior) with a warning
 
-## Decision 2 — Add `transitive` to `dep_type` enum
+## Decision 2; Add `transitive` to `dep_type` enum
 
 **Schema change:** `ALTER TYPE dep_type ADD VALUE 'transitive'`
 
@@ -52,7 +52,7 @@ Transitive dependencies (found in lock file but not in manifest) are written wit
 
 Manifest deps keep their declared `dep_type` (production/development/peer/optional) with `is_transitive = false`.
 
-## Decision 3 — Scoring version bump to `1.1.0`
+## Decision 3; Scoring version bump to `1.1.0`
 
 **Behavioral changes:**
 
@@ -67,21 +67,21 @@ Manifest deps keep their declared `dep_type` (production/development/peer/option
 
 - Missions re-scored on next ingestion run will use v1.1.0
 - `scoring_version` column tracks which version produced each score
-- No migration of historical scores — they retain their original version
+- No migration of historical scores; they retain their original version
 
 **Confidence improvement:**
 
 - Deps with lock file data lose `no_lock_file` flag → many missions drop from 2 flags → 1 flag → confidence `"medium"` (first time since Phase 2)
 - Combined with ADR 0029/0032, some missions can reach `"high"` (0 flags)
 
-## Decision 4 — Transitive dependency handling
+## Decision 4; Transitive dependency handling
 
 - **Written to DB**: Yes, as `dep_type = 'transitive'` rows
 - **Mission generation**: Yes, `vulnerability_fix` missions created for affected transitive deps
-- **UI**: No special treatment — they appear in mission boards like any other dep
+- **UI**: No special treatment; they appear in mission boards like any other dep
 - **Limit**: Cap at 500 transitive deps per repo to bound ingestion cost (configurable via env)
 
-## Decision 5 — Yarn v2+ (Berry) support via `@yarnpkg/lockfile`
+## Decision 5; Yarn v2+ (Berry) support via `@yarnpkg/lockfile`
 
 The `@yarnpkg/lockfile` package parses both:
 
@@ -90,7 +90,7 @@ The `@yarnpkg/lockfile` package parses both:
 
 This single dependency covers both formats. It's a well-maintained, zero-runtime-dependency package from the Yarn team.
 
-## Decision 6 — Ingestion pipeline integration
+## Decision 6; Ingestion pipeline integration
 
 **HTTP ingestor (`npm.ts`):**
 
@@ -107,7 +107,7 @@ This single dependency covers both formats. It's a well-maintained, zero-runtime
 **Writer (`writer.ts`):**
 
 - `upsertDependencies()` now receives `dep.resolved_version` and `dep.dep_type` (including `'transitive'`)
-- Writes both to DB — no other changes needed
+- Writes both to DB; no other changes needed
 
 **Scorer (`mission-scorer.ts`):**
 
@@ -116,7 +116,7 @@ This single dependency covers both formats. It's a well-maintained, zero-runtime
 - `deriveConfidenceFlags()`: sets `no_lock_file` only when `resolvedVersion === null`
 - `SCORING_VERSION = "1.1.0"`
 
-## Decision 7 — Test fixtures from real projects
+## Decision 7; Test fixtures from real projects
 
 Collect real lock files from popular projects for unit/integration tests:
 
@@ -148,31 +148,31 @@ Collect real lock files from popular projects for unit/integration tests:
 
 **Negative:**
 
-- Migration required (enum change) — must apply to both Neon branches
-- More HTTP requests per repo (lock file fetch) — ~1-2 extra per ingestion
-- More DB rows (transitive deps) — capped at 500/repo
-- Scoring v1.1.0 changes mission ordering — board may shift on re-ingestion
+- Migration required (enum change); must apply to both Neon branches
+- More HTTP requests per repo (lock file fetch); ~1-2 extra per ingestion
+- More DB rows (transitive deps); capped at 500/repo
+- Scoring v1.1.0 changes mission ordering; board may shift on re-ingestion
 - New dependency: `@yarnpkg/lockfile` (MIT, zero runtime deps, from Yarn team)
 
 **Neutral:**
 
-- PyPI/Go lock files still deferred — no change for those ecosystems
+- PyPI/Go lock files still deferred; no change for those ecosystems
 - CLI gets same improvements via shared `build-rows.ts`
 
 ---
 
 ## Implementation Plan
 
-1. **ADR + Migration** — Create ADR, generate migration `0007_add_transitive_dep_type.sql`
-2. **Core Types** — Update `interface.ts` with `resolved_version`, `is_transitive`, lock metadata
-3. **Parsers** — Create `npm-lock-parse.ts`, `yarn-lock-parse.ts`, `lock-parse.ts`
-4. **Ingestors** — Update `npm.ts`, `local-npm.ts` to fetch/read lock files
-5. **Parser Integration** — Update `npm-parse.ts` to accept lock content, merge
-6. **Writer** — `writer.ts` writes `resolved_version` (already has column)
-7. **Scorer** — `mission-scorer.ts` v1.1.0 logic, confidence changes
-8. **CLI** — `build-rows.ts` passes `resolved_version`
-9. **Tests** — Unit tests for parsers, integration tests for pipeline
-10. **Verification** — Full gate, manual ingestion on test repos, production deploy
+1. **ADR + Migration**; Create ADR, generate migration `0007_add_transitive_dep_type.sql`
+2. **Core Types**; Update `interface.ts` with `resolved_version`, `is_transitive`, lock metadata
+3. **Parsers**; Create `npm-lock-parse.ts`, `yarn-lock-parse.ts`, `lock-parse.ts`
+4. **Ingestors**; Update `npm.ts`, `local-npm.ts` to fetch/read lock files
+5. **Parser Integration**; Update `npm-parse.ts` to accept lock content, merge
+6. **Writer**; `writer.ts` writes `resolved_version` (already has column)
+7. **Scorer**; `mission-scorer.ts` v1.1.0 logic, confidence changes
+8. **CLI**; `build-rows.ts` passes `resolved_version`
+9. **Tests**; Unit tests for parsers, integration tests for pipeline
+10. **Verification**; Full gate, manual ingestion on test repos, production deploy
 
 ---
 

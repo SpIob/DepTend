@@ -1,8 +1,8 @@
-# ADR 0004 — Database Schema Design
+# ADR 0004; Database Schema Design
 
 **Status:** Accepted  
 **Date:** 2026-06-29  
-**Phase:** 0 — Foundation
+**Phase:** 0; Foundation
 
 ---
 
@@ -31,7 +31,7 @@ The transparency-first requirement means every displayed score must be reproduci
 
 ### 4. `score_confidence` + `confidence_flags` are first-class columns
 
-Low confidence (e.g. no lock file, missing CVSS) is **not** hidden — it is stored explicitly and surfaced in the UI. `confidence_notes` is `TEXT[]` (multiple notes possible per mission). `confidence_flags` is JSONB for programmatic checks. This satisfies the explainability standard in the project plan.
+Low confidence (e.g. no lock file, missing CVSS) is **not** hidden; it is stored explicitly and surfaced in the UI. `confidence_notes` is `TEXT[]` (multiple notes possible per mission). `confidence_flags` is JSONB for programmatic checks. This satisfies the explainability standard in the project plan.
 
 ### 5. `ingestion_runs` is an append-only audit log
 

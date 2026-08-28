@@ -1,8 +1,8 @@
-# ADR 0002 — Database: PostgreSQL via Neon (Free Tier)
+# ADR 0002; Database: PostgreSQL via Neon (Free Tier)
 
 **Status:** Accepted  
 **Date:** 2026-06-29  
-**Phase:** 0 — Foundation
+**Phase:** 0; Foundation
 
 ---
 
@@ -25,7 +25,7 @@ Use **PostgreSQL hosted on Neon free tier** as the primary database.
 
 ## ORM / Query layer
 
-No ORM has been selected for Phase 0. The schema is defined in raw SQL (`packages/core/src/db/schema.sql`). The recommended query layer is **Drizzle ORM** — it is free, TypeScript-native, generates types from the schema, and works with Neon's HTTP driver. Drizzle adoption is a **Phase 1 decision point** and requires its own ADR before implementation.
+No ORM has been selected for Phase 0. The schema is defined in raw SQL (`packages/core/src/db/schema.sql`). The recommended query layer is **Drizzle ORM**; it is free, TypeScript-native, generates types from the schema, and works with Neon's HTTP driver. Drizzle adoption is a **Phase 1 decision point** and requires its own ADR before implementation.
 
 Alternatives considered: Prisma (heavier runtime, less suited to edge), Kysely (good choice if Drizzle is rejected), raw `postgres` driver (lowest overhead, highest boilerplate).
 
@@ -43,7 +43,7 @@ Alternatives considered: Prisma (heavier runtime, less suited to edge), Kysely (
 
 - All SQL DDL lives in `packages/core/src/db/schema.sql`. TypeScript types mirror it in `packages/core/src/db/types.ts`.
 - Schema migrations must be versioned (numbered SQL files or a migration tool). Migration tooling is a Phase 1 decision point.
-- The ingestion scripts must use Neon's serverless driver or a compatible pooler — a standard TCP `pg` connection will time out in a serverless context.
+- The ingestion scripts must use Neon's serverless driver or a compatible pooler; a standard TCP `pg` connection will time out in a serverless context.
 - When a lock file is absent, scores carry reduced confidence; this is represented in the schema via `score_confidence` and `confidence_flags`.
 
 ## Free-tier compliance

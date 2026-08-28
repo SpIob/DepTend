@@ -1,4 +1,4 @@
-# ADR 0034 — Composite index on `dependencies (repo_id, ecosystem)`
+# ADR 0034; Composite index on `dependencies (repo_id, ecosystem)`
 
 **Status:** Accepted (2026-08-23, after live verification)
 **Date:** 2026-08-23
@@ -13,7 +13,7 @@
 SELECT DISTINCT repo_id, ecosystem FROM dependencies
 ```
 
-with no WHERE clause. The only indexes on `dependencies` date from migration `0000`; none lead with the `(repo_id, ecosystem)` pair, so Postgres scans the entire table — the largest one in this schema — and deduplicates. This is the known issue AGENTS.md §13 has carried since the ADR 0031 pass ("a `dependencies(repo_id, ecosystem)` index migration would close it properly"), deferred at then-current scale. The read-path performance pass raised it again because the query sits on the hottest page; Mico approved including it in that pass.
+with no WHERE clause. The only indexes on `dependencies` date from migration `0000`; none lead with the `(repo_id, ecosystem)` pair, so Postgres scans the entire table; the largest one in this schema; and deduplicates. This is the known issue AGENTS.md §13 has carried since the ADR 0031 pass ("a `dependencies(repo_id, ecosystem)` index migration would close it properly"), deferred at then-current scale. The read-path performance pass raised it again because the query sits on the hottest page; Mico approved including it in that pass.
 
 ## Decision
 
@@ -24,27 +24,27 @@ CREATE INDEX "idx_dependencies_repo_ecosystem"
   ON "dependencies" USING btree ("repo_id","ecosystem");
 ```
 
-The DISTINCT pair is now an index-only scan: Postgres walks the index's leading columns and returns each distinct combination once. Column order matters — `repo_id` first also serves the existing per-repo reads (`getRepoEcosystems()`'s `WHERE repo_id = ?` distinct), while `(ecosystem, repo_id)` would serve neither efficiently.
+The DISTINCT pair is now an index-only scan: Postgres walks the index's leading columns and returns each distinct combination once. Column order matters; `repo_id` first also serves the existing per-repo reads (`getRepoEcosystems()`'s `WHERE repo_id = ?` distinct), while `(ecosystem, repo_id)` would serve neither efficiently.
 
 ## Application status
 
-Applied to the **dev branch** (`DATABASE_URL_UNPOOLED` from `.env.local`) via `pnpm drizzle-kit migrate` on 2026-08-23 — additive DDL, no locks beyond the brief index build, no backfill. Production needs the same command against the production unpooled URL during the next deploy window; it is not applied there by this change.
+Applied to the **dev branch** (`DATABASE_URL_UNPOOLED` from `.env.local`) via `pnpm drizzle-kit migrate` on 2026-08-23; additive DDL, no locks beyond the brief index build, no backfill. Production needs the same command against the production unpooled URL during the next deploy window; it is not applied there by this change.
 
 ### Live verification (2026-08-23)
 
-`EXPLAIN (ANALYZE, BUFFERS)` against dev confirms the mechanism this ADR claims: with the planner free to choose, Postgres seq-scans instead — expected and correct at dev's 49 rows, where reading two heap pages beats index descent — and with `enable_seqscan = off` it produces `Index Only Scan using idx_dependencies_repo_ecosystem`, proving the DISTINCT pair is served from the index alone. `Heap Fetches: 36` on a freshly-written table reflects visibility-map lag that autovacuum closes at production scale. The planner will switch to this scan as the table grows past the crossover point, which is exactly the regime production's dependency count lives in.
+`EXPLAIN (ANALYZE, BUFFERS)` against dev confirms the mechanism this ADR claims: with the planner free to choose, Postgres seq-scans instead; expected and correct at dev's 49 rows, where reading two heap pages beats index descent; and with `enable_seqscan = off` it produces `Index Only Scan using idx_dependencies_repo_ecosystem`, proving the DISTINCT pair is served from the index alone. `Heap Fetches: 36` on a freshly-written table reflects visibility-map lag that autovacuum closes at production scale. The planner will switch to this scan as the table grows past the crossover point, which is exactly the regime production's dependency count lives in.
 
 ## What changed
 
-- `packages/core/src/db/schema.ts` — `idx_dependencies_repo_ecosystem` added to the dependencies table definition.
-- `packages/core/src/db/migrations/0005_absurd_malice.sql` (+ meta snapshot) — the migration.
-- `docs/data-model/README.md` — schema changelog row 0.1.6.
+- `packages/core/src/db/schema.ts`; `idx_dependencies_repo_ecosystem` added to the dependencies table definition.
+- `packages/core/src/db/migrations/0005_absurd_malice.sql` (+ meta snapshot); the migration.
+- `docs/data-model/README.md`; schema changelog row 0.1.6.
 
 ## Consequences
 
 - One more index to maintain on `dependencies` writes. Ingestion inserts are bulk and already multi-indexed; the marginal cost is noise against removing a full-table scan from every homepage render.
 - The §13 known issue is closed; AGENTS.md updated in the same pass.
-- No query text changed, no row types changed, no behavior change — the same result set arrives faster.
+- No query text changed, no row types changed, no behavior change; the same result set arrives faster.
 
 ## Alternatives considered
 

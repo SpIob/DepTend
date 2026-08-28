@@ -15,10 +15,10 @@ full array. That was fine at three repos. At the 150-repo launch cap it stopped 
 - The DB read, the RSC payload, and the client's working set all grew linearly with total
   missions. This was the long-standing "unbounded DB query" known issue.
 - Client-side filtering meant any fix that bounded the payload (a LIMIT) would silently break
-  filter semantics — chips could only ever match inside the loaded window.
+  filter semantics; chips could only ever match inside the loaded window.
 
-The per-repo boards (`/repo/[owner]/[name]`, ADR 0027) do NOT have this problem — their cost
-is bounded by one repo's mission count — and the landing page already avoids shipping full
+The per-repo boards (`/repo/[owner]/[name]`, ADR 0027) do NOT have this problem; their cost
+is bounded by one repo's mission count; and the landing page already avoids shipping full
 mission payloads (`getReposWithMissionSummary` ships aggregated counts).
 
 ## Decision
@@ -30,7 +30,7 @@ full missions plus an unpaginated `total` and per-axis facet counts. Specificall
 1. **Filters become WHERE clauses**, mirroring the old client helpers exactly:
    - severity = `COALESCE(advisories.severity::text, 'unknown')` (was `severityOf()`)
    - ecosystem = `COALESCE(dependencies.ecosystem::text, advisories.ecosystem::text)` (was
-     `ecosystemOf()`; NULL when both sources are null — excluded by `IN`, matching the old
+     `ecosystemOf()`; NULL when both sources are null; excluded by `IN`, matching the old
      `matchesSet()` behavior)
    - search q matches title, package name, `owner/name`, and OSV id via `ILIKE ... ESCAPE`,
      with LIKE metacharacters escaped so `%`/`_` match literally (matching
@@ -43,8 +43,8 @@ full missions plus an unpaginated `total` and per-axis facet counts. Specificall
    `rankMissions()` itself is untouched and remains the ranking implementation for the CLI
    and the fetch-everything paths.
 3. **Facet counts move server-side too**: each axis's chip counts are aggregates matching
-   every _other_ active axis plus q (but not itself) — the same semantics the client
-   computed — so a chip still answers "how many results if I also picked this."
+   every _other_ active axis plus q (but not itself); the same semantics the client
+   computed; so a chip still answers "how many results if I also picked this."
 4. **Page size is fixed at 50** (`BOARD_PAGE_SIZE` in core). Out-of-range `?page=` values are
    canonicalized by redirecting to the last valid page rather than rendering a blank screen.
 5. **Filter interactions navigate**: chips and sort are URL changes (`router.replace`),
@@ -53,7 +53,7 @@ full missions plus an unpaginated `total` and per-axis facet counts. Specificall
    so local state can never drift from server state. Claim/unclaim keeps working via
    optimistic patches on the page's own rows; MissionCard's parent-patch callback became
    optional and falls back to `router.refresh()` where no parent copy exists.
-6. **The per-repo board keeps the old fully client-side component** (`MissionBoard`) — it is
+6. **The per-repo board keeps the old fully client-side component** (`MissionBoard`); it is
    already bounded, and keeping it means no regression risk to a working page. The two
    boards share MissionCard, the search input markup, and the URL query shape
    (`mission-board-query.ts`), deliberately not their filtering logic.
@@ -62,10 +62,10 @@ full missions plus an unpaginated `total` and per-axis facet counts. Specificall
 
 ## Alternatives considered
 
-- **Hard cap + sort (LIMIT without filters)** — smallest diff, but silently hides missions
+- **Hard cap + sort (LIMIT without filters)**; smallest diff, but silently hides missions
   past the cap and leaves filter semantics broken for anything beyond the window.
-- **Keep client-side everything, just slice the payload** — same semantic break as above.
-- **Leave as-is until data volume forces it** — rejected: the payload grows with _total_
+- **Keep client-side everything, just slice the payload**; same semantic break as above.
+- **Leave as-is until data volume forces it**; rejected: the payload grows with _total_
   missions across 150 repos, which was always the point of raising the cap; waiting meant
   shipping a known O(N) regression path at launch scale.
 
@@ -75,10 +75,10 @@ full missions plus an unpaginated `total` and per-axis facet counts. Specificall
   five bounded queries (one page select + four small aggregates) instead of one unbounded one.
 - Filtering/search/sort now round-trip the server per interaction. This is the standard
   server-rendered-tables trade; the old design's avoidance of navigations (documented in the
-  prior component) existed precisely because filtering operated on already-loaded data — once
+  prior component) existed precisely because filtering operated on already-loaded data; once
   filtering moved server-side that reason evaporated.
 - Ranking semantics are duplicated between JS (`rankMissions`) and SQL fragments. This is a
-  deliberate, commented mirror (the alternative — moving ranking into SQL everywhere — would
+  deliberate, commented mirror (the alternative; moving ranking into SQL everywhere; would
   drag the CLI's in-memory path along with it). The unit of correctness is: both produce the
   same order for the same inputs. If scoring keys ever change, both must move together; the
   SQL side cites ADR 0017/0018 at each fragment.
@@ -96,16 +96,16 @@ Standard five-check loop clean at time of writing. Still owed before flipping to
 - Cross-check that the SQL "priority" ordering matches the CLI's `rankMissions()` output on
   the same dataset (the Phase 4 cross-validation trick that caught ADR 0018).
 
-## Correction (2026-08-23, found live — the verification above finally ran and bit)
+## Correction (2026-08-23, found live; the verification above finally ran and bit)
 
 The "absolute, always-present final fallback" ORDER BY fragment shipped as
-`COALESCE(advisories.osv_id, missions.id)` — mixing a `text` column with a `uuid` column.
+`COALESCE(advisories.osv_id, missions.id)`; mixing a `text` column with a `uuid` column.
 Postgres refuses to infer a common type across those (`42804`, COALESCE types text and uuid
 cannot be matched), so every execution of the page query failed, and `/missions` served
 error-boundary skeletons in production from the day this deployed. The JS mirror
 (`ranking.ts`'s `osv_id ?? mission.id`) mixes types freely, which is exactly why the parity
-tests — real Drizzle query building against a fake transport that never hands the SQL to a
-server — passed: they assert statement text, not Postgres type resolution. The live pass this
+tests; real Drizzle query building against a fake transport that never hands the SQL to a
+server; passed: they assert statement text, not Postgres type resolution. The live pass this
 ADR's own Verification section called owed is what surfaced it.
 
 Fix: `missions.id` casts to text inside the COALESCE (`::text`), preserving the fallback's
