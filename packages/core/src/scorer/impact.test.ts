@@ -23,6 +23,7 @@ function baseInputs(overrides: Partial<ImpactInputs> = {}): ImpactInputs {
     is_transitive: false,
     dep_type: "production",
     days_since_advisory: null,
+    epss_score: null,
     ...overrides,
   };
 }

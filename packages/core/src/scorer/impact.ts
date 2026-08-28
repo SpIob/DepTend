@@ -56,7 +56,7 @@ function depTypeWeight(depType: DepType): number {
     case "development":
       return 0.4;
     default:
-      throw new Error(`Unhandled dep_type: ${String(depType)}`);
+      throw new Error(`Unhandled dep_type: ${depType}`);
   }
 }
 
@@ -69,6 +69,15 @@ function depTypeWeight(depType: DepType): number {
  * scorer once confirmed transitivity is possible (ADR 0006).
  */
 const UNCONFIRMED_TRANSITIVE_DISCOUNT = 0.9;
+
+/**
+ * EPSS exploitability boost factor (scoring_version 1.1.0 — see ADR 0038).
+ * When an advisory has an EPSS score, the base impact is multiplied by
+ * (1 + epss_score * EPSS_BOOST_FACTOR), capped at 10. This reflects that
+ * a vulnerability with high exploitability probability is more impactful
+ * than one with the same CVSS but low exploitability.
+ */
+const EPSS_BOOST_FACTOR = 0.5;
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
@@ -83,6 +92,11 @@ export class DefaultImpactScorer implements ImpactScorer {
     const base = inputs.cvss_score ?? severityFallbackScore(inputs.severity);
 
     let score = base * depTypeWeight(inputs.dep_type);
+
+    // Apply EPSS exploitability boost when available (scoring_version 1.1.0)
+    if (inputs.epss_score != null) {
+      score *= 1 + inputs.epss_score * EPSS_BOOST_FACTOR;
+    }
 
     if (inputs.is_transitive) {
       score *= UNCONFIRMED_TRANSITIVE_DISCOUNT;

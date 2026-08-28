@@ -16,6 +16,9 @@
  */
 
 import type { IngestorResult, ParsedDependency } from "./interface.js";
+import { parsePackageLockJson } from "./npm-lock-parse.js";
+import { parseYarnLockContent } from "./yarn-lock-parse.js";
+import { mergeManifestWithLock } from "./lock-parse.js";
 
 /** Minimal shape we care about from a package.json */
 export interface PackageJson {
@@ -44,11 +47,15 @@ export const LOCK_FILE_NAMES = ["package-lock.json", "pnpm-lock.yaml", "yarn.loc
  * @param source - human-readable description of where this content came
  *   from, used only in warning messages — a URL for HTTP fetches, a file
  *   path for local reads.
+ * @param lockFileContent - optional raw content of the lock file (package-lock.json or yarn.lock)
+ * @param lockFileName - name of the lock file (used to select the right parser)
  */
 export function parsePackageJsonContent(
   raw: string | null,
   lockFilePresent: boolean,
   source: string,
+  lockFileContent: string | null = null,
+  lockFileName: string | null | undefined = null,
 ): IngestorResult {
   const warnings: string[] = [];
 
@@ -142,6 +149,25 @@ export function parsePackageJsonContent(
 
   if (dependencies.length === 0) {
     warnings.push("package.json contains no dependency entries.");
+  }
+
+  // If lock file content was provided, parse and merge it
+  if (lockFileContent && lockFileName && lockFilePresent) {
+    let lockResult;
+    if (lockFileName === "package-lock.json") {
+      lockResult = parsePackageLockJson(lockFileContent);
+    } else if (lockFileName === "yarn.lock") {
+      lockResult = parseYarnLockContent(lockFileContent);
+    } else {
+      warnings.push(
+        `Lock file format ${lockFileName} not yet supported for parsing — falling back to manifest only.`,
+      );
+      lockResult = null;
+    }
+
+    if (lockResult) {
+      return mergeManifestWithLock(dependencies, lockResult, "npm", warnings);
+    }
   }
 
   return {

@@ -10,10 +10,16 @@
 
 import type { Ecosystem } from "../db/schema.js";
 
+export type { Ecosystem };
+
 export interface ParsedDependency {
   package_name: string;
   version_spec: string;
-  dep_type: "production" | "development" | "peer" | "optional";
+  dep_type: "production" | "development" | "peer" | "optional" | "transitive";
+  /** Populated from lock file parsing — the concrete version actually installed */
+  resolved_version?: string | null;
+  /** True if this dependency was not declared in the manifest but only appears in the lock file */
+  is_transitive?: boolean;
 }
 
 export interface IngestorResult {
@@ -36,6 +42,17 @@ export interface IngestorResult {
    * requirements.txt, not JSON) made the original name misleading.
    */
   manifest_resolved: boolean;
+  /** True if a lock file was successfully parsed (not just detected) */
+  lock_file_parsed?: boolean;
+  /** Format of the parsed lock file, if any */
+  lock_file_format?:
+    | "package-lock.json"
+    | "pnpm-lock.yaml"
+    | "yarn.lock"
+    | "poetry.lock"
+    | "Pipfile.lock"
+    | "pdm.lock"
+    | "go.sum";
   /** Warnings about data quality to surface in the UI */
   warnings: string[];
 }

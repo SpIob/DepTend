@@ -353,7 +353,8 @@ export class IngestionWriter {
         packageName: dep.package_name,
         versionSpec: dep.version_spec,
         depType: dep.dep_type,
-        resolvedVersion: null, // lock file parsing deferred
+        // resolved_version is now populated from lock file parsing (ADR 0038)
+        resolvedVersion: dep.resolved_version ?? null,
         latestVersion: meta?.latestVersion ?? null,
         isDeprecated: meta?.isDeprecated ?? false,
         deprecationNote: meta?.deprecationNote ?? null,
@@ -368,6 +369,8 @@ export class IngestionWriter {
         target: [dependencies.repoId, dependencies.packageName, dependencies.depType],
         set: {
           versionSpec: sql`excluded.version_spec`,
+          // resolved_version is updated from lock file on each run
+          resolvedVersion: sql`excluded.resolved_version`,
           latestVersion: sql`excluded.latest_version`,
           isDeprecated: sql`excluded.is_deprecated`,
           deprecationNote: sql`excluded.deprecation_note`,

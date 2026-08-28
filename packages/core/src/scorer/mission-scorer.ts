@@ -49,7 +49,7 @@ import { DefaultImpactScorer } from "./impact.js";
 import { DefaultEffortScorer } from "./effort.js";
 import { DefaultEcosystemValueScorer } from "./ecosystem-value.js";
 
-export const SCORING_VERSION = "1.0.0";
+export const SCORING_VERSION = "1.1.0";
 
 type SemverBump = EffortInputs["semver_bump"];
 
@@ -140,13 +140,22 @@ function extractSemverFloor(versionSpec: string): string | null {
  * always null until lock file parsing lands (see ADR 0007, §3), so the
  * "current" side is the minimum version satisfying the declared range, not
  * the version actually installed.
+ *
+ * If currentVersion is provided (e.g., from a lock file), it is used as the
+ * "current" version instead of computing the floor from the version spec.
+ * This is the key improvement from ADR 0038.
  */
-function inferSemverBump(versionSpec: string, targetVersion: string | null): SemverBump {
+function inferSemverBump(
+  versionSpec: string,
+  targetVersion: string | null,
+  currentVersion?: string | null,
+): SemverBump {
   if (targetVersion === null) {
     return "unknown";
   }
 
-  const floor = extractSemverFloor(versionSpec);
+  // Use provided currentVersion (from lock file) or compute floor from versionSpec
+  const floor = currentVersion ?? extractSemverFloor(versionSpec);
   if (floor === null) {
     return "unknown";
   }
@@ -212,7 +221,7 @@ function extractPep440Floor(specifier: string): string | null {
     .map((clause) => clause.trim())
     .filter((clause) => clause !== "");
 
-  let floor: string | null = null;
+  let floor: ReturnType<typeof pep440Valid> | null = null;
 
   for (const clause of clauses) {
     const match = PEP440_CLAUSE_RE.exec(clause);
@@ -247,10 +256,47 @@ function releaseTriple(release: number[]): [number, number, number] {
 /**
  * PEP 440 equivalent of inferSemverBump above — same estimate-not-fact
  * caveat applies (resolved_version is null until lock file parsing lands).
+ *
+ * If currentVersion is provided (e.g., from a lock file), it is used as the
+ * "current" version instead of computing the floor from the version spec.
+ * This is the key improvement from ADR 0038.
  */
-function inferPep440Bump(versionSpec: string, targetVersion: string | null): SemverBump {
+function inferPep440Bump(
+  versionSpec: string,
+  targetVersion: string | null,
+  currentVersion?: string | null,
+): SemverBump {
   if (targetVersion === null) {
     return "unknown";
+  }
+
+  // If currentVersion is provided, use it directly; otherwise compute floor from versionSpec
+  if (currentVersion !== undefined && currentVersion !== null) {
+    const floor = pep440Explain(currentVersion);
+    const target = pep440Explain(targetVersion);
+    if (floor === null || target === null) {
+      return "unknown";
+    }
+
+    // Epoch is PEP 440's highest-precedence ordering component (compared
+    // before release segments at all) — a change here is a bigger
+    // discontinuity than any release-segment bump, and release-segment
+    // comparison alone would never notice it.
+    if (floor.epoch !== target.epoch) {
+      return "major";
+    }
+
+    const [floorMajor, floorMinor, floorPatch] = releaseTriple(floor.release);
+    const [targetMajor, targetMinor, targetPatch] = releaseTriple(target.release);
+
+    if (floorMajor !== targetMajor) return "major";
+    if (floorMinor !== targetMinor) return "minor";
+    if (floorPatch !== targetPatch) return "patch";
+
+    // Release segments identical — could still differ only in pre/post/dev/
+    // local segments. Smallest bump category, mirrors inferSemverBump's own
+    // "prerelease" -> "patch" mapping above.
+    return "patch";
   }
 
   // validRange never throws — safe gate, same role semver.validRange plays
@@ -315,18 +361,8 @@ function inferPep440Bump(versionSpec: string, targetVersion: string | null): Sem
  * compile-time protection against a future ecosystem for which it
  * wouldn't be.)
  */
-const BUMP_INFERENCE_BY_ECOSYSTEM: Record<
-  Ecosystem,
-  (versionSpec: string, targetVersion: string | null) => SemverBump
-> = {
-  npm: inferSemverBump,
-  go: inferSemverBump,
-  pypi: inferPep440Bump,
-};
-
 /**
- * Same Record<Ecosystem, ...> shape as BUMP_INFERENCE_BY_ECOSYSTEM above,
- * one level down — the floor half of each bump-inference function, reused
+ * The floor half of each bump-inference function, reused
  * (not duplicated) rather than each function's own internal logic.
  */
 const FLOOR_EXTRACTION_BY_ECOSYSTEM: Record<Ecosystem, (versionSpec: string) => string | null> = {
@@ -364,21 +400,47 @@ function daysSince(date: Date | null): number | null {
 // ---------------------------------------------------------------------------
 
 export function buildImpactInputs(ctx: MissionScoringContext): ImpactInputs {
+  // is_transitive is true when dep_type is "transitive" (ADR 0038)
+  const isTransitive = ctx.dependency.depType === "transitive";
+  // For impact scoring, transitive deps use "optional" weight (blast radius)
+  const depType = isTransitive ? "optional" : ctx.dependency.depType;
   return {
     cvss_score: ctx.advisory.cvssScore,
     severity: ctx.advisory.severity,
-    // Phase 1/2 only ingests direct dependencies — see ADR 0007, §2.
-    is_transitive: false,
-    dep_type: ctx.dependency.depType,
+    is_transitive: isTransitive,
+    dep_type: depType,
     days_since_advisory: daysSince(ctx.advisory.publishedAt),
+    // EPSS exploitability score (ADR 0038) — null when not available
+    epss_score: ctx.advisory.epssScore ?? null,
   };
 }
 
 export function buildEffortInputs(ctx: MissionScoringContext): EffortInputs {
   const targetVersion = ctx.advisory.fixedVersion ?? ctx.dependency.latestVersion;
 
-  const inferBump = BUMP_INFERENCE_BY_ECOSYSTEM[ctx.dependency.ecosystem];
-  const semverBump = inferBump(ctx.dependency.versionSpec, targetVersion);
+  // Use resolved_version as the "current" version when available (ADR 0038),
+  // otherwise fall back to the manifest range floor estimate.
+  const currentVersion =
+    ctx.dependency.resolvedVersion ??
+    extractVersionFloor(ctx.dependency.ecosystem, ctx.dependency.versionSpec);
+
+  let semverBump: SemverBump;
+  if (currentVersion === null) {
+    semverBump = "unknown";
+  } else {
+    // Call the per-ecosystem inference function with the resolved version as currentVersion
+    switch (ctx.dependency.ecosystem) {
+      case "npm":
+      case "go":
+        semverBump = inferSemverBump(ctx.dependency.versionSpec, targetVersion, currentVersion);
+        break;
+      case "pypi":
+        semverBump = inferPep440Bump(ctx.dependency.versionSpec, targetVersion, currentVersion);
+        break;
+      default:
+        semverBump = "unknown";
+    }
+  }
 
   return {
     semver_bump: semverBump,

@@ -53,6 +53,7 @@ function makeAdvisory(overrides: Partial<Advisory> = {}): Advisory {
     packageName: "left-pad",
     severity: "high",
     cvssScore: 7.5,
+    epssScore: null,
     summary: "Example advisory",
     details: null,
     affectedVersions: [],

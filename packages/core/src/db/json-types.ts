@@ -27,9 +27,11 @@ export interface ImpactInputs {
   severity: "critical" | "high" | "medium" | "low" | "unknown";
   /** true if the dep is a transitive dependency (resolved from lock file) */
   is_transitive: boolean;
-  dep_type: "production" | "development" | "peer" | "optional";
+  dep_type: "production" | "development" | "peer" | "optional" | "transitive";
   /** calendar days since the advisory was published */
   days_since_advisory: number | null;
+  /** EPSS exploitability probability (0-1), if available */
+  epss_score: number | null;
 }
 
 export interface EcosystemValueInputs {

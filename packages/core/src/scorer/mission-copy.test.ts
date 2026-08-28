@@ -34,6 +34,7 @@ function makeAdvisory(overrides: Partial<Advisory> = {}): Advisory {
     packageName: "left-pad",
     severity: "high",
     cvssScore: 7.5,
+    epssScore: null,
     summary: "A padding function allows prototype pollution.",
     details: null,
     affectedVersions: [],

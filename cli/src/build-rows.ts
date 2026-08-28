@@ -79,8 +79,8 @@ export function buildDependencies(
       ecosystem: ingestorResult.ecosystem,
       packageName: dep.package_name,
       versionSpec: dep.version_spec,
-      // Lock file parsing deferred — same as the real pipeline (ADR 0003).
-      resolvedVersion: null,
+      // resolved_version now comes from lock file parsing (ADR 0038)
+      resolvedVersion: dep.resolved_version ?? null,
       depType: dep.dep_type,
       latestVersion: meta?.latestVersion ?? null,
       isDeprecated: meta?.isDeprecated ?? false,
@@ -114,6 +114,7 @@ export function buildAdvisories(osvResult: OsvFetchResult): Map<string, Advisory
       packageName: newAdvisory.packageName,
       severity: newAdvisory.severity ?? "unknown",
       cvssScore: newAdvisory.cvssScore ?? null,
+      epssScore: newAdvisory.epssScore ?? null,
       summary: newAdvisory.summary,
       details: newAdvisory.details ?? null,
       affectedVersions: newAdvisory.affectedVersions ?? [],

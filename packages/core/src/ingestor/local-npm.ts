@@ -4,7 +4,7 @@
  * Implements EcosystemIngestor for the npm ecosystem via local filesystem
  * reads, for the Phase 4 CLI: a repo path on disk has no GitHub URL and no
  * existing DB row, so there's nothing to fetch remotely — this reads
- * package.json (and detects lock files) directly from the cloned repo on
+ * package.json (and reads/parses lock files) directly from the cloned repo on
  * disk instead.
  *
  * Shares parsePackageJsonContent (npm-parse.ts) with NpmIngestor (the
@@ -12,12 +12,12 @@
  * regardless of source — only how the raw bytes and lock-file presence are
  * obtained differs between the two.
  *
- * What this does NOT do (same scope limits as NpmIngestor):
- *   - Parse or resolve lock files
- *   - Fetch transitive dependencies
+ * What this does NOT do:
+ *   - Fetch transitive dependencies (beyond what's in the lock file)
  *   - Resolve version ranges to concrete versions
  *
  * ADR: docs/adr/0003-npm-ecosystem-first.md
+ *      docs/adr/0038-lock-file-parsing.md
  */
 
 import { access, readFile } from "node:fs/promises";
@@ -44,13 +44,20 @@ export class LocalNpmIngestor implements EcosystemIngestor {
 
     const raw = await this.readPackageJsonRaw(packageJsonPath);
 
-    // Skip the lock-file existence checks entirely when there's no
-    // package.json to resolve confidence against — same optimization as
-    // NpmIngestor, and parsePackageJsonContent would ignore the value
-    // anyway when raw is null.
-    const lockFilePresent = raw === null ? false : await this.detectLockFile(repoPath);
+    // Skip the lock-file read entirely when there's no package.json
+    // to resolve confidence against.
+    const { lockFileContent, lockFileName, lockFilePresent } =
+      raw === null
+        ? { lockFileContent: null, lockFileName: null, lockFilePresent: false }
+        : await this.readLockFile(repoPath);
 
-    return parsePackageJsonContent(raw, lockFilePresent, packageJsonPath);
+    return parsePackageJsonContent(
+      raw,
+      lockFilePresent,
+      packageJsonPath,
+      lockFileContent,
+      lockFileName,
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -76,21 +83,34 @@ export class LocalNpmIngestor implements EcosystemIngestor {
   }
 
   /**
-   * Checks for each known lock file name in the repo root. Returns true if
-   * any is present. Intentionally silent — absence is not an error, just
-   * recorded as a warning by parsePackageJsonContent.
+   * Read the lock file content (package-lock.json or yarn.lock) from disk.
+   * Returns the content, the name of the file found, and a boolean for presence.
+   * Tries package-lock.json first, then yarn.lock, then checks pnpm-lock.yaml presence.
    */
-  private async detectLockFile(repoPath: string): Promise<boolean> {
-    const checks = LOCK_FILE_NAMES.map(async (name) => {
+  private async readLockFile(repoPath: string): Promise<{
+    lockFileContent: string | null;
+    lockFileName: string | null;
+    lockFilePresent: boolean;
+  }> {
+    // First, try to read and parse package-lock.json or yarn.lock
+    for (const name of LOCK_FILE_NAMES) {
+      if (name === "pnpm-lock.yaml") continue; // not yet supported for parsing
       try {
-        await access(join(repoPath, name));
-        return true;
+        const content = await readFile(join(repoPath, name), "utf-8");
+        return { lockFileContent: content, lockFileName: name, lockFilePresent: true };
       } catch {
-        return false;
+        // Continue to next lock file
       }
-    });
+    }
 
-    const results = await Promise.all(checks);
-    return results.some(Boolean);
+    // If no parsable lock file found, check for pnpm-lock.yaml presence
+    try {
+      await access(join(repoPath, "pnpm-lock.yaml"));
+      return { lockFileContent: null, lockFileName: "pnpm-lock.yaml", lockFilePresent: true };
+    } catch {
+      // Ignore
+    }
+
+    return { lockFileContent: null, lockFileName: null, lockFilePresent: false };
   }
 }

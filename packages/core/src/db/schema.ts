@@ -47,7 +47,13 @@ export const ingestionStatusEnum = pgEnum("ingestion_status", [
   "skipped",
 ]);
 
-export const depTypeEnum = pgEnum("dep_type", ["production", "development", "peer", "optional"]);
+export const depTypeEnum = pgEnum("dep_type", [
+  "production",
+  "development",
+  "peer",
+  "optional",
+  "transitive",
+]);
 
 // 'go' added Phase 7 (ADR 0024) — see docs/adr/0024-phase7-go-ecosystem.md.
 // Adding a value here is a compile-time-only change; the live Neon enum
@@ -174,6 +180,7 @@ export const advisories = pgTable(
 
     severity: severityEnum("severity").notNull().default("unknown"),
     cvssScore: numeric("cvss_score", { precision: 4, scale: 1, mode: "number" }),
+    epssScore: numeric("epss_score", { precision: 6, scale: 5, mode: "number" }),
 
     summary: text("summary").notNull(),
     details: text("details"),
@@ -306,6 +313,7 @@ export const missionScores = pgTable(
       is_transitive: false,
       dep_type: "production",
       days_since_advisory: null,
+      epss_score: null,
     }),
     ecosystemValueInputs: jsonb("ecosystem_value_inputs")
       .$type<EcosystemValueInputs>()

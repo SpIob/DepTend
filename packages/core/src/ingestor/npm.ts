@@ -9,21 +9,20 @@
  *     https://raw.githubusercontent.com/<owner>/<name>/<branch>
  *
  *   The ingestor appends /package.json to fetch the manifest, and
- *   checks for the presence of a lock file (without parsing it —
- *   lock file parsing is deferred to a later phase).
+ *   fetches the lock file (package-lock.json or yarn.lock) for parsing.
  *
  * Fetching (this file) and parsing (npm-parse.ts's parsePackageJsonContent)
  * are deliberately separate — LocalNpmIngestor (Phase 4) reads the same
  * package.json shape from a local filesystem path instead, and shares the
  * exact same parsing logic rather than duplicating it.
  *
- * What this does NOT do (out of scope for Phase 1):
- *   - Parse or resolve lock files
- *   - Fetch transitive dependencies
+ * What this does NOT do:
+ *   - Fetch transitive dependencies (beyond what's in the lock file)
  *   - Resolve version ranges to concrete versions (that requires the
  *     npm registry and is done by the registry fetcher in Step 4)
  *
  * ADR: docs/adr/0003-npm-ecosystem-first.md
+ *      docs/adr/0038-lock-file-parsing.md
  */
 
 import type { EcosystemIngestor, IngestorResult } from "./interface.js";
@@ -57,13 +56,14 @@ export class NpmIngestor implements EcosystemIngestor {
 
     const raw = await this.fetchPackageJsonRaw(url);
 
-    // Skip the lock-file HEAD requests entirely when there's no package.json
-    // to resolve confidence against — parsePackageJsonContent would ignore
-    // lockFilePresent in that case anyway, so there's no point making the
-    // extra network calls.
-    const lockFilePresent = raw === null ? false : await this.detectLockFile(base);
+    // Skip the lock-file fetch entirely when there's no package.json
+    // to resolve confidence against.
+    const { lockFileContent, lockFileName, lockFilePresent } =
+      raw === null
+        ? { lockFileContent: null, lockFileName: null, lockFilePresent: false }
+        : await this.fetchLockFile(base);
 
-    return parsePackageJsonContent(raw, lockFilePresent, url);
+    return parsePackageJsonContent(raw, lockFilePresent, url, lockFileContent, lockFileName);
   }
 
   // ---------------------------------------------------------------------------
@@ -104,25 +104,43 @@ export class NpmIngestor implements EcosystemIngestor {
   }
 
   /**
-   * HEAD-request each known lock file name. Returns true if any is present.
-   * Intentionally silent — absence is not an error, just recorded as a warning
-   * by parsePackageJsonContent.
+   * Fetch the lock file content (package-lock.json or yarn.lock) and detect presence.
+   * Returns the content (for parsable formats), the name of the file found, and a boolean for presence.
+   * Tries package-lock.json first, then yarn.lock, then checks pnpm-lock.yaml presence via HEAD.
    */
-  private async detectLockFile(base: string): Promise<boolean> {
-    const checks = LOCK_FILE_NAMES.map(async (name) => {
+  private async fetchLockFile(base: string): Promise<{
+    lockFileContent: string | null;
+    lockFileName: string | null;
+    lockFilePresent: boolean;
+  }> {
+    // First, try to fetch and parse package-lock.json or yarn.lock
+    for (const name of LOCK_FILE_NAMES) {
+      if (name === "pnpm-lock.yaml") continue; // not yet supported for parsing
       try {
-        const res = await fetchWithRetry(
-          `${base}/${name}`,
-          { method: "HEAD" },
-          this.fetchRetryOptions,
-        );
-        return res.ok;
+        const res = await fetchWithRetry(`${base}/${name}`, undefined, this.fetchRetryOptions);
+        if (res.ok) {
+          const content = await res.text();
+          return { lockFileContent: content, lockFileName: name, lockFilePresent: true };
+        }
       } catch {
-        return false;
+        // Continue to next lock file
       }
-    });
+    }
 
-    const results = await Promise.all(checks);
-    return results.some(Boolean);
+    // If no parsable lock file found, check for pnpm-lock.yaml presence via HEAD
+    try {
+      const res = await fetchWithRetry(
+        `${base}/pnpm-lock.yaml`,
+        { method: "HEAD" },
+        this.fetchRetryOptions,
+      );
+      if (res.ok) {
+        return { lockFileContent: null, lockFileName: "pnpm-lock.yaml", lockFilePresent: true };
+      }
+    } catch {
+      // Ignore
+    }
+
+    return { lockFileContent: null, lockFileName: null, lockFilePresent: false };
   }
 }
