@@ -41,3 +41,6 @@ coverage/
 
 # Vercel
 .vercel/
+
+# opencode CLI local state (skills, plugin cache, package-lock)
+.opencode/
