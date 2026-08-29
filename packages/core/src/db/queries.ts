@@ -254,12 +254,15 @@ export interface BoardPage {
   facets: BoardFacets;
 }
 
-/** SQL mirror of mission-board.tsx's severityOf(): advisory severity or "unknown". */
+/** SQL mirror of the per-row severity derivation the board UI applies:
+ * advisory severity or "unknown". Lives on the server now (ADR 0031) — the
+ * paginated board consumes it via getBoardMissionsWithScoresPage below. */
 const BOARD_SEVERITY_EXPR = sql<string>`COALESCE(${advisories.severity}::text, 'unknown')`;
 
 /**
- * SQL mirror of mission-board.tsx's ecosystemOf(): dependency's ecosystem,
- * falling back to the advisory's, else NULL (a row with neither never
+ * SQL mirror of the per-row ecosystem derivation the board UI applies:
+ * dependency's ecosystem, falling back to the advisory's, else NULL (a row
+ * with neither never
  * matches a non-empty ecosystem filter — IN() excludes NULLs, matching the
  * client's matchesSet()).
  */
@@ -446,6 +449,101 @@ export async function getBoardMissionsWithScoresPage(
       .leftJoin(advisories, eq(missions.advisoryId, advisories.id))
       .leftJoin(dependencies, eq(missions.dependencyId, dependencies.id))
       .where(and(parts.status, parts.q)),
+  ]);
+
+  const tally = tallyRows[0];
+
+  function tallyFacet<T extends string>(
+    values: readonly T[],
+    prefix: "severity" | "ecosystem" | "effort" | "missionType",
+  ): Partial<Record<T, number>> {
+    const out: Partial<Record<T, number>> = {};
+    for (const value of values) {
+      const count = tally?.[`${prefix}_${value}`] ?? 0;
+      if (count > 0) {
+        out[value] = count;
+      }
+    }
+    return out;
+  }
+
+  return {
+    missions: rows.map(toMissionWithScore),
+    total: tally?.total ?? 0,
+    facets: {
+      severity: tallyFacet<Severity>(severityEnum.enumValues, "severity"),
+      ecosystem: tallyFacet<Ecosystem>(ecosystemEnum.enumValues, "ecosystem"),
+      effort: tallyFacet<EffortLabel>(effortLabelEnum.enumValues, "effort"),
+      missionType: tallyFacet<MissionType>(missionTypeEnum.enumValues, "missionType"),
+    },
+  };
+}
+
+/**
+ * Per-repo version of getBoardMissionsWithScoresPage (ADR 0041) — same
+ * payload shape and same filter/sort/facet semantics, but constrained to
+ * one repo so the per-repo page can hand it to the same
+ * PaginatedMissionBoard component the board-wide /missions listing uses
+ * (the page passes pageSize=missions.length and pageCount=1 to suppress
+ * pagination). Kept as a sibling of getBoardMissionsWithScoresPage rather
+ * than a repoId field on BoardFilters so the public filter type stays
+ * about board scope, not single-repo shortcuts.
+ */
+export async function getRepoBoardPage(
+  db: ReadonlyDb,
+  repoId: string,
+  filters: BoardFilters,
+  options: { limit?: number; offset?: number } = {},
+): Promise<BoardPage> {
+  const limit = Math.max(1, options.limit ?? BOARD_PAGE_SIZE);
+  const offset = Math.max(0, options.offset ?? 0);
+  const parts = buildBoardConditionParts(filters);
+  const repoScope = eq(missions.repoId, repoId);
+
+  const tallySelect: Record<string, SQL<number>> = {
+    total: sql`(count(*) filter (where ${condSql(parts.severity, parts.ecosystem, parts.effort, parts.missionType)}))::int`,
+  };
+  for (const value of severityEnum.enumValues) {
+    tallySelect[`severity_${value}`] =
+      sql`(count(*) filter (where ${BOARD_SEVERITY_EXPR} = ${value} and ${condSql(parts.ecosystem, parts.effort, parts.missionType)}))::int`;
+  }
+  for (const value of ecosystemEnum.enumValues) {
+    tallySelect[`ecosystem_${value}`] =
+      sql`(count(*) filter (where ${BOARD_ECOSYSTEM_EXPR} = ${value} and ${condSql(parts.severity, parts.effort, parts.missionType)}))::int`;
+  }
+  for (const value of effortLabelEnum.enumValues) {
+    tallySelect[`effort_${value}`] =
+      sql`(count(*) filter (where ${BOARD_EFFORT_EXPR} = ${value} and ${condSql(parts.severity, parts.ecosystem, parts.missionType)}))::int`;
+  }
+  for (const value of missionTypeEnum.enumValues) {
+    tallySelect[`missionType_${value}`] =
+      sql`(count(*) filter (where ${BOARD_MISSION_TYPE_EXPR} = ${value} and ${condSql(parts.severity, parts.ecosystem, parts.effort)}))::int`;
+  }
+
+  const [rows, tallyRows] = await Promise.all([
+    missionJoinRows(db)
+      .where(
+        and(
+          parts.status,
+          parts.q,
+          parts.severity,
+          parts.ecosystem,
+          parts.effort,
+          parts.missionType,
+          repoScope,
+        ),
+      )
+      .orderBy(...boardOrderBy(filters.sort))
+      .limit(limit)
+      .offset(offset),
+    db
+      .select(tallySelect)
+      .from(missions)
+      .innerJoin(missionScores, eq(missionScores.missionId, missions.id))
+      .innerJoin(repos, eq(missions.repoId, repos.id))
+      .leftJoin(advisories, eq(missions.advisoryId, advisories.id))
+      .leftJoin(dependencies, eq(missions.dependencyId, dependencies.id))
+      .where(and(parts.status, parts.q, repoScope)),
   ]);
 
   const tally = tallyRows[0];

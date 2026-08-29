@@ -298,17 +298,6 @@ async function ingestRepo(
 
     // 4. Fetch OSV advisories
     log("info", `[${label}] Querying OSV for advisories`);
-    const osvResult = await osvFetcher.fetchAdvisories(
-      ingestorResult.dependencies,
-      ingestorResult.ecosystem,
-    );
-    logWarnings(label, osvResult.warnings);
-
-    log(
-      "info",
-      `[${label}] Found ${osvResult.advisories.size} unique advisory/ies` +
-        ` across ${osvResult.packageAdvisoryMap.size} package(s)`,
-    );
 
     // 5. Fetch registry metadata — matching fetcher for whichever
     // ecosystem actually resolved. Map lookup, not a ternary — a future
@@ -321,8 +310,26 @@ async function ingestRepo(
       );
     }
     log("info", `[${label}] Fetching ${ingestorResult.ecosystem} registry metadata`);
-    const registryResult = await registryFetcher.fetchMetadata(ingestorResult.dependencies);
+
+    // OSV and registry fetches only need the parsed dependency list and
+    // the resolved ecosystem — both already in hand from step 3 — so they
+    // run in parallel rather than serially. The two fetches are independent
+    // (OSV hits api.osv.dev, registry hits the per-ecosystem metadata API)
+    // and both are stateless for the duration of a single call; their
+    // results are combined only at the writer.write() call below. Cuts
+    // roughly half the per-repo ingestion wall time on a hot run.
+    const [osvResult, registryResult] = await Promise.all([
+      osvFetcher.fetchAdvisories(ingestorResult.dependencies, ingestorResult.ecosystem),
+      registryFetcher.fetchMetadata(ingestorResult.dependencies),
+    ]);
+    logWarnings(label, osvResult.warnings);
     logWarnings(label, registryResult.warnings);
+
+    log(
+      "info",
+      `[${label}] Found ${osvResult.advisories.size} unique advisory/ies` +
+        ` across ${osvResult.packageAdvisoryMap.size} package(s)`,
+    );
 
     const deprecatedCount = [...registryResult.metadata.values()].filter(
       (m) => m.isDeprecated,

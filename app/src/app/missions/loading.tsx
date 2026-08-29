@@ -10,14 +10,14 @@ export default function Loading(): React.JSX.Element {
         </div>
         <div className="bg-surface h-10 w-full animate-pulse rounded-md" />
         <div className="flex flex-wrap gap-2">
-          {[0, 1, 2, 3, 4].map((i) => (
-            <div key={i} className="bg-surface h-6 w-20 animate-pulse rounded-sm" />
+          {(["chip-0", "chip-1", "chip-2", "chip-3", "chip-4"] as const).map((key) => (
+            <div key={key} className="bg-surface h-6 w-20 animate-pulse rounded-sm" />
           ))}
         </div>
       </div>
       <ul className="flex flex-col gap-3">
-        {[0, 1, 2, 3].map((i) => (
-          <li key={i} className="border-border bg-surface h-24 animate-pulse rounded-md border" />
+        {(["mission-0", "mission-1", "mission-2", "mission-3"] as const).map((key) => (
+          <li key={key} className="border-border bg-surface h-24 animate-pulse rounded-md border" />
         ))}
       </ul>
     </main>

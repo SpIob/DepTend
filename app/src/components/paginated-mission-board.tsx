@@ -30,23 +30,28 @@ import { MissionSearchInput } from "./mission-search";
 const SEARCH_DEBOUNCE_MS = 300;
 
 /**
- * The board-wide /missions listing (ADR 0031). Filtering, searching,
+ * The mission board, used by both /missions (board-wide, ADR 0031) and
+ * /repo/[owner]/[name] (per-repo, ADR 0027 + ADR 0041). Filtering, searching,
  * sorting, and pagination all happen server-side: this component renders
- * exactly one pre-filtered page handed to it by page.tsx and turns every
- * filter interaction into a URL change (all via router.replace inside one
- * shared transition), which re-runs the server query. Search input is the
- * one exception — it keeps instant local feedback and debounces its
- * navigation so typing doesn't fire a request per keystroke.
+ * exactly one pre-filtered page handed to it by the page component and
+ * turns every filter interaction into a URL change (via router.replace
+ * inside one shared transition), which re-runs the server query. The
+ * search input is the one exception. It keeps instant local feedback and
+ * debounces its navigation so typing does not fire a request per keystroke.
  *
- * The board is intentionally not keyed by its URL: a key would remount it
- * on every navigation and drop the search input's focus mid-typing, so the
- * component instead adopts each fresh missions array as it arrives (see
- * the adjust-state block below) while user-owned state survives.
+ * The board is intentionally not keyed by its URL. A key would remount it
+ * on every navigation and drop the search input's focus mid-typing, so
+ * the component instead adopts each fresh missions array as it arrives
+ * (see the adjust-state block below) while user-owned state survives.
  *
- * The per-repo board keeps the older fully client-side MissionBoard; the
- * two share MissionCard, the search input's markup, and the URL query
- * shape (mission-board-query.ts), but deliberately not filtering logic —
- * one is bounded by a single repo's mission count, the other isn't.
+ * The per-repo page passes `pageSize = missions.length`, `page = 1`, and
+ * `pageCount = 1` so the pagination UI never renders. The per-repo filter
+ * chip set still does. Both boards share MissionCard, the search input
+ * markup, the filter chip component, and the URL query shape
+ * (mission-board-query.ts). The surface differences are the pagination
+ * controls on /missions and the hidden "Group by repo" toggle on the
+ * per-repo page, since every row on that page already belongs to one repo
+ * and grouping would be a single-bucket no-op.
  */
 
 const CHIP_ACTIVE_CLASS = "border-accent bg-accent text-white";
@@ -124,6 +129,14 @@ export function PaginatedMissionBoard({
   pageCount,
   initialQuery,
   basePath,
+  /**
+   * Hide the "Group by repo" checkbox. The per-repo page passes false
+   * because every mission on that board already belongs to one repo, so
+   * the toggle would always produce a single bucket. Defaults to true so
+   * /missions (the board-wide listing) keeps the affordance. Mirrors
+   * the same option the older MissionBoard exposed.
+   */
+  showGroupByRepo = true,
 }: {
   missions: MissionWithScore[];
   /** Total missions matching the filters across all pages — not this page's count. */
@@ -135,6 +148,7 @@ export function PaginatedMissionBoard({
   pageCount: number;
   initialQuery: MissionBoardQuery;
   basePath: string;
+  showGroupByRepo?: boolean;
 }): React.JSX.Element {
   const router = useRouter();
   const pathname = usePathname();
@@ -142,7 +156,10 @@ export function PaginatedMissionBoard({
 
   const [missions, setMissions] = useState(initialMissions);
   const [search, setSearch] = useState(initialQuery.q);
-  const [groupByRepo, setGroupByRepo] = useState(initialQuery.group);
+  // Mirrors MissionBoard's "even if URL says group=1, ignore it when the
+  // control is hidden" rule. Without this, a deep link could leave the
+  // per-repo page in a single-group state with no toggle to undo it.
+  const [groupByRepo, setGroupByRepo] = useState(showGroupByRepo && initialQuery.group);
 
   // The board is deliberately NOT keyed by its URL (a key would remount it
   // on every debounced search commit and drop the input's focus mid-typing).
@@ -356,18 +373,22 @@ export function PaginatedMissionBoard({
             </button>
           )}
         </div>
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <label className="text-ink-muted flex items-center gap-2 font-mono text-xs">
-            <input
-              type="checkbox"
-              checked={groupByRepo}
-              onChange={(event) => {
-                setGroupByRepo(event.target.checked);
-              }}
-              className="accent-accent"
-            />
-            Group by repo
-          </label>
+        <div
+          className={`flex flex-wrap items-center gap-3 ${showGroupByRepo ? "justify-between" : "justify-end"}`}
+        >
+          {showGroupByRepo && (
+            <label className="text-ink-muted flex items-center gap-2 font-mono text-xs">
+              <input
+                type="checkbox"
+                checked={groupByRepo}
+                onChange={(event) => {
+                  setGroupByRepo(event.target.checked);
+                }}
+                className="accent-accent"
+              />
+              Group by repo
+            </label>
+          )}
           <label className="text-ink-muted flex items-center gap-2 font-mono text-xs">
             Sort
             <select

@@ -43,7 +43,11 @@ export function MissionSearchInput({
             onChange("");
           }}
           aria-label="Clear search"
-          className="text-ink-muted hover:text-ink absolute inset-y-0 right-2 font-mono text-sm"
+          // p-1 plus flex centering gives the bare × a 28px+ hit target on
+          // both axes (WCAG 2.5.5 24x24 minimum). The surrounding flex
+          // keeps it vertically centered against the input's line-height
+          // without the absolute-positioned shell of the previous version.
+          className="text-ink-muted hover:text-ink absolute inset-y-0 right-0 flex items-center px-2.5 font-mono text-sm"
         >
           ×
         </button>

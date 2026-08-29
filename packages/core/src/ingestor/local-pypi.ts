@@ -32,8 +32,13 @@ export class LocalPyPIIngestor implements EcosystemIngestor {
    * @param repoPath - local filesystem path to the repo root (the
    *   directory containing pyproject.toml/requirements.txt), e.g. "." or
    *   "/Users/mico/code/my-project"
+   * @param signal - accepted for interface conformance with the HTTP-based
+   *   PyPIIngestor (ADR 0041). Filesystem reads are not abortable in a
+   *   useful way, so this implementation ignores the signal — the parameter
+   *   exists so the same `EcosystemIngestor[]` can mix HTTP- and
+   *   filesystem-backed ingestors without TypeScript variance complaints.
    */
-  async parseDependencies(repoPath: string): Promise<IngestorResult> {
+  async parseDependencies(repoPath: string, _signal?: AbortSignal): Promise<IngestorResult> {
     const pyprojectPath = join(repoPath, "pyproject.toml");
     const requirementsPath = join(repoPath, "requirements.txt");
 

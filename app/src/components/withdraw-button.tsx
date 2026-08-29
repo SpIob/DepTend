@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useSession } from "next-auth/react";
 import type { IngestionStatus } from "@deptend/core/db/schema.js";
+import { WITHDRAWABLE_INGESTION_STATUSES } from "@deptend/core/db/repos.js";
 import { extractErrorMessage } from "@/lib/fetch-error";
 
 type WithdrawRequestState =
@@ -11,10 +12,6 @@ type WithdrawRequestState =
   | { kind: "pending" }
   | { kind: "done" }
   | { kind: "error"; message: string };
-
-// Kept in sync with the server-side guard in db/repos.ts's withdrawOwnRepo()
-// — not the source of truth, just avoids showing a button that would 409.
-const WITHDRAWABLE_STATUSES: readonly IngestionStatus[] = ["pending", "skipped"];
 
 /**
  * Self-service reclaim (Roadmap "Now #4", Option B) — lets the original
@@ -25,9 +22,11 @@ const WITHDRAWABLE_STATUSES: readonly IngestionStatus[] = ["pending", "skipped"]
  * unlike a bookmark, not reversible from the UI.
  *
  * Renders null unless the signed-in viewer is literally the submitter AND
- * the repo is still in a withdrawable status — so this simply doesn't
- * appear for anyone it doesn't apply to, rather than appearing and then
- * failing.
+ * the repo is still in a withdrawable status. It simply does not appear
+ * for anyone it does not apply to, rather than appearing and then
+ * failing. The status set comes from packages/core (the same array the
+ * guarded DELETE in withdrawOwnRepo() uses), so a new ingestion_status
+ * value added server-side cannot silently leave this list stale.
  */
 export function WithdrawButton({
   repoId,
@@ -46,7 +45,7 @@ export function WithdrawButton({
     login === undefined ||
     submittedBy === null ||
     login !== submittedBy ||
-    !WITHDRAWABLE_STATUSES.includes(ingestionStatus)
+    !WITHDRAWABLE_INGESTION_STATUSES.includes(ingestionStatus)
   ) {
     return null;
   }

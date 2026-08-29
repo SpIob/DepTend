@@ -9,6 +9,7 @@ import {
 import { AuthStatus } from "@/components/auth-status";
 import { SubmitRepoForm } from "@/components/submit-repo-form";
 import { RepoCard } from "@/components/repo-card";
+import { BrandMark } from "@/components/brand-mark";
 import type { RepoWithMissionSummary } from "@deptend/core";
 
 // This page reads live data from Neon on every request — repo/mission
@@ -17,7 +18,11 @@ import type { RepoWithMissionSummary } from "@deptend/core";
 // `next build` never needs a DB connection.
 export const dynamic = "force-dynamic";
 
-const MAX_REPOS = Number.parseInt(process.env.NEXT_PUBLIC_MAX_REPOS ?? "150", 10);
+// Defaults to 150; falls through to the same value on a non-numeric env
+// (a deploy with NEXT_PUBLIC_MAX_REPOS=banana would otherwise silently
+// disable the cap check below, since `count >= NaN` is always false).
+const RAW_MAX_REPOS = Number.parseInt(process.env.NEXT_PUBLIC_MAX_REPOS ?? "150", 10);
+const MAX_REPOS: number = Number.isFinite(RAW_MAX_REPOS) && RAW_MAX_REPOS > 0 ? RAW_MAX_REPOS : 150;
 
 function EmptyState(): React.JSX.Element {
   return (
@@ -71,35 +76,12 @@ export default async function RepoDirectoryPage(): Promise<React.JSX.Element> {
       <header className="border-border flex flex-col gap-5 border-b pb-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2">
-            <span className="bg-accent inline-block h-2.5 w-2.5" aria-hidden="true" />
-            <h1 className="text-ink font-mono text-xl font-bold tracking-tight">DepTend</h1>
+            <BrandMark />
           </div>
           <div className="text-ink-muted flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-xs">
             <span>
               {indexedCount} {indexedCount === 1 ? "repo" : "repos"} indexed
             </span>
-            {skippedRepos.length > 0 && (
-              <>
-                <span className="text-border" aria-hidden="true">
-                  |
-                </span>
-                <details className="inline">
-                  <summary className="hover:text-ink inline cursor-pointer underline decoration-dotted underline-offset-2">
-                    {skippedRepos.length} skipped
-                  </summary>
-                  <ul className="text-ink-muted mt-2 flex flex-col gap-1 text-left font-mono text-xs">
-                    {skippedRepos.map((repo) => (
-                      <li key={`${repo.owner}/${repo.name}`}>
-                        <span className="text-ink">
-                          {repo.owner}/{repo.name}
-                        </span>{" "}
-                        — {repo.reason ?? "no package.json found"}
-                      </li>
-                    ))}
-                  </ul>
-                </details>
-              </>
-            )}
             <span className="text-border" aria-hidden="true">
               |
             </span>
@@ -133,6 +115,44 @@ export default async function RepoDirectoryPage(): Promise<React.JSX.Element> {
             </li>
           ))}
         </ul>
+      )}
+
+      {skippedRepos.length > 0 && (
+        // Skipped repos used to live as an inline <details> wedged into the
+        // auth-status flex row. Its popover floated over the auth button
+        // on narrow screens and read identically to a normal link. Moved
+        // it to a section below the grid so the disclosure has a
+        // consistent home, the heading is announced, and the header
+        // strip stays one coherent line.
+        <section
+          aria-labelledby="skipped-repos-heading"
+          className="border-border bg-surface rounded-sm border border-dashed p-5"
+        >
+          <details className="group/skipped">
+            <summary className="text-ink-muted hover:text-ink flex cursor-pointer items-center gap-2 font-mono text-xs">
+              <span
+                aria-hidden="true"
+                className="shrink-0 transition-transform group-open/skipped:rotate-90"
+              >
+                ▸
+              </span>
+              <span id="skipped-repos-heading" className="text-ink font-medium">
+                {skippedRepos.length} skipped
+              </span>
+              <span>(repos with no analyzable manifest)</span>
+            </summary>
+            <ul className="text-ink-muted mt-3 flex flex-col gap-1 font-mono text-xs">
+              {skippedRepos.map((repo) => (
+                <li key={`${repo.owner}/${repo.name}`}>
+                  <span className="text-ink">
+                    {repo.owner}/{repo.name}
+                  </span>{" "}
+                  — {repo.reason ?? "no package.json found"}
+                </li>
+              ))}
+            </ul>
+          </details>
+        </section>
       )}
     </main>
   );

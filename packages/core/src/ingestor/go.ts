@@ -46,13 +46,17 @@ export class GoIngestor implements EcosystemIngestor {
    *
    * @param repoPath - GitHub raw content base URL, e.g.:
    *   https://raw.githubusercontent.com/owner/name/main
+   * @param signal - optional AbortSignal from detectEcosystem() (ADR 0041).
+   *   Forwarded to every underlying fetch() call so a higher-priority probe
+   *   winning the parallel race can cancel the in-flight go fetch(es)
+   *   instead of letting them complete and be discarded.
    */
-  async parseDependencies(repoPath: string): Promise<IngestorResult> {
+  async parseDependencies(repoPath: string, signal?: AbortSignal): Promise<IngestorResult> {
     // Normalise: strip any trailing slash so URL joins are consistent
     const base = repoPath.replace(/\/$/, "");
     const url = `${base}/go.mod`;
 
-    const raw = await this.fetchGoModRaw(url);
+    const raw = await this.fetchGoModRaw(url, signal);
 
     // Skip the lock-file fetch entirely when there's no go.mod to
     // resolve confidence against — parseGoModContent would ignore
@@ -61,7 +65,7 @@ export class GoIngestor implements EcosystemIngestor {
     const { lockFileContent, lockFileName, lockFilePresent } =
       raw === null
         ? { lockFileContent: null, lockFileName: null, lockFilePresent: false }
-        : await this.fetchLockFile(base);
+        : await this.fetchLockFile(base, signal);
 
     return parseGoModContent(raw, lockFilePresent, url, lockFileContent, lockFileName);
   }
@@ -77,11 +81,12 @@ export class GoIngestor implements EcosystemIngestor {
    * response body — parsing/validating the content itself is
    * parseGoModContent's job, not this method's.
    */
-  private async fetchGoModRaw(url: string): Promise<string | null> {
+  private async fetchGoModRaw(url: string, signal?: AbortSignal): Promise<string | null> {
     let response: Response;
 
     try {
-      response = await fetchWithRetry(url, undefined, this.fetchRetryOptions);
+      const init: RequestInit = { ...(signal !== undefined && { signal }) };
+      response = await fetchWithRetry(url, init, this.fetchRetryOptions);
     } catch (err) {
       throw new Error(`Network error fetching go.mod from ${url}: ${String(err)}`);
     }
@@ -105,14 +110,18 @@ export class GoIngestor implements EcosystemIngestor {
    * Fetch the lock file content (go.sum) and detect presence.
    * Returns the content, the name of the file found, and a boolean for presence.
    */
-  private async fetchLockFile(base: string): Promise<{
+  private async fetchLockFile(
+    base: string,
+    signal?: AbortSignal,
+  ): Promise<{
     lockFileContent: string | null;
     lockFileName: string | null;
     lockFilePresent: boolean;
   }> {
     for (const name of GO_LOCK_FILE_NAMES) {
       try {
-        const res = await fetchWithRetry(`${base}/${name}`, undefined, this.fetchRetryOptions);
+        const init: RequestInit = { ...(signal !== undefined && { signal }) };
+        const res = await fetchWithRetry(`${base}/${name}`, init, this.fetchRetryOptions);
         if (res.ok) {
           const content = await res.text();
           return { lockFileContent: content, lockFileName: name, lockFilePresent: true };

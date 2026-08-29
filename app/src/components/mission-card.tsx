@@ -216,14 +216,17 @@ function MissionActions({
  * vulnerability") regardless of which CVE it is — so it's what actually
  * lets otherwise-identical rows read as distinct at a glance, without
  * touching mission-copy.ts itself.
+ *
+ * The visible "Fix: {version}" is the source of truth for screen
+ * readers too. The earlier shape (`aria-label` on a span with
+ * `aria-hidden` on the visible text) left the visible content announced
+ * nowhere and only worked for screen readers that happen to read
+ * title-attr labels.
  */
 function FixedVersionTag({ version }: { version: string }): React.JSX.Element {
   return (
-    <span
-      className="border-border bg-bg text-ink shrink-0 rounded-sm border px-1.5 py-0.5 font-mono text-[11px]"
-      aria-label={`Fixed in ${version}`}
-    >
-      <span aria-hidden="true">→ {version}</span>
+    <span className="border-border bg-bg text-ink shrink-0 rounded-sm border px-1.5 py-0.5 font-mono text-[11px]">
+      Fix: {version}
     </span>
   );
 }
@@ -296,8 +299,15 @@ export function MissionCard({
             <Tag className="bg-accent/10 text-accent">Claimed · @{mission.claimedBy}</Tag>
           )}
 
-          <span className="flex shrink-0 flex-row items-center gap-2 sm:flex-col sm:items-end sm:gap-1">
-            <span title="Composite score, out of 10">
+          <span
+            className="flex shrink-0 flex-row items-center gap-2 sm:flex-col sm:items-end sm:gap-1"
+            // The score is the only quantitative signal on a card and
+            // the preceding title-attr did not reach keyboard or many
+            // screen readers. The bar has its own aria-hidden below
+            // since it is pure decoration of the same number.
+            aria-label={`Composite score ${score.compositeScore.toFixed(1)} out of 10`}
+          >
+            <span>
               <span className="text-accent font-mono text-2xl font-bold">
                 {score.compositeScore.toFixed(1)}
               </span>

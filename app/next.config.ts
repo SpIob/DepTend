@@ -7,6 +7,17 @@ const config: NextConfig = {
   // Transpile shared workspace packages
   transpilePackages: ["@deptend/core"],
 
+  // Org avatars come from GitHub's avatar CDN. Without these entries,
+  // next/image refuses to optimize the URL and falls back to a plain <img>
+  // that does not lazy-load. The Gravatar pattern covers the rare org that
+  // has no GitHub-uploaded avatar.
+  images: {
+    remotePatterns: [
+      { protocol: "https", hostname: "avatars.githubusercontent.com" },
+      { protocol: "https", hostname: "gravatar.com" },
+    ],
+  },
+
   // Security headers (applied to all routes). The Content-Security-Policy
   // is NOT here — it needs a per-request nonce, which only middleware can
   // provide for App Router inline scripts. See app/src/middleware.ts and

@@ -11,8 +11,8 @@ export default function Loading(): React.JSX.Element {
         <div className="bg-surface h-4 w-full max-w-md animate-pulse rounded-md" />
       </div>
       <ul className="flex flex-col gap-3">
-        {[0, 1, 2, 3].map((i) => (
-          <li key={i} className="border-border bg-surface h-44 animate-pulse rounded-md border" />
+        {(["mission-0", "mission-1", "mission-2", "mission-3"] as const).map((key) => (
+          <li key={key} className="border-border bg-surface h-44 animate-pulse rounded-md border" />
         ))}
       </ul>
     </main>

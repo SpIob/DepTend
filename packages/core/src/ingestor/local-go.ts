@@ -29,8 +29,13 @@ export class LocalGoIngestor implements EcosystemIngestor {
    *
    * @param repoPath - local filesystem path to the repo root (the directory
    *   containing go.mod), e.g. "." or "/Users/mico/code/my-project"
+   * @param signal - accepted for interface conformance with the HTTP-based
+   *   GoIngestor (ADR 0041). Filesystem reads are not abortable in a useful
+   *   way, so this implementation ignores the signal — the parameter exists
+   *   so the same `EcosystemIngestor[]` can mix HTTP- and filesystem-backed
+   *   ingestors without TypeScript variance complaints.
    */
-  async parseDependencies(repoPath: string): Promise<IngestorResult> {
+  async parseDependencies(repoPath: string, _signal?: AbortSignal): Promise<IngestorResult> {
     const goModPath = join(repoPath, "go.mod");
 
     const raw = await this.readGoModRaw(goModPath);

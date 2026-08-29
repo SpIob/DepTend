@@ -358,4 +358,54 @@ describe("NpmIngestor", () => {
       );
     });
   });
+
+  // -------------------------------------------------------------------------
+  // ADR 0041 — AbortSignal forwarding for parallel detectEcosystem() probing
+  // -------------------------------------------------------------------------
+
+  it("forwards a caller-supplied AbortSignal to the underlying fetch calls", async () => {
+    // detectEcosystem() passes an AbortSignal to every probe so a higher-
+    // priority probe winning the parallel race can cancel in-flight
+    // lower-priority fetches. Verify the signal actually reaches fetch() —
+    // i.e. NpmIngestor is plumbed through, not silently dropped.
+    const controller = new AbortController();
+    const fetchMock = vi.fn(
+      (_input: string | URL, _init?: RequestInit): Response => new Response("{}", { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await ingestor.parseDependencies(BASE, controller.signal);
+
+    // At least one fetch call was made with our signal attached.
+    const callsWithSignal = fetchMock.mock.calls.filter(
+      ([, init]) => init?.signal === controller.signal,
+    );
+    expect(callsWithSignal.length).toBeGreaterThan(0);
+  });
+
+  it("aborts an in-flight fetch when the caller's signal is already aborted", async () => {
+    // The orchestrator fires controller.abort() once a higher-priority
+    // probe wins. A still-pending fetch() should see the abort and
+    // reject, not race the orchestrator's settle.
+    const controller = new AbortController();
+    const fetchMock = vi.fn(async (_input: string | URL, init?: RequestInit): Promise<Response> => {
+      if (init?.signal?.aborted === true) {
+        const err = new Error("Aborted");
+        err.name = "AbortError";
+        throw err;
+      }
+      // Realistic pending fetch — would only settle if no abort.
+      return new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => {
+          const err = new Error("Aborted");
+          err.name = "AbortError";
+          reject(err);
+        });
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    controller.abort();
+    await expect(ingestor.parseDependencies(BASE, controller.signal)).rejects.toThrow();
+  });
 });

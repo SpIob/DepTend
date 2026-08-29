@@ -5,24 +5,20 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import {
   getBookmarkedRepoIds,
+  getRepoBoardPage,
   getRepoByOwnerAndName,
   getRepoEcosystems,
-  getRepoMissionsWithScores,
+  type BoardFilters,
 } from "@/lib/queries/missions";
-import { MissionBoard } from "@/components/mission-board";
-import { parseMissionBoardQuery } from "@/lib/mission-board-query";
+import { PaginatedMissionBoard } from "@/components/paginated-mission-board";
+import { buildMissionBoardHref, parseMissionBoardQuery } from "@/lib/mission-board-query";
 import { AuthStatus } from "@/components/auth-status";
 import { BookmarkToggle } from "@/components/bookmark-toggle";
 import { WithdrawButton } from "@/components/withdraw-button";
 import { EcosystemBadge } from "@/components/ecosystem-badge";
+import { BrandMark } from "@/components/brand-mark";
+import { firstSearchParamValue } from "@/lib/search-params";
 import { ingestionStatusNote } from "@/lib/ingestion-status";
-
-// Next 15 can hand a param multiple values (`?severity=high&severity=low`);
-// this board only ever writes a single comma-joined value, so the first one
-// is the only shape it needs to understand on read.
-function firstValue(value: string | string[] | undefined): string | undefined {
-  return Array.isArray(value) ? value[0] : value;
-}
 
 export const dynamic = "force-dynamic";
 
@@ -49,11 +45,12 @@ function EmptyState({ note }: { note: string | null }): React.JSX.Element {
 }
 
 /**
- * Per-repo mission board (ADR 0027) — everything the old flat board did,
- * scoped to one repo via getRepoMissionsWithScores() instead of every
- * repo at once. Reuses MissionBoard/MissionFilterBar/MissionCard/search
- * completely unchanged — only the data source and the header differ from
- * /missions.
+ * Per-repo mission board (ADR 0027, ADR 0041). The same
+ * PaginatedMissionBoard the board-wide /missions listing uses, scoped to
+ * one repo via getRepoBoardPage(). pageSize is the returned mission count
+ * and pageCount is hard-coded to 1 so the pagination UI never renders.
+ * One repo's mission list fits on one page in practice. showGroupByRepo
+ * is forced off because every row is already one repo.
  */
 export default async function RepoPage({
   params,
@@ -71,21 +68,31 @@ export default async function RepoPage({
   const session = await getServerSession(authOptions);
   const login = session?.user?.login;
 
-  const [missions, bookmarkedIds, ecosystems, rawParams] = await Promise.all([
-    getRepoMissionsWithScores(repo.id),
+  const rawParams = await searchParams;
+  const initialQuery = parseMissionBoardQuery({
+    q: firstSearchParamValue(rawParams.q),
+    severity: firstSearchParamValue(rawParams.severity),
+    ecosystem: firstSearchParamValue(rawParams.ecosystem),
+    effort: firstSearchParamValue(rawParams.effort),
+    missionType: firstSearchParamValue(rawParams.missionType),
+    sort: firstSearchParamValue(rawParams.sort),
+    group: firstSearchParamValue(rawParams.group),
+  });
+
+  const filters: BoardFilters = {
+    q: initialQuery.q,
+    severities: Array.from(initialQuery.severity),
+    ecosystems: Array.from(initialQuery.ecosystem),
+    efforts: Array.from(initialQuery.effort),
+    missionTypes: Array.from(initialQuery.missionType),
+    sort: initialQuery.sort,
+  };
+
+  const [board, bookmarkedIds, ecosystems] = await Promise.all([
+    getRepoBoardPage(repo.id, filters),
     login === undefined ? Promise.resolve(new Set<string>()) : getBookmarkedRepoIds(login),
     getRepoEcosystems(repo.id),
-    searchParams,
   ]);
-
-  const initialQuery = parseMissionBoardQuery({
-    q: firstValue(rawParams.q),
-    severity: firstValue(rawParams.severity),
-    ecosystem: firstValue(rawParams.ecosystem),
-    effort: firstValue(rawParams.effort),
-    sort: firstValue(rawParams.sort),
-    group: firstValue(rawParams.group),
-  });
 
   const statusNote = ingestionStatusNote(repo.ingestionStatus);
 
@@ -94,10 +101,7 @@ export default async function RepoPage({
       <header className="border-border flex flex-col gap-5 border-b pb-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex min-w-0 items-center gap-3">
-            <Link href="/" className="flex shrink-0 items-center gap-2">
-              <span className="bg-accent inline-block h-2.5 w-2.5" aria-hidden="true" />
-              <span className="text-ink font-mono text-xl font-bold tracking-tight">DepTend</span>
-            </Link>
+            <BrandMark href="/" />
             <span className="text-border" aria-hidden="true">
               /
             </span>
@@ -154,10 +158,29 @@ export default async function RepoPage({
             ingestionStatus={repo.ingestionStatus}
           />
         </>
-      ) : missions.length === 0 ? (
+      ) : board.missions.length === 0 &&
+        filters.q.trim() === "" &&
+        filters.severities.length === 0 &&
+        filters.ecosystems.length === 0 &&
+        filters.efforts.length === 0 &&
+        filters.missionTypes.length === 0 ? (
+        // No active filter and no missions at all. Show the "repo in
+        // good shape" message. A filter zero-out falls through to
+        // PaginatedMissionBoard, which renders its own
+        // "No missions match these filters" empty state.
         <EmptyState note={null} />
       ) : (
-        <MissionBoard missions={missions} initialQuery={initialQuery} showGroupByRepo={false} />
+        <PaginatedMissionBoard
+          missions={board.missions}
+          total={board.total}
+          facets={board.facets}
+          pageSize={board.missions.length}
+          page={1}
+          pageCount={1}
+          initialQuery={initialQuery}
+          basePath={buildMissionBoardHref(`/repo/${repo.owner}/${repo.name}`, {})}
+          showGroupByRepo={false}
+        />
       )}
     </main>
   );

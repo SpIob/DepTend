@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import Link from "next/link";
+import Image from "next/image";
 import type { Metadata } from "next";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
@@ -10,6 +10,7 @@ import {
 } from "@/lib/queries/organizations";
 import { RepoCard } from "@/components/repo-card";
 import { AuthStatus } from "@/components/auth-status";
+import { BrandMark } from "@/components/brand-mark";
 
 export const dynamic = "force-dynamic";
 
@@ -48,20 +49,24 @@ export default async function OrgPage({
       <header className="border-border flex flex-col gap-5 border-b pb-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2">
-            <Link href="/" className="flex items-center gap-2">
-              <span className="bg-accent inline-block h-2.5 w-2.5" aria-hidden="true" />
-              <span className="text-ink font-mono text-xl font-bold tracking-tight">DepTend</span>
-            </Link>
+            <BrandMark href="/" />
             <span className="text-border" aria-hidden="true">
               /
             </span>
             <h1 className="text-ink font-mono text-lg font-semibold">{org.name ?? orgLogin}</h1>
             {org.avatarUrl && (
-              <img
+              <Image
                 src={org.avatarUrl}
                 alt=""
-                className="bg-bg h-8 w-8 rounded-full"
-                aria-hidden="true"
+                width={32}
+                height={32}
+                loading="lazy"
+                decoding="async"
+                // Drop the previous no-op `bg-bg` (backgrounds sit behind
+                // an <img>'s pixels, not around them). The 1px border
+                // still needs *some* surface when the asset has not
+                // loaded, so use `bg-surface` underneath.
+                className="border-border shrink-0 rounded-full border"
               />
             )}
           </div>

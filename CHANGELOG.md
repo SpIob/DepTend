@@ -12,6 +12,62 @@ All notable changes to DepTend, condensed to one entry per phase.
 
 ## [Unreleased]
 
+**Parallel OSV + registry fetches in `scripts/ingest.js`**
+
+### Changed
+
+- The per-repo ingestion script now issues the OSV advisory fetch and the per-ecosystem registry metadata fetch concurrently via `Promise.all` instead of serially. The two fetches only need the parsed dependency list and the resolved ecosystem (both already in hand after `detectEcosystem`), they're independent endpoints (`api.osv.dev` vs. the per-ecosystem metadata API), and both are stateless for the duration of a single call. Roughly halves the per-repo ingestion wall time on a hot cron run. The `writer.write()` and `missionWriter.generateMissionsForRepo()` call sites, the result shapes, and the warning-logging semantics are unchanged. No schema migration, no `/app` change, no new ADR (script-level change, per the discussion in the planning pass).
+
+**Bulk mission writes inside the scorer transaction (ADR 0043)**
+
+### Changed
+
+- `MissionWriter.generateMissionsForRepo()`'s in-transaction write phase now issues a constant number of round-trips (5, regardless of candidate count) instead of 2N — one bulk `INSERT missions`, one `UPDATE missions … FROM (VALUES …)`, one bulk `INSERT mission_scores … ON CONFLICT (mission_id) DO UPDATE`, plus the unchanged existing-mission lookup and auto-resolution close pass. The pre-write classification pass now uses a pre-built `Map<id, Dependency>` for O(1) lookups, replacing the O(N²) `allDeps.find()` pattern. For a 200-mission re-ingestion, the write phase is ~40× fewer DB statements and ~2–4 s faster per repo; the per-repo daily cron run reclaims 50–750 s of wall time depending on dataset shape. Mission output, score values, status transitions, the "dismissed rows keep human state" invariant (ADR 0008 §3), and the "previously auto-resolved mission whose pair came back is reopened" rule are all preserved exactly. The `MissionWriter` public API and `GenerateMissionsOutput` shape are unchanged. No schema migration, no `/app` change. Live-verified against the dev Neon database before flip; ADR 0043 will go from Proposed → Accepted in the same commit as the deploy confirmation per the standing rule.
+
+**Parallel ecosystem detection (ADR 0041)**
+
+### Changed
+
+- `detectEcosystem()` now probes every ingestor in parallel via `Promise.all` + `AbortController`, with caller-list order as the explicit tie-breaker. A Go-only repo no longer waits for the npm + pypi probes to fully fail before Go is tried; the per-repo cron and the user-facing submission manifest pre-check each save up to 4–6 wasted HTTP round-trips per non-npm-first repo. The npm-first / pypi-second / go-third priority contract (ADR 0022 / 0024) is preserved exactly — a lower-priority probe never wins on wall-clock latency alone. In-flight loser probes are aborted at the OS level as soon as a higher-priority probe claims the win, instead of completing and being discarded. The all-fail path (no probe resolves) is unchanged at the public boundary: every attempt's warnings are still combined in caller-list order. No schema migration, no `/app` change, no caller-source change.
+
+---
+
+**Mission board unification + UI quick wins + cached-read revival audit (ADR 0042)**
+
+### Changed
+
+- Per-repo mission board (`/repo/[owner]/[name]`) is now served by the same `PaginatedMissionBoard` the board-wide `/missions` listing uses, via a new `getRepoBoardPage(repoId, filters)` query in `packages/core/src/db/queries.ts` (sibling of `getBoardMissionsWithScoresPage`; same `BoardPage` shape, same `count(*) FILTER (...)` facet aggregate, plus a `WHERE missions.repo_id = $1`). The older fully client-side `MissionBoard` / `MissionFilterBar` components are removed. One filter codepath to maintain instead of two; per-repo page is now on the same cached, server-side filter path `/missions` already is. `MissionCard`, `MissionSearchInput`, the URL query shape (`mission-board-query.ts`), and the claim/unclaim optimistic-patch path are all unchanged; the per-repo page's `← All repos` link, bookmark toggle, and "View on GitHub" header all stay the same. `PaginatedMissionBoard` gains a `showGroupByRepo` prop (default `true`; per-repo page passes `false`) so the now-redundant "Group by repo" toggle doesn't reappear on a board where every row is one repo.
+- Error boundaries: the route-segment `error.tsx` CTA now reads "Browse repos" (was "Back to repos"), matching the canonical copy on the directory and 404. Both `error.tsx` and `global-error.tsx` now show a `title="Include this if you report an issue"` tooltip on the optional `error.digest` line, so users pasting it into an issue remember to keep it.
+- `app/src/components/notification-toggle.tsx`: the "Notify ✓" active state is now just "Notify" with `aria-pressed` as the source of truth for both screen readers and sighted users (mirrors `BookmarkToggle`'s pattern); the redundant `✓` glyph and its three-state screen-reader announcement are gone.
+- `app/src/components/mission-card.tsx`: the composite score block now exposes `aria-label="Composite score X.X out of 10"` (the prior `title=` only reached mouse users); `FixedVersionTag`'s visible text changed from "→ {version}" to "Fix: {version}" so the visible content matches what screen readers hear (the prior `aria-label` + `aria-hidden` setup was the wrong anti-pattern).
+- `packages/core/src/db/repos.ts`: exports `WITHDRAWABLE_INGESTION_STATUSES`; `withdraw-button.tsx` now imports it instead of mirroring the list. A new `ingestion_status` value added server-side will reach the UI automatically; previously a status list drift would silently leave the button shown for statuses that 409.
+- Skip-to-content link: `error.tsx` and `global-error.tsx`'s `<main>` now carry `id="main"`, so the layout's skip link actually skips to content on those boundaries (`not-found.tsx` and the regular pages already had it).
+- `app/src/app/page.tsx` (`/`): the "N skipped" disclosure, previously an inline `<details>` wedged into the auth-status flex row (where its popover floated over the auth button on narrow screens), is now a dedicated section below the directory grid with its own heading. The header strip is one coherent line again.
+
+### Added
+
+- `app/src/components/brand-mark.tsx`: the wordmark (accent square + "DepTend" in mono) is now a single component used by all four pages; was hand-copied four times with subtle class drift.
+- `app/src/lib/search-params.ts`: `firstSearchParamValue` helper replaces the two `function firstValue` copies in `missions/page.tsx` and `repo/[owner]/[name]/page.tsx`.
+- `app/next.config.ts`: `images.remotePatterns` now allowlists `avatars.githubusercontent.com` and `gravatar.com` so `next/image` can optimize the org avatar. The org page previously rendered a raw `<img>` with a no-op `bg-bg`; it's now `<Image>` with `width={32}`, `height={32}`, `loading="lazy"`, `decoding="async"`, and a real surface-color border.
+
+### Fixed
+
+- `app/src/app/page.tsx`: `NEXT_PUBLIC_MAX_REPOS` now has a `Number.isFinite` / `> 0` guard; a non-numeric env value (e.g. `NEXT_PUBLIC_MAX_REPOS=banana`) silently disabled the cap check before, since `count >= NaN` is always `false`.
+- `app/src/components/mission-search.tsx`: the search clear `×` button was a 14×20 hit target; it's now centered flex with `px-2.5` padding (≥24×24 on both axes per WCAG 2.5.5).
+- `app/src/app/loading.tsx`, `app/src/app/missions/loading.tsx`, `app/src/app/repo/[owner]/[name]/loading.tsx`: skeleton list keys are now stable (`"skeleton-0"`, `"mission-1"`, etc.) instead of `0, 1, 2, 3` — makes it obvious these are placeholders, not a list.
+
+### Audit
+
+- H6 read-only audit: every `unstable_cache` site uses the same `cachedRead()` wrapper in `app/src/lib/queries/{missions,organizations}.ts`; both wrappers apply `reviveDates` to `cached()`'s result, outside the serialization boundary, matching the ADR 0033 correction note. The new `getRepoBoardPage` (above) goes through `missions.ts`'s wrapper and inherits the same correct placement. No latent revival-inside-callback sites; no `unstable_cache` calls outside the two wrappers. No code change needed.
+
+---
+
+**Parallel ecosystem detection (ADR 0041)**
+
+### Changed
+
+- `detectEcosystem()` now probes every ingestor in parallel via `Promise.all` + `AbortController`, with caller-list order as the explicit tie-breaker. A Go-only repo no longer waits for the npm + pypi probes to fully fail before Go is tried; the per-repo cron and the user-facing submission manifest pre-check each save up to 4–6 wasted HTTP round-trips per non-npm-first repo. The npm-first / pypi-second / go-third priority contract (ADR 0022 / 0024) is preserved exactly — a lower-priority probe never wins on wall-clock latency alone. In-flight loser probes are aborted at the OS level as soon as a higher-priority probe claims the win, instead of completing and being discarded. The all-fail path (no probe resolves) is unchanged at the public boundary: every attempt's warnings are still combined in caller-list order. No schema migration, no `/app` change, no caller-source change.
+
 **Migration bookkeeping recovery (ADR 0040)**
 
 ### Fixed

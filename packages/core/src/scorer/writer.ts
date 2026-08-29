@@ -44,6 +44,7 @@
  *      docs/adr/0011-schema-as-single-type-source.md
  *      docs/adr/0029-breaking-change-signals.md
  *      docs/adr/0032-downstream-dependents.md
+ *      docs/adr/0043-bulk-mission-writes.md
  */
 
 import { and, eq, inArray, notInArray, sql } from "drizzle-orm";
@@ -228,10 +229,35 @@ export class MissionWriter {
 
       const existingMissions = await this.selectExistingMissions(tx, classificationPairs);
 
-      const processedMissionIds: string[] = [];
+      // Pre-build an O(1) dependency lookup and the per-classification
+      // mission inputs. Doing this in JS once, before any DB writes, is
+      // what turns the original 2N round-trip loop into a constant number
+      // of bulk statements (ADR 0042). The Map replaces an allDeps.find()
+      // per iteration that was O(N) — itself O(N²) for the loop.
+      const depsById = new Map<string, Dependency>();
+      for (const dep of allDeps) {
+        depsById.set(dep.id, dep);
+      }
 
+      interface PreparedRow {
+        existingMissionId: string | null;
+        /** Reopen this existing mission from "resolved" → "open" (ADR 0008 §3). */
+        reopen: boolean;
+        missionInput: {
+          repoId: string;
+          dependencyId: string;
+          advisoryId: string | null;
+          title: string;
+          description: string;
+          actionHint: string | null;
+          missionType: MissionType;
+        };
+        score: MissionScoreComputation;
+      }
+
+      const prepared: PreparedRow[] = [];
       for (const { dependencyId, classification } of classifications) {
-        const dependency = allDeps.find((d) => d.id === dependencyId);
+        const dependency = depsById.get(dependencyId);
         if (!dependency) continue;
 
         // Build effort signals for vulnerability_fix only
@@ -305,34 +331,38 @@ export class MissionWriter {
 
         const existing = existingMissions.get(existingKey);
 
-        let missionId: string;
-        let wasCreated: boolean;
-        if (existing !== undefined) {
-          await this.refreshMissionCopy(
-            tx,
-            existing.id,
-            missionInput,
-            existing.status,
-            classification.type,
-          );
-          missionId = existing.id;
-          wasCreated = false;
-        } else {
-          missionId = await this.insertMission(tx, missionInput);
-          wasCreated = true;
-        }
-
-        processedMissionIds.push(missionId);
-
-        await this.upsertMissionScore(tx, missionId, score);
-
-        if (wasCreated) {
-          created++;
-        } else {
-          updated++;
-        }
+        prepared.push({
+          existingMissionId: existing?.id ?? null,
+          reopen: existing?.status === "resolved",
+          missionInput,
+          score,
+        });
       }
 
+      // Three bulk statements replace the original 2N per-row round-trips
+      // (ADR 0042): 1) insert all new missions, 2) update all existing
+      // missions, 3) upsert all mission scores. Each is one round-trip on
+      // the WebSocket-backed neon-serverless driver.
+      const {
+        newMissionIds,
+        created: createdCount,
+        updated: updatedCount,
+      } = await this.bulkWriteMissions(tx, prepared);
+
+      await this.bulkUpsertMissionScores(
+        tx,
+        prepared.map((row, index) => ({
+          missionId: row.existingMissionId ?? newMissionIds[index] ?? null,
+          score: row.score,
+        })),
+      );
+
+      created = createdCount;
+      updated = updatedCount;
+
+      const processedMissionIds: string[] = prepared.map(
+        (row, index) => row.existingMissionId ?? newMissionIds[index] ?? "",
+      );
       resolved = await this.resolveStaleMissions(tx, repoId, processedMissionIds);
     });
 
@@ -417,40 +447,6 @@ export class MissionWriter {
   }
 
   /**
-   * Refreshes an existing mission's copy fields only (ADR 0008 §3) — with
-   * one pipeline-driven exception: a previously auto-resolved mission whose
-   * pair is back among the candidates reopens (status "resolved" was the
-   * pipeline's own earlier conclusion, not user state; see the call site).
-   */
-  private async refreshMissionCopy(
-    tx: DbOrTx,
-    missionId: string,
-    input: {
-      title: string;
-      description: string;
-      actionHint: string | null;
-      missionType: MissionType;
-    },
-    currentStatus: MissionStatus,
-    _missionType: MissionType,
-  ): Promise<void> {
-    await tx
-      .update(missions)
-      .set({
-        title: input.title,
-        description: input.description,
-        actionHint: input.actionHint,
-        missionType: input.missionType,
-        ...(currentStatus === "resolved" && {
-          status: "open" as const,
-          resolvedAt: null,
-        }),
-        updatedAt: new Date(),
-      })
-      .where(eq(missions.id, missionId));
-  }
-
-  /**
    * Auto-closes this repo's remaining open/claimed missions — the ones
    * whose (dependency_id, advisory_id) pair produced no candidate this run:
    * the dependency left the manifest, the advisory no longer matches, or
@@ -495,66 +491,167 @@ export class MissionWriter {
     return resolvedRows.length;
   }
 
-  private async insertMission(
-    tx: DbOrTx,
-    input: {
-      repoId: string;
-      dependencyId: string;
-      advisoryId: string | null;
-      title: string;
-      description: string;
-      actionHint: string | null;
-      missionType: MissionType;
-    },
-  ): Promise<string> {
-    const inserted = await tx
-      .insert(missions)
-      .values({
-        repoId: input.repoId,
-        title: input.title,
-        description: input.description,
-        actionHint: input.actionHint,
-        missionType: input.missionType,
-        advisoryId: input.advisoryId,
-        dependencyId: input.dependencyId,
-      })
-      .returning({ id: missions.id });
+  // ---------------------------------------------------------------------------
+  // ADR 0042 — bulk mission writes (one round-trip each, replaces 2N)
+  // ---------------------------------------------------------------------------
 
-    const insertedRow = inserted[0];
-    if (insertedRow === undefined) {
-      throw new Error(
-        `insertMission: insert returned no row for dependency ${input.dependencyId} / advisory ${input.advisoryId ?? "null"}`,
-      );
+  /**
+   * Bulk-insert every new mission and bulk-update every existing mission in
+   * two round-trips, replacing the original per-row loop's 2N calls (one
+   * insert-or-refresh + one mission_scores upsert per classification).
+   *
+   * The classification pass above has already done the per-row decision
+   * (existing or new, with `reopen` set when an auto-resolved mission is
+   * back among the candidates), so this method is purely a transport-layer
+   * collapse: every row that needs writing goes in one statement; every
+   * row that needs refreshing goes in another.
+   *
+   * `missions` deliberately has no unique constraint (AGENTS.md §11); the
+   * "this is new" decision is made by the `existingMissions` lookup the
+   * call site did before reaching here, so the bulk insert is safe within
+   * the surrounding transaction. The bulk update is `UPDATE ... FROM
+   * (VALUES ...)` so all rows in one statement.
+   *
+   * Returns the new-mission ids in input order, plus the created/updated
+   * counts. A `null` slot in `newMissionIds` corresponds to an existing
+   * mission (id lives in `row.existingMissionId`); the two arrays are
+   * positional mirrors of the prepared rows.
+   */
+  private async bulkWriteMissions(
+    tx: DbOrTx,
+    prepared: {
+      existingMissionId: string | null;
+      reopen: boolean;
+      missionInput: {
+        repoId: string;
+        dependencyId: string;
+        advisoryId: string | null;
+        title: string;
+        description: string;
+        actionHint: string | null;
+        missionType: MissionType;
+      };
+    }[],
+  ): Promise<{ newMissionIds: (string | null)[]; created: number; updated: number }> {
+    const newMissionIds: (string | null)[] = prepared.map(() => null);
+    let created = 0;
+    let updated = 0;
+
+    // ---- Bulk INSERT: one statement for every new mission ----
+    const newRows = prepared
+      .map((row, index) => ({ row, index }))
+      .filter(({ row }) => row.existingMissionId === null);
+
+    if (newRows.length > 0) {
+      const inserted = await tx
+        .insert(missions)
+        .values(
+          newRows.map(({ row }) => ({
+            repoId: row.missionInput.repoId,
+            title: row.missionInput.title,
+            description: row.missionInput.description,
+            actionHint: row.missionInput.actionHint,
+            missionType: row.missionInput.missionType,
+            advisoryId: row.missionInput.advisoryId,
+            dependencyId: row.missionInput.dependencyId,
+          })),
+        )
+        .returning({ id: missions.id });
+
+      if (inserted.length !== newRows.length) {
+        throw new Error(
+          `bulkWriteMissions: INSERT returned ${String(inserted.length)} ids, expected ${String(newRows.length)} — row-order alignment broken.`,
+        );
+      }
+
+      for (let i = 0; i < newRows.length; i++) {
+        const newRow = newRows[i];
+        const insertedRow = inserted[i];
+        if (newRow === undefined || insertedRow === undefined) continue;
+        newMissionIds[newRow.index] = insertedRow.id;
+      }
+      created = newRows.length;
     }
 
-    return insertedRow.id;
+    // ---- Bulk UPDATE: one statement for every existing mission ----
+    const existingRows = prepared
+      .map((row, index) => ({ row, index }))
+      .filter(({ row }) => row.existingMissionId !== null);
+
+    if (existingRows.length > 0) {
+      // The per-row reopen decision (ADR 0008 §3: only auto-"resolved"
+      // missions may flip back to "open" when their pair comes back;
+      // dismissed/claimed rows keep their human state) is captured at
+      // prepare time as `row.reopen`. We pass it as an extra column in
+      // the VALUES list and let the SET clause's CASE expression read it,
+      // which keeps the SQL self-contained and avoids needing a
+      // lateral join or a row-by-row decision at SQL time.
+      //
+      // `sql.param(value)` builds a parameterized chunk that Drizzle
+      // renders as the next available `$N` placeholders (its internal
+      // `paramStartIndex` counter auto-advances), so the assembled SQL
+      // gets one positional parameter per scalar. Inline `::uuid` /
+      // `::mission_type` casts run after the parameter substitution,
+      // which Postgres accepts as the canonical typed-parameter form.
+      const valuesClauses: ReturnType<typeof sql>[] = [];
+      for (const { row } of existingRows) {
+        valuesClauses.push(
+          sql`(${sql.param(row.existingMissionId)}::uuid, ${sql.param(row.missionInput.title)}, ${sql.param(row.missionInput.description)}, ${sql.param(row.missionInput.actionHint)}, ${sql.param(row.missionInput.missionType)}::mission_type, ${sql.param(row.reopen)}::boolean)`,
+        );
+      }
+
+      const valuesUnion = sql.join(valuesClauses, sql`, `);
+
+      await tx.execute(
+        sql`UPDATE missions SET
+              title = v.title,
+              description = v.description,
+              action_hint = v.action_hint,
+              mission_type = v.mission_type,
+              status = CASE WHEN v.reopen THEN 'open'::mission_status ELSE missions.status END,
+              resolved_at = CASE WHEN v.reopen THEN NULL ELSE missions.resolved_at END,
+              updated_at = NOW()
+            FROM (VALUES ${valuesUnion}) AS v(id, title, description, action_hint, mission_type, reopen)
+            WHERE missions.id = v.id`,
+      );
+      updated = existingRows.length;
+    }
+
+    return { newMissionIds, created, updated };
   }
 
-  // ---------------------------------------------------------------------------
-  // mission_scores (real onConflictDoUpdate — mission_id is unique)
-  // ---------------------------------------------------------------------------
-
-  private async upsertMissionScore(
+  /**
+   * Bulk-upsert every mission_scores row in one statement.
+   * mission_scores.missionId is unique (schema.ts), so `onConflictDoUpdate`
+   * covers both the new (just-inserted missions) and existing paths.
+   */
+  private async bulkUpsertMissionScores(
     tx: DbOrTx,
-    missionId: string,
-    score: MissionScoreComputation,
+    rows: { missionId: string | null; score: MissionScoreComputation }[],
   ): Promise<void> {
+    const valid = rows.filter(
+      (r): r is { missionId: string; score: MissionScoreComputation } => r.missionId !== null,
+    );
+    if (valid.length === 0) return;
+
     await tx
       .insert(missionScores)
-      .values({
-        missionId,
-        impactScore: score.impact_score,
-        ecosystemValueScore: score.ecosystem_value_score,
-        compositeScore: score.composite_score,
-        effortLabel: score.effort_label,
-        impactInputs: score.impact_inputs,
-        ecosystemValueInputs: score.ecosystem_value_inputs,
-        effortInputs: score.effort_inputs,
-        confidence: score.confidence,
-        confidenceNotes: score.confidence_notes,
-        confidenceFlags: score.confidence_flags,
-        scoringVersion: score.scoring_version,
-      })
+      .values(
+        valid.map(({ missionId, score }) => ({
+          missionId,
+          impactScore: score.impact_score,
+          ecosystemValueScore: score.ecosystem_value_score,
+          compositeScore: score.composite_score,
+          effortLabel: score.effort_label,
+          impactInputs: score.impact_inputs,
+          ecosystemValueInputs: score.ecosystem_value_inputs,
+          effortInputs: score.effort_inputs,
+          confidence: score.confidence,
+          confidenceNotes: score.confidence_notes,
+          confidenceFlags: score.confidence_flags,
+          scoringVersion: score.scoring_version,
+        })),
+      )
       .onConflictDoUpdate({
         target: missionScores.missionId,
         set: {

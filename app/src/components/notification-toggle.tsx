@@ -69,13 +69,18 @@ export function NotificationToggle({
         onClick={() => void toggle()}
         aria-pressed={subscribed}
         title={subscribed ? "Unsubscribe from notifications" : "Subscribe to notifications"}
+        // Same treatment as BookmarkToggle: `aria-pressed` is the
+        // source of truth for the "on" state for both assistive tech
+        // and sighted users (the active class changes the color). The
+        // older "Notify ✓" added a redundant glyph and shifted the
+        // screen-reader announcement between idle/active/pending.
         className={`rounded-md border px-2 py-0.5 font-mono text-[11px] transition-colors disabled:opacity-50 ${
           subscribed
             ? "border-accent bg-accent/10 text-accent"
             : "border-border text-ink-muted hover:text-ink hover:border-ink-muted"
         }`}
       >
-        {pending ? "..." : subscribed ? "Notify ✓" : "Notify"}
+        {pending ? "..." : "Notify"}
       </button>
       <div role="status" aria-live="polite">
         {errorMessage !== null && (

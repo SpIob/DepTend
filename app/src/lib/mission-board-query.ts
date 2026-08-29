@@ -6,13 +6,13 @@ import {
   SEVERITY_OPTIONS,
 } from "./mission-filter-options";
 
-// Deliberately NOT "use client" — page.tsx (a Server Component) calls
-// parseMissionBoardQuery() directly, and mission-board.tsx (a Client
-// Component) calls it too. A function exported from a "use client" module
-// can only be rendered as a Component or passed as a prop; it can't be
-// invoked as a plain function from server code. Keeping this parsing logic
-// in its own client-agnostic module lets both sides share one source of
-// truth without crossing that boundary.
+// Deliberately NOT "use client". page.tsx (a Server Component) calls
+// parseMissionBoardQuery() directly, and paginated-mission-board.tsx (a
+// Client Component) calls it too. A function exported from a "use client"
+// module can only be rendered as a Component or passed as a prop; it
+// cannot be invoked as a plain function from server code. Keeping this
+// parsing logic in its own client-agnostic module lets both sides share
+// one source of truth without crossing that boundary.
 
 export type SortMode = "priority" | "quick-wins" | "newest";
 export const SORT_MODES: readonly SortMode[] = ["priority", "quick-wins", "newest"];

@@ -1,11 +1,10 @@
 import type { Ecosystem, EffortLabel, MissionType, Severity } from "@deptend/core/db/schema.js";
 
-// Client-agnostic (no "use client"), same reason as mission-board-query.ts —
-// both server pages and client boards consume these. One source of truth for
-// each filter axis's option values and display labels: these lists were
-// previously triplicated across mission-filter-bar.tsx,
-// paginated-mission-board.tsx, and mission-board-query.ts, so adding a
-// fourth ecosystem meant three coordinated edits.
+// Client-agnostic (no "use client"), same reason as mission-board-query.ts.
+// Both server pages and client boards consume these. One source of truth
+// for each filter axis's option values and display labels: these lists
+// were previously duplicated across the two board components, so adding
+// a fourth ecosystem meant coordinated edits in two places.
 
 export const SEVERITY_OPTIONS: readonly Severity[] = [
   "critical",

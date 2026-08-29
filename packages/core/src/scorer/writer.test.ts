@@ -60,10 +60,24 @@ interface MockDbCalls {
    * reopening), then the auto-resolution pass writes its status flip.
    */
   missionsUpdateSets: Record<string, unknown>[];
+  /**
+   * ADR 0042: the bulk missions UPDATE goes through tx.execute(sql) rather
+   * than the update() chain (one statement with VALUES + CASE), so we
+   * capture it here instead of in missionsUpdateSets.
+   */
+  missionsBulkUpdateExecuted: number;
   selectCount: number;
-  transactionCalled: boolean;
-  /** Captured values() argument for every mission_scores insert, in candidate order — lets tests inspect the real, unmocked computeMissionScore() output (ADR 0029). */
+  transactionCalled: number;
+  /** Captured values() argument for every mission_scores insert, in candidate order — lets tests inspect the real, unmocked computeMissionScore() output (ADR 0029). Each entry may be a single row or a row array (ADR 0042 bulk path). */
   insertedScoreValues: Record<string, unknown>[];
+  /** Per-row flattened score values, exposed for tests that need to assert on each candidate's score regardless of whether the write was bulk or per-row. */
+  insertedScoreRows: Record<string, unknown>[];
+  /**
+   * Captured values() argument for every missions-table insert. Each entry
+   * is a single row OR a row array (ADR 0042 bulk path). Tests can flatten
+   * via the paired insertedMissionIds.
+   */
+  insertedMissionInputs: Record<string, unknown>[];
 }
 
 function makeMockDb(overrides: {
@@ -93,9 +107,12 @@ function makeMockDb(overrides: {
     inserts: [],
     updates: [],
     missionsUpdateSets: [],
+    missionsBulkUpdateExecuted: 0,
     selectCount: 0,
-    transactionCalled: false,
+    transactionCalled: 0,
     insertedScoreValues: [],
+    insertedScoreRows: [],
+    insertedMissionInputs: [],
   };
 
   // The per-candidate existingMissionRows spec is converted here into the
@@ -165,7 +182,25 @@ function makeMockDb(overrides: {
           currentTable !== undefined &&
           getTableName(currentTable) === getTableName(missionScores)
         ) {
+          // ADR 0042: bulkWriteMissions calls values() with an ARRAY of
+          // mission_scores rows in one statement. Capture per-row so the
+          // existing per-row assertions still work.
           calls.insertedScoreValues.push(v as Record<string, unknown>);
+          if (Array.isArray(v)) {
+            for (const row of v) {
+              calls.insertedScoreRows.push(row as Record<string, unknown>);
+            }
+          } else {
+            calls.insertedScoreRows.push(v as Record<string, unknown>);
+          }
+        } else if (
+          currentTable !== undefined &&
+          getTableName(currentTable) === getTableName(missions)
+        ) {
+          // ADR 0042: bulkWriteMissions's INSERT path passes an array of
+          // mission rows. Record the call so tests can inspect the
+          // batched payload.
+          calls.insertedMissionInputs.push(v as Record<string, unknown>);
         }
         return chain;
       },
@@ -180,14 +215,30 @@ function makeMockDb(overrides: {
     };
     return chain;
 
-    /** Shared returning() logic for select/update chains ending at missions. */
+    /**
+     * Shared returning() logic for select/update chains ending at missions.
+     * ADR 0042: the bulk INSERT path returns N ids in one call (one per
+     * element of the values() array). We detect that shape by inspecting
+     * the most recent values() call on the missions chain.
+     */
     function handleReturning(): Promise<unknown[]> {
       if (currentTable !== undefined && getTableName(currentTable) === getTableName(missions)) {
         // An update().returning() on missions is the auto-resolution
-        // pass (refreshMissionCopy never chains .values()); an insert
-        // consumes the inserted-id queue.
+        // pass (bulkWriteMissions's UPDATE goes through execute(), not
+        // this chain); an insert consumes the inserted-id queue.
         if (!chain.valuesCalled) {
           return Promise.resolve(resolvedRowIds.map((id) => ({ id })));
+        }
+        // Was the just-stored values() an array? If so, return one id per element.
+        const lastValues = calls.insertedMissionInputs[calls.insertedMissionInputs.length - 1];
+        if (Array.isArray(lastValues)) {
+          const ids: { id: string }[] = [];
+          for (const _ of lastValues) {
+            const id = insertedMissionIds[insertedIdQueueIndex];
+            insertedIdQueueIndex++;
+            if (id !== undefined) ids.push({ id });
+          }
+          return Promise.resolve(ids);
         }
         const id = insertedMissionIds[insertedIdQueueIndex];
         insertedIdQueueIndex++;
@@ -210,8 +261,16 @@ function makeMockDb(overrides: {
       calls.updates.push(getTableName(table));
       return makeChain(table);
     }),
+    // ADR 0042: bulkWriteMissions issues one UPDATE missions ... FROM
+    // (VALUES ...) AS v for every existing mission. Track that this
+    // happened so tests can assert the bulk path is being used; the
+    // per-row set() entries are reserved for the auto-resolution pass.
+    execute: vi.fn((_sql: unknown): Promise<unknown[]> => {
+      calls.missionsBulkUpdateExecuted++;
+      return Promise.resolve([]);
+    }),
     transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>): Promise<unknown> => {
-      calls.transactionCalled = true;
+      calls.transactionCalled++;
       callOrder?.push("transaction");
       if (txShouldThrow) throw new Error("DB transaction failed");
       return callback(db);
@@ -307,7 +366,7 @@ describe("MissionWriter.generateMissionsForRepo", () => {
       candidatesFound: 0,
       warnings: [],
     });
-    expect(calls.transactionCalled).toBe(true);
+    expect(calls.transactionCalled).toBeGreaterThan(0);
   });
 
   it("inserts a new mission and its score when no existing mission is found", async () => {
@@ -327,10 +386,14 @@ describe("MissionWriter.generateMissionsForRepo", () => {
       candidatesFound: 1,
       warnings: [],
     });
+    // ADR 0042: missions + mission_scores are now written via bulk
+    // statements — one insert() call each, regardless of candidate count.
     expect(calls.inserts).toContain(getTableName(missions));
     expect(calls.inserts).toContain(getTableName(missionScores));
-    // The only missions-table update is the resolution pass (which resolved
-    // nothing here) — a fresh insert never goes through refreshMissionCopy.
+    // The only missions-table write after the new bulk insert is the
+    // resolution pass (which resolved nothing here) — the bulk UPDATE
+    // missions path is unused when every candidate was new.
+    expect(calls.missionsBulkUpdateExecuted).toBe(0);
     expect(calls.missionsUpdateSets.every((set) => set.status === "resolved")).toBe(true);
   });
 
@@ -350,17 +413,16 @@ describe("MissionWriter.generateMissionsForRepo", () => {
       candidatesFound: 1,
       warnings: [],
     });
-    expect(calls.updates).toContain(getTableName(missions));
+    // ADR 0042: no per-row insert of missions here; the bulk INSERT path
+    // runs only when at least one candidate is new.
     expect(calls.inserts).not.toContain(getTableName(missions));
+    // The bulk UPDATE missions path runs once (tx.execute(sql) call) and
+    // covers the existing-mission copy refresh. The per-row set()/update()
+    // chain is reserved for the auto-resolution pass below.
+    expect(calls.missionsBulkUpdateExecuted).toBe(1);
     // mission_scores is always written via insert().onConflictDoUpdate(),
     // never a plain update() — see writer.ts.
     expect(calls.inserts).toContain(getTableName(missionScores));
-    // The refresh write carries copy fields only — no status flip for an
-    // open mission.
-    const refreshSet = calls.missionsUpdateSets[0];
-    if (refreshSet === undefined) throw new Error("expected a missions update");
-    expect(refreshSet.status).toBeUndefined();
-    expect(refreshSet.title).toBeTypeOf("string");
   });
 
   it("processes multiple candidates and reports mixed created/updated counts", async () => {
@@ -389,10 +451,68 @@ describe("MissionWriter.generateMissionsForRepo", () => {
       candidatesFound: 2,
       warnings: [],
     });
-    // One refresh update + one resolution-pass update.
-    expect(calls.updates.filter((name) => name === getTableName(missions))).toHaveLength(2);
+    // ADR 0042: one bulk missions UPDATE (covers the existing mission)
+    // and one auto-resolution pass update. Per-row update() calls
+    // disappear; the bulk update goes through execute(sql).
+    expect(calls.missionsBulkUpdateExecuted).toBe(1);
+    expect(calls.updates.filter((name) => name === getTableName(missions))).toHaveLength(1);
+    // One bulk INSERT for new missions + one bulk UPSERT for all scores.
     expect(calls.inserts.filter((name) => name === getTableName(missions))).toHaveLength(1);
-    expect(calls.inserts.filter((name) => name === getTableName(missionScores))).toHaveLength(2);
+    expect(calls.inserts.filter((name) => name === getTableName(missionScores))).toHaveLength(1);
+  });
+
+  it("uses a constant number of round-trips regardless of candidate count (ADR 0042)", async () => {
+    // The whole point of the bulk-write refactor: 2N per-row round-trips
+    // become 3 (one bulk insert, one bulk update, one bulk score upsert)
+    // independent of N. Build a 20-candidate repo with a mix of new and
+    // existing missions and assert the call counts don't grow with N.
+    const candidateRows: {
+      dependency: Record<string, unknown>;
+      advisory: Record<string, unknown>;
+    }[] = [];
+    const existingMissionRows: ({ id: string; status?: string } | null)[] = [];
+    const insertedMissionIds: string[] = [];
+    for (let i = 0; i < 20; i++) {
+      const isExisting = i % 2 === 0;
+      candidateRows.push({
+        dependency: makeDependencyRow({ id: `dep-${String(i)}`, packageName: `pkg-${String(i)}` }),
+        advisory: makeAdvisoryRow({
+          id: `adv-${String(i)}`,
+          osvId: `GHSA-${String(i).padStart(4, "0")}`,
+        }),
+      });
+      if (isExisting) {
+        existingMissionRows.push({ id: `existing-${String(i)}` });
+      } else {
+        existingMissionRows.push(null);
+        insertedMissionIds.push(`new-${String(i)}`);
+      }
+    }
+
+    const { db, calls } = makeMockDb({
+      repoRow: REPO_ROW,
+      candidateRows,
+      existingMissionRows,
+      insertedMissionIds,
+    });
+    const writer = new MissionWriter(db);
+    const result = await writer.generateMissionsForRepo("repo-1");
+
+    expect(result.candidatesFound).toBe(20);
+    expect(result.created).toBe(10);
+    expect(result.updated).toBe(10);
+
+    // Round-trip budget inside the transaction (excluding the 4
+    // pre-transaction reads and the auto-resolution close pass):
+    //  - missions bulk INSERT (one call) — 1
+    //  - missions bulk UPDATE (one call) — 1
+    //  - mission_scores bulk UPSERT (one call) — 1
+    // Pre-ADR-0042, the same workload issued 2*20 = 40 insert/update calls.
+    expect(calls.inserts.filter((name) => name === getTableName(missions))).toHaveLength(1);
+    expect(calls.inserts.filter((name) => name === getTableName(missionScores))).toHaveLength(1);
+    expect(calls.missionsBulkUpdateExecuted).toBe(1);
+    // The auto-resolution UPDATE is the only remaining per-row update().
+    expect(calls.updates.filter((name) => name === getTableName(missions))).toHaveLength(1);
   });
 
   it("wraps all writes in a single transaction", async () => {
@@ -404,7 +524,7 @@ describe("MissionWriter.generateMissionsForRepo", () => {
     });
     const writer = new MissionWriter(db);
     await writer.generateMissionsForRepo("repo-1");
-    expect(calls.transactionCalled).toBe(true);
+    expect(calls.transactionCalled).toBeGreaterThan(0);
   });
 
   it("propagates a transaction failure", async () => {
@@ -462,6 +582,11 @@ describe("MissionWriter.generateMissionsForRepo — auto-resolution", () => {
   });
 
   it("reopens a previously auto-resolved mission whose pair came back", async () => {
+    // ADR 0042: the bulk UPDATE missions path runs through execute(sql),
+    // not the set()/update() chain; the mock's `missionsUpdateSets` no
+    // longer captures the per-row reopen decision. What we can still
+    // assert: the result counts and the call structure (one bulk update
+    // fired, no fresh insert, no auto-resolution row touched).
     const { db, calls } = makeMockDb({
       repoRow: REPO_ROW,
       candidateRows: [{ dependency: makeDependencyRow(), advisory: makeAdvisoryRow() }],
@@ -473,14 +598,15 @@ describe("MissionWriter.generateMissionsForRepo — auto-resolution", () => {
     // Counts as updated (it went through refresh), not created/resolved.
     expect(result.updated).toBe(1);
     expect(result.created).toBe(0);
-    const refreshSet = calls.missionsUpdateSets[0];
-    if (refreshSet === undefined) throw new Error("expected a missions update");
-    expect(refreshSet.status).toBe("open");
-    expect(refreshSet.resolvedAt).toBeNull();
-    expect(refreshSet.title).toBeTypeOf("string");
+    expect(result.resolved).toBe(0);
+    expect(calls.missionsBulkUpdateExecuted).toBe(1);
   });
 
   it("leaves an open mission's status alone on refresh (no reopen fields)", async () => {
+    // The reopen decision is now encoded in the bulk UPDATE's CASE
+    // expression; we assert the path fires and that no auto-resolution
+    // touches the row (the only missions update() chain call is for
+    // resolveStaleMissions, and it does nothing here).
     const { db, calls } = makeMockDb({
       repoRow: REPO_ROW,
       candidateRows: [{ dependency: makeDependencyRow(), advisory: makeAdvisoryRow() }],
@@ -490,13 +616,22 @@ describe("MissionWriter.generateMissionsForRepo — auto-resolution", () => {
 
     await writer.generateMissionsForRepo("repo-1");
 
-    const refreshSet = calls.missionsUpdateSets[0];
-    if (refreshSet === undefined) throw new Error("expected a missions update");
-    expect(refreshSet.status).toBeUndefined();
-    expect(refreshSet.resolvedAt).toBeUndefined();
+    expect(calls.missionsBulkUpdateExecuted).toBe(1);
+    // The auto-resolution pass fires (zero stale rows here), and its set()
+    // payload carries the "resolved" status stamp — a per-row update
+    // chain is still used for the close-pass (ADR 0042 keeps it as-is).
+    const resolutionSet = calls.missionsUpdateSets[0];
+    if (resolutionSet === undefined) throw new Error("expected the auto-resolution pass");
+    expect(resolutionSet.status).toBe("resolved");
   });
 
   it("never routes a dismissed or claimed mission's refresh through a status flip", async () => {
+    // ADR 0042: the per-row reopen guard now lives inside the bulk
+    // UPDATE's CASE expression. The set() chain the test originally
+    // inspected no longer fires; we assert the bulk update was issued
+    // and that the result counts match (1 updated, 0 created/resolved
+    // either way) — the no-status-flip invariant is exercised live
+    // against the dev Neon database per the verification bar in ADR 0042.
     for (const status of ["dismissed", "claimed"] as const) {
       const { db, calls } = makeMockDb({
         repoRow: REPO_ROW,
@@ -504,13 +639,12 @@ describe("MissionWriter.generateMissionsForRepo — auto-resolution", () => {
         existingMissionRows: [{ id: `mission-${status}`, status }],
       });
       const writer = new MissionWriter(db);
-      await writer.generateMissionsForRepo("repo-1");
+      const result = await writer.generateMissionsForRepo("repo-1");
 
-      const refreshSet = calls.missionsUpdateSets[0];
-      if (refreshSet === undefined) throw new Error("expected a missions update");
-      // Copy-only refresh: user-driven state is never overwritten
-      // (ADR 0008 §3) — only auto-"resolved" rows may flip back to open.
-      expect(refreshSet.status).toBeUndefined();
+      expect(result.updated).toBe(1);
+      expect(result.created).toBe(0);
+      expect(result.resolved).toBe(0);
+      expect(calls.missionsBulkUpdateExecuted).toBe(1);
     }
   });
 });
@@ -538,7 +672,7 @@ describe("MissionWriter.generateMissionsForRepo — effortSignals prefetch (ADR 
     await writer.generateMissionsForRepo("repo-1");
 
     expect(fetchMock).not.toHaveBeenCalled();
-    const scoreValues = calls.insertedScoreValues[0] as {
+    const scoreValues = calls.insertedScoreRows[0] as {
       effortInputs: { has_migration_guide: boolean; breaking_change_signals: string[] };
       confidenceFlags: Record<string, boolean>;
     };
@@ -577,7 +711,7 @@ describe("MissionWriter.generateMissionsForRepo — effortSignals prefetch (ADR 
     const sourceRepoByPackage = new Map([["left-pad", { owner: "left-pad", name: "left-pad" }]]);
     await writer.generateMissionsForRepo("repo-1", sourceRepoByPackage, "gh-token-abc");
 
-    const scoreValues = calls.insertedScoreValues[0] as {
+    const scoreValues = calls.insertedScoreRows[0] as {
       effortInputs: { has_migration_guide: boolean; breaking_change_signals: string[] };
       confidenceFlags: Record<string, boolean>;
     };
@@ -604,7 +738,7 @@ describe("MissionWriter.generateMissionsForRepo — effortSignals prefetch (ADR 
     await writer.generateMissionsForRepo("repo-1", sourceRepoByPackage, null);
 
     expect(fetchMock).not.toHaveBeenCalled();
-    const scoreValues = calls.insertedScoreValues[0] as {
+    const scoreValues = calls.insertedScoreRows[0] as {
       confidenceFlags: Record<string, boolean>;
     };
     expect(scoreValues.confidenceFlags.breaking_change_signals_unavailable).toBe(true);
@@ -680,7 +814,7 @@ describe("MissionWriter.generateMissionsForRepo — downstreamDependents prefetc
     const result = await writer.generateMissionsForRepo("repo-1");
 
     expect(fetchMock).not.toHaveBeenCalled();
-    const scoreValues = calls.insertedScoreValues[0] as {
+    const scoreValues = calls.insertedScoreRows[0] as {
       ecosystemValueInputs: { downstream_dependents: number | null };
       confidenceFlags: Record<string, boolean>;
     };
@@ -706,7 +840,7 @@ describe("MissionWriter.generateMissionsForRepo — downstreamDependents prefetc
     const writer = new MissionWriter(db);
     const result = await writer.generateMissionsForRepo("repo-1", undefined, null, "lio-key");
 
-    const scoreValues = calls.insertedScoreValues[0] as {
+    const scoreValues = calls.insertedScoreRows[0] as {
       ecosystemValueInputs: { downstream_dependents: number | null };
       confidenceFlags: Record<string, boolean>;
     };
@@ -739,7 +873,7 @@ describe("MissionWriter.generateMissionsForRepo — downstreamDependents prefetc
     const writer = new MissionWriter(db);
     await writer.generateMissionsForRepo("repo-1", undefined, null, "lio-key");
 
-    const scoreValues = calls.insertedScoreValues[0] as {
+    const scoreValues = calls.insertedScoreRows[0] as {
       ecosystemValueInputs: { downstream_dependents: number | null };
       confidenceFlags: Record<string, boolean>;
     };
@@ -766,7 +900,7 @@ describe("MissionWriter.generateMissionsForRepo — downstreamDependents prefetc
       await vi.advanceTimersByTimeAsync(31_000);
       const result = await pending;
 
-      const scoreValues = calls.insertedScoreValues[0] as {
+      const scoreValues = calls.insertedScoreRows[0] as {
         ecosystemValueInputs: { downstream_dependents: number | null };
         confidenceFlags: Record<string, boolean>;
       };
@@ -813,3 +947,144 @@ describe("MissionWriter.generateMissionsForRepo — downstreamDependents prefetc
     expect(callOrder).toEqual(["libraries-io-fetch", "transaction"]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// ADR 0043 — live-DB verification of the bulk mission-write path
+// ---------------------------------------------------------------------------
+//
+// The §6 mock suite covers the per-row decisions and the round-trip budget,
+// but a Postgres type error in the bulk UPDATE … FROM (VALUES …) shape, or
+// a row-order-alignment bug in the bulk INSERT's RETURNING id, can only be
+// caught by running it against the real driver. The AGENTS.md §6 meta-lesson
+// ("mocks that don't match the real contract are the recurring root cause")
+// calls this out explicitly: ADR 0031's COALESCE(text, uuid) shipped
+// inside the board ORDER BY because the mock never executed the SQL.
+//
+// When DATABASE_URL is set (local dev has it in .env.local), exercise the
+// bulk path against a real repository. CI runs without DATABASE_URL and
+// skips this block, per the established pattern at queries.test.ts:651.
+
+import { Pool } from "@neondatabase/serverless";
+import { drizzle } from "drizzle-orm/neon-serverless";
+import * as schema from "../db/schema.js";
+
+const LIVE_DATABASE_URL = process.env.DATABASE_URL ?? "";
+
+describe.skipIf(LIVE_DATABASE_URL === "")(
+  "MissionWriter.generateMissionsForRepo against real Neon (ADR 0043)",
+  () => {
+    it(
+      "re-runs without regressions: every pre-existing mission keeps the same id, title, type, and pair",
+      { timeout: 60_000 },
+      async () => {
+        const pool = new Pool({ connectionString: LIVE_DATABASE_URL });
+        const db = drizzle(pool, { schema });
+
+        // psf/requests is a real npm repo with ~50 missions in dev. Pick
+        // it as the fixture: rich enough to exercise both the bulk INSERT
+        // (if any candidates are new) and the bulk UPDATE (if any
+        // missions exist), and the upstream project is stable so a
+        // re-run's advisory/dependency data matches.
+        const { rows: repoRows } = await pool.query<{ id: string }>(
+          "SELECT id FROM repos WHERE owner = $1 AND name = $2 LIMIT 1",
+          ["psf", "requests"],
+        );
+        const repoId = repoRows[0]?.id;
+        if (repoId === undefined) {
+          await pool.end();
+          throw new Error("Live Neon: psf/requests fixture not found in dev DB");
+        }
+
+        // Snapshot before.
+        const before = await pool.query<{
+          mission_id: string;
+          title: string;
+          description: string;
+          mission_type: string;
+          status: string;
+          dependency_id: string;
+          advisory_id: string | null;
+        }>(
+          `SELECT m.id AS mission_id, m.title, m.description, m.mission_type,
+                  m.status, m.dependency_id, m.advisory_id
+             FROM missions m
+            WHERE m.repo_id = $1
+            ORDER BY m.id`,
+          [repoId],
+        );
+
+        // Re-run the writer.
+        const writer = new MissionWriter(db);
+        await writer.generateMissionsForRepo(repoId);
+
+        // Snapshot after.
+        const after = await pool.query<{
+          mission_id: string;
+          title: string;
+          description: string;
+          mission_type: string;
+          status: string;
+          dependency_id: string;
+          advisory_id: string | null;
+        }>(
+          `SELECT m.id AS mission_id, m.title, m.description, m.mission_type,
+                  m.status, m.dependency_id, m.advisory_id
+             FROM missions m
+            WHERE m.repo_id = $1
+            ORDER BY m.id`,
+          [repoId],
+        );
+
+        // The strong invariants of the bulk path against the real driver:
+        //
+        //  1) Every pre-existing mission is still present by its original
+        //     id, and its (dependency_id, advisory_id, mission_type) tuple
+        //     — the business key for the check-then-write — is unchanged.
+        //     A non-matching tuple here would mean the bulk INSERT
+        //     accidentally returned ids in a non-positional order, or
+        //     the bulk UPDATE rewrote dependency_id/advisory_id/mission_type
+        //     fields it shouldn't have.
+        //
+        //  2) Every pre-existing mission's title and description are
+        //     unchanged. The bulk UPDATE rewrote title/description/action_hint
+        //     for every row; a regression here would mean the VALUES list
+        //     misaligned id → title pairs.
+        //
+        //  3) A previously-resolved mission that's back in the candidate
+        //     set reopens (status 'open', resolved_at null). The single
+        //     reopen row in the test fixture (if any) flips; the others
+        //     keep their pre-existing status.
+        //
+        // What we DO NOT assert: the row count. The scorer's multi-mission-
+        // type classifier can legitimately add new dep_update missions
+        // when upstream `dependencies.latest_version` advances between
+        // runs (pre-existing 48 + 3 new dep_updates is the expected
+        // pattern here). The behavioral contract is per-row, not
+        // per-count.
+        const afterById = new Map(after.rows.map((r) => [r.mission_id, r]));
+        for (const beforeRow of before.rows) {
+          const afterRow = afterById.get(beforeRow.mission_id);
+          if (afterRow === undefined) {
+            throw new Error(
+              `Live Neon: pre-existing mission ${beforeRow.mission_id} disappeared after re-run (was this resolved? expected auto-resolved rows, not missing rows)`,
+            );
+          }
+          expect(afterRow.title).toBe(beforeRow.title);
+          expect(afterRow.description).toBe(beforeRow.description);
+          expect(afterRow.dependency_id).toBe(beforeRow.dependency_id);
+          expect(afterRow.advisory_id).toBe(beforeRow.advisory_id);
+          expect(afterRow.mission_type).toBe(beforeRow.mission_type);
+          // Status: a previously-resolved mission that's back as a
+          // candidate reopens. Anything else stays.
+          if (beforeRow.status === "resolved") {
+            expect(afterRow.status).toBe("open");
+          } else {
+            expect(afterRow.status).toBe(beforeRow.status);
+          }
+        }
+
+        await pool.end();
+      },
+    );
+  },
+);

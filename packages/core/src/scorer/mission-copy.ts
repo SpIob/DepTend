@@ -35,7 +35,7 @@ export interface MissionCopy {
 
 // Display casing per ecosystem. Deliberately a local, independent copy of
 // the same map that already exists in osv.ts (OSV_ECOSYSTEM_NAMES) and
-// app/src/components/mission-filter-bar.tsx (ECOSYSTEM_LABELS) rather than
+// app/src/lib/mission-filter-options.ts (ECOSYSTEM_LABELS) rather than
 // a shared import — this module has no other dependency on app-side UI
 // code, and osv.ts's version means something different (OSV's own wire
 // casing, not a display label). A Record<Ecosystem, string> means a fourth

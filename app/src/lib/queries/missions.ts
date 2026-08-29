@@ -20,6 +20,7 @@ import {
   BOARD_PAGE_SIZE,
   getBoardMissionsWithScoresPage as coreGetBoardMissionsWithScoresPage,
   getIndexedRepoCount as coreGetIndexedRepoCount,
+  getRepoBoardPage as coreGetRepoBoardPage,
   getRepoEcosystems as coreGetRepoEcosystems,
   getRepoDirectoryBase as coreGetRepoDirectoryBase,
   getRepoMissionsWithScores as coreGetRepoMissionsWithScores,
@@ -168,6 +169,21 @@ export async function getReposWithMissionSummary(
 export function getRepoMissionsWithScores(repoId: string): Promise<MissionWithScore[]> {
   return cachedRead(["repo-missions", repoId], "missions", () =>
     coreGetRepoMissionsWithScores(getDb(), repoId),
+  );
+}
+
+/**
+ * Per-repo BoardPage (ADR 0042). Same shape PaginatedMissionBoard
+ * consumes on /missions, but scoped to one repo. The per-repo page calls
+ * this with pageSize = missions.length and pageCount = 1 to suppress
+ * pagination, and the per-repo URL does not carry a `page` field, so the
+ * cache key omits it. The result is always "all matching rows for this
+ * repo" because pagination never actually paginates here. Filters still
+ * need to be in the key because the page's chip clicks do navigate.
+ */
+export function getRepoBoardPage(repoId: string, filters: BoardFilters): Promise<BoardPage> {
+  return cachedRead(["repo-board-page", repoId, boardFiltersCacheKey(filters)], "missions", () =>
+    coreGetRepoBoardPage(getDb(), repoId, filters),
   );
 }
 

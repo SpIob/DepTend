@@ -62,10 +62,18 @@ export interface EcosystemIngestor {
 
   /**
    * Parse dependencies from a repo's manifest files.
+   *
    * @param repoPath - meaning is implementation-specific: NpmIngestor
    *   expects a GitHub raw content base URL for remote fetching;
    *   LocalNpmIngestor expects a local filesystem path to a cloned repo.
    *   Each concrete ingestor documents which it accepts.
+   * @param signal - optional AbortSignal forwarded by detectEcosystem()
+   *   (ADR 0041) so a higher-priority probe winning the parallel race can
+   *   cancel an in-flight lower-priority one instead of letting the HTTP
+   *   request complete and be discarded. HTTP-based ingestors (npm, pypi,
+   *   go) forward this to their underlying fetch() calls; filesystem-based
+   *   Local*Ingestors accept it for interface conformance and ignore it
+   *   (filesystem reads are not abortable in a useful way).
    */
-  parseDependencies(repoPath: string): Promise<IngestorResult>;
+  parseDependencies(repoPath: string, signal?: AbortSignal): Promise<IngestorResult>;
 }

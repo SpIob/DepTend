@@ -10,14 +10,9 @@ import {
 } from "@/lib/queries/missions";
 import { PaginatedMissionBoard } from "@/components/paginated-mission-board";
 import { buildMissionBoardHref, parseMissionBoardQuery } from "@/lib/mission-board-query";
+import { firstSearchParamValue } from "@/lib/search-params";
 import { AuthStatus } from "@/components/auth-status";
-
-// Next 15 can hand a param multiple values (`?severity=high&severity=low`);
-// this board only ever writes a single comma-joined value, so the first one
-// is the only shape it needs to understand on read.
-function firstValue(value: string | string[] | undefined): string | undefined {
-  return Array.isArray(value) ? value[0] : value;
-}
+import { BrandMark } from "@/components/brand-mark";
 
 // Live data on every request, same reasoning as the repo directory (page.tsx).
 export const dynamic = "force-dynamic";
@@ -56,14 +51,14 @@ export default async function AllMissionsPage({
 }): Promise<React.JSX.Element> {
   const rawParams = await searchParams;
   const query = parseMissionBoardQuery({
-    q: firstValue(rawParams.q),
-    severity: firstValue(rawParams.severity),
-    ecosystem: firstValue(rawParams.ecosystem),
-    effort: firstValue(rawParams.effort),
-    missionType: firstValue(rawParams.missionType),
-    sort: firstValue(rawParams.sort),
-    group: firstValue(rawParams.group),
-    page: firstValue(rawParams.page),
+    q: firstSearchParamValue(rawParams.q),
+    severity: firstSearchParamValue(rawParams.severity),
+    ecosystem: firstSearchParamValue(rawParams.ecosystem),
+    effort: firstSearchParamValue(rawParams.effort),
+    missionType: firstSearchParamValue(rawParams.missionType),
+    sort: firstSearchParamValue(rawParams.sort),
+    group: firstSearchParamValue(rawParams.group),
+    page: firstSearchParamValue(rawParams.page),
   });
 
   const filters: BoardFilters = {
@@ -102,10 +97,7 @@ export default async function AllMissionsPage({
       <header className="border-border flex flex-col gap-5 border-b pb-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex min-w-0 items-center gap-3">
-            <Link href="/" className="flex items-center gap-2">
-              <span className="bg-accent inline-block h-2.5 w-2.5" aria-hidden="true" />
-              <span className="text-ink font-mono text-xl font-bold tracking-tight">DepTend</span>
-            </Link>
+            <BrandMark href="/" />
             <span className="text-border" aria-hidden="true">
               /
             </span>
