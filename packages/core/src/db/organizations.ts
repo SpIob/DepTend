@@ -3,7 +3,6 @@
  */
 
 import { eq } from "drizzle-orm";
-import type { NeonHttpDatabase } from "drizzle-orm/neon-http";
 import {
   organizations,
   organizationMembers,
@@ -11,9 +10,7 @@ import {
   type NewOrganization,
   type OrganizationMember,
 } from "./schema.js";
-import * as schema from "./schema.js";
-
-export type ReadonlyDb = NeonHttpDatabase<typeof schema>;
+import type { ReadonlyDb } from "./queries.js";
 
 /**
  * Get organization by GitHub login

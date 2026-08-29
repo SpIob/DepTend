@@ -12,6 +12,93 @@ All notable changes to DepTend, condensed to one entry per phase.
 
 ## [Unreleased]
 
+**Data-handling correctness + dedup pass (2026-08-29)**
+
+Survey-driven cleanup of the read layer and several write paths. Every
+finding here was flagged as either a real data-correctness risk or a
+correctness trap waiting on the next schema change. The cluster ships
+as one commit because most of the changes touch the same files (the
+directory-base query, the cached-read wrapper, the route body
+parsers); splitting them per-PR would have required unsafe hunk
+splits. No schema migration. No public-API change.
+
+### Fixed
+
+- `getRepoDirectoryBase` and `getRepoDirectoryBaseByOrg` were two
+  functions, and the latter correctly applied the org scope to all
+  three of its parallel sub-queries while the former applied none.
+  Anyone reusing the un-scoped variant for a non-global call would
+  have gotten a wrong `ecosystems`/`missionCounts` set. Merged into
+  one function accepting an optional `{ orgLogin, userLogin }`. The
+  three parallel sub-queries now correctly receive the org scope on
+  every branch.
+- `isBookmarked` and `isSubscribed` overlay logic was split between
+  core and /app, with the /app side missing the subscription overlay
+  entirely. The org page's notification toggle was silently hidden
+  because `isSubscribed` was undefined there, and a bookmark made on
+  the directory page showed stale "not bookmarked" on a re-visit to
+  the org page. Moved both flags into core's `getRepoDirectoryBase`
+  so the overlay is owned by one place; the per-user path bypasses
+  the cache (per-user overlay must never share a cache key with
+  another user); the anonymous path keeps caching under the "repos"
+  tag.
+- `getRepoBoardPage`'s `total` was counting across all repos, not
+  just the scoped one — the row query's WHERE included the
+  `repoScope`, but the tally's `total` FILTER didn't. Fixed as part
+  of the tally-extraction below; a per-repo page that filtered to
+  one repo would have shown the count of every matching mission
+  board-wide.
+
+### Added
+
+- `app/src/lib/queries/cached-read.ts` — single `cachedRead(keyParts,
+tag, read)` and `READ_CACHE_SECONDS` constant for the whole read
+  layer. Before this, both `queries/missions.ts` and
+  `queries/organizations.ts` reimplemented `cachedRead` locally with
+  slightly different tag unions; a new read added to either file
+  had to be carefully wired into the right tag. The module's header
+  documents the full cache-tag invalidation matrix (which route
+  revalidates which tag) so the next contributor doesn't have to
+  reverse-engineer it.
+- `app/src/lib/body-parse.ts` — `parseOptionalJsonBody` and
+  `parseRequiredJsonBody` helpers. Three different inline body-parse
+  policies existed (repos returns 400 on bad JSON, dismiss silently
+  treats bad JSON as "no body", subscribe silently treats bad JSON
+  as "no eventTypes"). One helper per intent; the three routes now
+  use one of the two clearly-named helpers.
+
+### Changed
+
+- `getBoardMissionsWithScoresPage` and `getRepoBoardPage` now share a
+  `buildBoardTallySelect` + `runBoardTally` pair. The two were
+  duplicated almost verbatim (~80 lines each) since `getRepoBoardPage`
+  was added (ADR 0041); the dedup also exposed the per-repo `total`
+  bug above.
+- `packages/core/src/db/organizations.ts`,
+  `organization-members.ts`, and `notifications/subscriptions.ts`
+  no longer re-declare `ReadonlyDb`; they import from
+  `db/queries.ts` (the canonical export). The redeclarations were
+  structurally identical but nominally different — exactly the type
+  identity issue that motivated ADR 0012's "all Drizzle query
+  building in /packages/core" rule.
+
+### Removed
+
+- `packages/core/src/db/repos.ts::getReposByOrg` — unused, and a
+  same-named but different-shape function (`Repo[]` vs
+  `RepoWithMissionSummary[]`) lived in `db/queries.ts` and was the
+  one callers actually used. The /app wrapper was already aliased.
+
+### Tests
+
+- `packages/core/src/db/queries.test.ts` — new
+  `getRepoDirectoryBase` describe block with four cases (the
+  bookmark+subscription overlay, the signed-out skip, the org scope
+  on all three sub-queries, and the unknown-org-empty-list path).
+- `app/src/lib/queries/missions.test.ts` — new test that the
+  signed-in path bypasses the cache (per-user overlay must never
+  share a cache key with another user).
+
 **Security hardening pass (security audit 2026-08-29)**
 
 ### Added

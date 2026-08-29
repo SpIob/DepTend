@@ -3,15 +3,12 @@
  */
 
 import { and, eq } from "drizzle-orm";
-import type { NeonHttpDatabase } from "drizzle-orm/neon-http";
 import {
   organizationMembers,
   type OrganizationMember,
   type NewOrganizationMember,
 } from "./schema.js";
-import * as schema from "./schema.js";
-
-export type ReadonlyDb = NeonHttpDatabase<typeof schema>;
+import type { ReadonlyDb } from "./queries.js";
 
 /**
  * Get membership by org and user

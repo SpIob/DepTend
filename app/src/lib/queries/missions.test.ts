@@ -138,4 +138,18 @@ describe("cachedRead revival placement", () => {
     expect(keyParts).toEqual(["repo-directory-base"]);
     expect(options).toEqual({ revalidate: 60, tags: ["repos"] });
   });
+
+  it("bypasses the cache entirely for a signed-in caller — per-user overlay must never share a cache key with another user", async () => {
+    getDb.mockReturnValue({ __signedInDb: true });
+    await getReposWithMissionSummary("octocat");
+
+    expect(unstableCache).not.toHaveBeenCalled();
+    // The signed-in path delegates straight to core's getRepoDirectoryBase,
+    // which returns the merged isBookmarked + isSubscribed flags in one
+    // trip (PR 1, item 1.3). The db handle is whatever getDb() returned.
+    expect(getRepoDirectoryBase).toHaveBeenCalledWith(
+      { __signedInDb: true },
+      { userLogin: "octocat" },
+    );
+  });
 });

@@ -6,6 +6,7 @@ import { getDb } from "@/lib/db";
 import { dismissMission, isValidMissionId } from "@deptend/core/db/missions.js";
 import { checkMissionActionLimit } from "@/lib/rate-limit";
 import { isSameOrigin } from "@/lib/request-origin";
+import { parseOptionalJsonBody } from "@/lib/body-parse";
 
 export async function POST(
   request: Request,
@@ -36,18 +37,14 @@ export async function POST(
   // must not fail the dismissal — only a body that parses but carries a
   // non-string reason is rejected.
   let reason: string | null = null;
-  try {
-    const body: unknown = await request.json();
-    if (typeof body === "object" && body !== null && "reason" in body) {
-      const raw = (body as { reason?: unknown }).reason;
-      if (typeof raw !== "string") {
-        return NextResponse.json({ error: "reason must be a string." }, { status: 400 });
-      }
-      const trimmed = raw.trim();
-      reason = trimmed === "" ? null : trimmed.slice(0, 500);
+  const body = await parseOptionalJsonBody(request);
+  if (typeof body === "object" && body !== null && "reason" in body) {
+    const raw = (body as { reason?: unknown }).reason;
+    if (typeof raw !== "string") {
+      return NextResponse.json({ error: "reason must be a string." }, { status: 400 });
     }
-  } catch {
-    reason = null;
+    const trimmed = raw.trim();
+    reason = trimmed === "" ? null : trimmed.slice(0, 500);
   }
 
   const { id } = await params;

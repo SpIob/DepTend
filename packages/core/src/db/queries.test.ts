@@ -28,15 +28,21 @@ import {
   createReadonlyDb,
   getBoardMissionsWithScoresPage,
   getIndexedRepoCount,
+  getRepoDirectoryBase,
   getRepoEcosystems,
   getRepoMissionsWithScores,
-  getReposWithMissionSummary,
   getSkippedRepos,
   getTotalRepoCount,
   type BoardFilters,
   type ReadonlyDb,
 } from "./queries.js";
-import { dependencies, missions, missionScores, repos } from "./schema.js";
+import {
+  dependencies,
+  missions,
+  missionScores,
+  notificationSubscriptions,
+  repos,
+} from "./schema.js";
 
 // ---------------------------------------------------------------------------
 // Fake transport
@@ -588,12 +594,23 @@ describe("getRepoEcosystems", () => {
   });
 });
 
-describe("getReposWithMissionSummary", () => {
+describe("getRepoDirectoryBase", () => {
   const REPO_2: Record<string, unknown> = { ...REPO_VALUES, id: "r-2", name: "other" };
 
-  function summaryRouter(bookmarks: unknown[][]): RowRouter {
+  function summaryRouter(
+    opts: {
+      bookmarks?: unknown[][];
+      subscriptions?: unknown[][];
+      orgs?: unknown[][];
+    } = {},
+  ): RowRouter {
+    const bookmarks = opts.bookmarks ?? [];
+    const subscriptions = opts.subscriptions ?? [];
+    const orgs = opts.orgs ?? [];
     return (sql: string): unknown[][] => {
+      if (sql.includes('from "organizations"')) return orgs;
       if (sql.includes("repo_bookmarks")) return bookmarks;
+      if (sql.includes("notification_subscriptions")) return subscriptions;
       if (/select distinct/i.test(sql))
         return [
           ["r-1", "npm"],
@@ -608,9 +625,22 @@ describe("getReposWithMissionSummary", () => {
     };
   }
 
-  it("assembles per-repo ecosystems, severity counts, and bookmark flags", async () => {
-    const { db } = makeDb(summaryRouter([["r-1"]]));
-    const result = await getReposWithMissionSummary(db, "octocat");
+  // The subscriptions table has a text[] event_types column Drizzle's
+  // PgArray column deserializer walks, so the row fixture must carry the
+  // array in driver shape — the other fixtures use plain string columns
+  // and don't trip the deserializer.
+  const SUB_ROW = flatten(notificationSubscriptions, {
+    id: "s-1",
+    userLogin: "octocat",
+    repoId: "r-2",
+    eventTypes: ["new_mission", "claimed", "resolved"],
+    githubIssueNumber: null,
+    createdAt: NOW,
+  });
+
+  it("assembles per-repo ecosystems, severity counts, and bookmark + subscription flags", async () => {
+    const { db } = makeDb(summaryRouter({ bookmarks: [["r-1"]], subscriptions: [SUB_ROW] }));
+    const result = await getRepoDirectoryBase(db, { userLogin: "octocat" });
 
     expect(result).toHaveLength(2);
     expect(result[0]).toMatchObject({
@@ -618,21 +648,52 @@ describe("getReposWithMissionSummary", () => {
       ecosystems: ["npm"],
       missionCounts: { critical: 2, low: 1, total: 3 },
       isBookmarked: true,
+      isSubscribed: false,
     });
     expect(result[1]).toMatchObject({
       id: "r-2",
       ecosystems: ["go"],
       isBookmarked: false,
+      isSubscribed: true,
     });
     expect(result[1]?.missionCounts.total).toBe(0);
   });
 
-  it("skips the bookmarks query entirely for signed-out visitors", async () => {
-    const { db, calls } = makeDb(summaryRouter([]));
-    const result = await getReposWithMissionSummary(db);
+  it("skips both the bookmarks and subscriptions queries for signed-out visitors", async () => {
+    const { db, calls } = makeDb(summaryRouter({}));
+    const result = await getRepoDirectoryBase(db);
 
     expect(calls.some((call) => call.sql.includes("repo_bookmarks"))).toBe(false);
+    expect(calls.some((call) => call.sql.includes("notification_subscriptions"))).toBe(false);
     expect(result.every((repo) => !repo.isBookmarked)).toBe(true);
+    expect(result.every((repo) => repo.isSubscribed === undefined)).toBe(true);
+  });
+
+  it("applies the org filter to repos, dependencies, and severity counts", async () => {
+    const { db, calls } = makeDb(summaryRouter({ orgs: [["o-1"]] }));
+    await getRepoDirectoryBase(db, { orgLogin: "spiob" });
+
+    // All three directory-base sub-queries carry the org scope: one
+    // targeting repos directly, one inner-joining repos, one inner-joining
+    // repos. The pre-merge implementation had the un-scoped variant; that
+    // drift was the bug this test guards.
+    const repoScoped = calls.filter((call) => call.sql.includes('"repos"."org_id" = $'));
+    expect(repoScoped.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("returns an empty list for an unknown orgLogin instead of throwing", async () => {
+    const { db } = makeDb(summaryRouter({ orgs: [] }));
+    const result = await getRepoDirectoryBase(db, { orgLogin: "does-not-exist" });
+    expect(result).toEqual([]);
+  });
+});
+
+describe("getRepoDirectoryBaseByOrg", () => {
+  it("delegates to getRepoDirectoryBase with the orgLogin option", async () => {
+    const { db } = makeDb(() => []);
+    const { getRepoDirectoryBaseByOrg } = await import("./queries.js");
+    const result = await getRepoDirectoryBaseByOrg(db, "spiob");
+    expect(result).toEqual([]);
   });
 });
 

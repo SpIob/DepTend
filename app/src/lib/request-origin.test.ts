@@ -1,6 +1,6 @@
 /**
  * isSameOrigin() unit tests — the CSRF defense-in-depth gate shared by all
- * eight mutating API routes (ADR 0037).
+ * ten mutating API routes (ADR 0037).
  *
  * The contract: a present Origin header must match Host/X-Forwarded-Host;
  * an absent Origin header is allowed (browsers attach Origin to every POST,

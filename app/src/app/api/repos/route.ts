@@ -8,6 +8,7 @@ import { checkSubmittableRepo } from "@deptend/core/ingestor/manifest-check.js";
 import { triggerIngestion } from "@/lib/github-dispatch";
 import { checkRepoSubmissionLimit } from "@/lib/rate-limit";
 import { isSameOrigin } from "@/lib/request-origin";
+import { parseRequiredJsonBody } from "@/lib/body-parse";
 
 interface SubmitBody {
   githubUrl?: unknown;
@@ -38,7 +39,7 @@ export async function POST(request: Request): Promise<Response> {
 
   let body: unknown;
   try {
-    body = await request.json();
+    body = await parseRequiredJsonBody(request);
   } catch {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   }

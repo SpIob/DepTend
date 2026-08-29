@@ -2,29 +2,14 @@
  * Organization queries for /app
  */
 
-import { unstable_cache } from "next/cache";
 import {
   getOrganizationByLogin as coreGetOrganizationByLogin,
   getUserOrganizations as coreGetUserOrganizations,
 } from "@deptend/core/db/organizations.js";
-import { getRepoDirectoryBaseByOrg as coreGetReposByOrg } from "@deptend/core/db/queries.js";
+import { getRepoDirectoryBase as coreGetRepoDirectoryBase } from "@deptend/core/db/queries.js";
 import type { Organization, RepoWithMissionSummary } from "@deptend/core";
 import { getDb } from "../db";
-import { reviveDates } from "./missions";
-
-const READ_CACHE_SECONDS = 60;
-
-function cachedRead<T>(
-  keyParts: string[],
-  tag: "missions" | "repos" | "organizations",
-  read: () => Promise<T>,
-): Promise<T> {
-  const cached = unstable_cache(read, keyParts, {
-    revalidate: READ_CACHE_SECONDS,
-    tags: [tag],
-  });
-  return cached().then(reviveDates);
-}
+import { cachedRead } from "./cached-read";
 
 export async function getOrganizationByLogin(orgLogin: string): Promise<Organization | null> {
   return cachedRead(["org-by-login", orgLogin], "organizations", () =>
@@ -38,6 +23,21 @@ export async function getUserOrganizations(userLogin: string): Promise<Organizat
   );
 }
 
-export async function getReposByOrg(orgLogin: string): Promise<RepoWithMissionSummary[]> {
-  return cachedRead(["org-repos", orgLogin], "repos", () => coreGetReposByOrg(getDb(), orgLogin));
+/**
+ * Org-scoped repo directory. Same per-user overlay as the board-wide read
+ * (bookmarks + subscriptions) — the per-user path bypasses cache, the
+ * anonymous path caches under "repos" (ADR 0033). Both are owned by
+ * core's getRepoDirectoryBase now, so the overlay can never drift between
+ * the two pages.
+ */
+export function getReposByOrg(
+  orgLogin: string,
+  userLogin?: string,
+): Promise<RepoWithMissionSummary[]> {
+  if (userLogin === undefined) {
+    return cachedRead(["org-repos", orgLogin], "repos", () =>
+      coreGetRepoDirectoryBase(getDb(), { orgLogin }),
+    );
+  }
+  return coreGetRepoDirectoryBase(getDb(), { orgLogin, userLogin });
 }

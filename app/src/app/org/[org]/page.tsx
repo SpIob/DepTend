@@ -35,7 +35,7 @@ export default async function OrgPage({
   const [org, userOrgs, repos] = await Promise.all([
     getOrganizationByLogin(orgLogin),
     login ? getUserOrganizations(login) : Promise.resolve([]),
-    getReposByOrg(orgLogin),
+    getReposByOrg(orgLogin, login),
   ]);
 
   if (org === null) {

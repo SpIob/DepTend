@@ -8,7 +8,7 @@
  */
 
 import { and, eq, inArray, sql } from "drizzle-orm";
-import { organizations, repos, type IngestionStatus, type Repo } from "./schema.js";
+import { repos, type IngestionStatus, type Repo } from "./schema.js";
 import type { ReadonlyDb } from "./queries.js";
 
 export interface ParsedGithubUrl {
@@ -244,25 +244,4 @@ function statusToOutcome(status: IngestionStatus): WithdrawRepoOutcome {
       // that may not be coming).
       return "already_indexed";
   }
-}
-
-/**
- * Get all repos belonging to an organization
- */
-export async function getReposByOrg(db: ReadonlyDb, orgLogin: string): Promise<Repo[]> {
-  // Get org ID from organizations table
-  const org = await db
-    .select({ id: organizations.id })
-    .from(organizations)
-    .where(eq(organizations.githubLogin, orgLogin))
-    .limit(1);
-
-  const orgId = org[0]?.id;
-  if (!orgId) return [];
-
-  return db
-    .select()
-    .from(repos)
-    .where(eq(repos.orgId, orgId))
-    .orderBy(sql`${repos.stars} DESC`);
 }

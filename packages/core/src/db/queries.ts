@@ -376,6 +376,113 @@ function condSql(...conditions: (SQL | undefined)[]): SQL {
   return and(...conditions) ?? sql`true`;
 }
 
+/** Builds the per-axis facet count(*) FILTER (WHERE ...) expressions the
+ *  tally statement projects (ADR 0031). The four axis loops are identical
+ *  between getBoardMissionsWithScoresPage and getRepoBoardPage, so they're
+ *  shared here. `repoScope` is the optional per-repo filter the per-repo
+ *  page applies to the tally's outer WHERE. */
+function buildBoardTallySelect(
+  parts: BoardConditionParts,
+  repoScope: SQL | undefined,
+): Record<string, SQL<number>> {
+  const tallySelect: Record<string, SQL<number>> = {
+    total: sql`(count(*) filter (where ${condSql(
+      parts.severity,
+      parts.ecosystem,
+      parts.effort,
+      parts.missionType,
+      repoScope,
+    )}))::int`,
+  };
+  // Column names are prefixed by axis because severity and effort share the
+  // values "low"/"medium"/"high" — severity_low vs effort_low must not collide.
+  for (const value of severityEnum.enumValues) {
+    tallySelect[`severity_${value}`] =
+      sql`(count(*) filter (where ${BOARD_SEVERITY_EXPR} = ${value} and ${condSql(
+        parts.ecosystem,
+        parts.effort,
+        parts.missionType,
+        repoScope,
+      )}))::int`;
+  }
+  for (const value of ecosystemEnum.enumValues) {
+    tallySelect[`ecosystem_${value}`] =
+      sql`(count(*) filter (where ${BOARD_ECOSYSTEM_EXPR} = ${value} and ${condSql(
+        parts.severity,
+        parts.effort,
+        parts.missionType,
+        repoScope,
+      )}))::int`;
+  }
+  for (const value of effortLabelEnum.enumValues) {
+    tallySelect[`effort_${value}`] =
+      sql`(count(*) filter (where ${BOARD_EFFORT_EXPR} = ${value} and ${condSql(
+        parts.severity,
+        parts.ecosystem,
+        parts.missionType,
+        repoScope,
+      )}))::int`;
+  }
+  for (const value of missionTypeEnum.enumValues) {
+    tallySelect[`missionType_${value}`] =
+      sql`(count(*) filter (where ${BOARD_MISSION_TYPE_EXPR} = ${value} and ${condSql(
+        parts.severity,
+        parts.ecosystem,
+        parts.effort,
+        repoScope,
+      )}))::int`;
+  }
+  return tallySelect;
+}
+
+/** Runs the merged tally statement (total + per-axis facet counts) the
+ *  board page returns alongside the row page. `repoScope` narrows the
+ *  tally to one repo when set; pass undefined for the board-wide path. */
+async function runBoardTally(
+  db: ReadonlyDb,
+  parts: BoardConditionParts,
+  repoScope: SQL | undefined,
+): Promise<{
+  total: number;
+  facets: BoardFacets;
+}> {
+  const [tallyRows] = await Promise.all([
+    db
+      .select(buildBoardTallySelect(parts, repoScope))
+      .from(missions)
+      .innerJoin(missionScores, eq(missionScores.missionId, missions.id))
+      .innerJoin(repos, eq(missions.repoId, repos.id))
+      .leftJoin(advisories, eq(missions.advisoryId, advisories.id))
+      .leftJoin(dependencies, eq(missions.dependencyId, dependencies.id))
+      .where(and(parts.status, parts.q, repoScope)),
+  ]);
+  const tally = tallyRows[0];
+
+  function tallyFacet<T extends string>(
+    values: readonly T[],
+    prefix: "severity" | "ecosystem" | "effort" | "missionType",
+  ): Partial<Record<T, number>> {
+    const out: Partial<Record<T, number>> = {};
+    for (const value of values) {
+      const count = tally?.[`${prefix}_${value}`] ?? 0;
+      if (count > 0) {
+        out[value] = count;
+      }
+    }
+    return out;
+  }
+
+  return {
+    total: tally?.total ?? 0,
+    facets: {
+      severity: tallyFacet<Severity>(severityEnum.enumValues, "severity"),
+      ecosystem: tallyFacet<Ecosystem>(ecosystemEnum.enumValues, "ecosystem"),
+      effort: tallyFacet<EffortLabel>(effortLabelEnum.enumValues, "effort"),
+      missionType: tallyFacet<MissionType>(missionTypeEnum.enumValues, "missionType"),
+    },
+  };
+}
+
 /**
  * One page of the board-wide /missions listing (ADR 0031): open+claimed
  * missions matching the given filters, ordered server-side, plus the
@@ -404,29 +511,7 @@ export async function getBoardMissionsWithScoresPage(
   const offset = Math.max(0, options.offset ?? 0);
   const parts = buildBoardConditionParts(filters);
 
-  const tallySelect: Record<string, SQL<number>> = {
-    total: sql`(count(*) filter (where ${condSql(parts.severity, parts.ecosystem, parts.effort, parts.missionType)}))::int`,
-  };
-  // Column names are prefixed by axis because severity and effort share the
-  // values "low"/"medium"/"high" — severity_low vs effort_low must not collide.
-  for (const value of severityEnum.enumValues) {
-    tallySelect[`severity_${value}`] =
-      sql`(count(*) filter (where ${BOARD_SEVERITY_EXPR} = ${value} and ${condSql(parts.ecosystem, parts.effort, parts.missionType)}))::int`;
-  }
-  for (const value of ecosystemEnum.enumValues) {
-    tallySelect[`ecosystem_${value}`] =
-      sql`(count(*) filter (where ${BOARD_ECOSYSTEM_EXPR} = ${value} and ${condSql(parts.severity, parts.effort, parts.missionType)}))::int`;
-  }
-  for (const value of effortLabelEnum.enumValues) {
-    tallySelect[`effort_${value}`] =
-      sql`(count(*) filter (where ${BOARD_EFFORT_EXPR} = ${value} and ${condSql(parts.severity, parts.ecosystem, parts.missionType)}))::int`;
-  }
-  for (const value of missionTypeEnum.enumValues) {
-    tallySelect[`missionType_${value}`] =
-      sql`(count(*) filter (where ${BOARD_MISSION_TYPE_EXPR} = ${value} and ${condSql(parts.severity, parts.ecosystem, parts.effort)}))::int`;
-  }
-
-  const [rows, tallyRows] = await Promise.all([
+  const [rows, { total, facets }] = await Promise.all([
     missionJoinRows(db)
       .where(
         and(
@@ -441,41 +526,13 @@ export async function getBoardMissionsWithScoresPage(
       .orderBy(...boardOrderBy(filters.sort))
       .limit(limit)
       .offset(offset),
-    db
-      .select(tallySelect)
-      .from(missions)
-      .innerJoin(missionScores, eq(missionScores.missionId, missions.id))
-      .innerJoin(repos, eq(missions.repoId, repos.id))
-      .leftJoin(advisories, eq(missions.advisoryId, advisories.id))
-      .leftJoin(dependencies, eq(missions.dependencyId, dependencies.id))
-      .where(and(parts.status, parts.q)),
+    runBoardTally(db, parts, undefined),
   ]);
-
-  const tally = tallyRows[0];
-
-  function tallyFacet<T extends string>(
-    values: readonly T[],
-    prefix: "severity" | "ecosystem" | "effort" | "missionType",
-  ): Partial<Record<T, number>> {
-    const out: Partial<Record<T, number>> = {};
-    for (const value of values) {
-      const count = tally?.[`${prefix}_${value}`] ?? 0;
-      if (count > 0) {
-        out[value] = count;
-      }
-    }
-    return out;
-  }
 
   return {
     missions: rows.map(toMissionWithScore),
-    total: tally?.total ?? 0,
-    facets: {
-      severity: tallyFacet<Severity>(severityEnum.enumValues, "severity"),
-      ecosystem: tallyFacet<Ecosystem>(ecosystemEnum.enumValues, "ecosystem"),
-      effort: tallyFacet<EffortLabel>(effortLabelEnum.enumValues, "effort"),
-      missionType: tallyFacet<MissionType>(missionTypeEnum.enumValues, "missionType"),
-    },
+    total,
+    facets,
   };
 }
 
@@ -500,27 +557,7 @@ export async function getRepoBoardPage(
   const parts = buildBoardConditionParts(filters);
   const repoScope = eq(missions.repoId, repoId);
 
-  const tallySelect: Record<string, SQL<number>> = {
-    total: sql`(count(*) filter (where ${condSql(parts.severity, parts.ecosystem, parts.effort, parts.missionType)}))::int`,
-  };
-  for (const value of severityEnum.enumValues) {
-    tallySelect[`severity_${value}`] =
-      sql`(count(*) filter (where ${BOARD_SEVERITY_EXPR} = ${value} and ${condSql(parts.ecosystem, parts.effort, parts.missionType)}))::int`;
-  }
-  for (const value of ecosystemEnum.enumValues) {
-    tallySelect[`ecosystem_${value}`] =
-      sql`(count(*) filter (where ${BOARD_ECOSYSTEM_EXPR} = ${value} and ${condSql(parts.severity, parts.effort, parts.missionType)}))::int`;
-  }
-  for (const value of effortLabelEnum.enumValues) {
-    tallySelect[`effort_${value}`] =
-      sql`(count(*) filter (where ${BOARD_EFFORT_EXPR} = ${value} and ${condSql(parts.severity, parts.ecosystem, parts.missionType)}))::int`;
-  }
-  for (const value of missionTypeEnum.enumValues) {
-    tallySelect[`missionType_${value}`] =
-      sql`(count(*) filter (where ${BOARD_MISSION_TYPE_EXPR} = ${value} and ${condSql(parts.severity, parts.ecosystem, parts.effort)}))::int`;
-  }
-
-  const [rows, tallyRows] = await Promise.all([
+  const [rows, { total, facets }] = await Promise.all([
     missionJoinRows(db)
       .where(
         and(
@@ -536,41 +573,13 @@ export async function getRepoBoardPage(
       .orderBy(...boardOrderBy(filters.sort))
       .limit(limit)
       .offset(offset),
-    db
-      .select(tallySelect)
-      .from(missions)
-      .innerJoin(missionScores, eq(missionScores.missionId, missions.id))
-      .innerJoin(repos, eq(missions.repoId, repos.id))
-      .leftJoin(advisories, eq(missions.advisoryId, advisories.id))
-      .leftJoin(dependencies, eq(missions.dependencyId, dependencies.id))
-      .where(and(parts.status, parts.q, repoScope)),
+    runBoardTally(db, parts, repoScope),
   ]);
-
-  const tally = tallyRows[0];
-
-  function tallyFacet<T extends string>(
-    values: readonly T[],
-    prefix: "severity" | "ecosystem" | "effort" | "missionType",
-  ): Partial<Record<T, number>> {
-    const out: Partial<Record<T, number>> = {};
-    for (const value of values) {
-      const count = tally?.[`${prefix}_${value}`] ?? 0;
-      if (count > 0) {
-        out[value] = count;
-      }
-    }
-    return out;
-  }
 
   return {
     missions: rows.map(toMissionWithScore),
-    total: tally?.total ?? 0,
-    facets: {
-      severity: tallyFacet<Severity>(severityEnum.enumValues, "severity"),
-      ecosystem: tallyFacet<Ecosystem>(ecosystemEnum.enumValues, "ecosystem"),
-      effort: tallyFacet<EffortLabel>(effortLabelEnum.enumValues, "effort"),
-      missionType: tallyFacet<MissionType>(missionTypeEnum.enumValues, "missionType"),
-    },
+    total,
+    facets,
   };
 }
 
@@ -635,6 +644,18 @@ export async function getRepoEcosystems(
 }
 
 /**
+ * Options that scope the directory listing. `orgLogin` filters to repos
+ * belonging to one organization (resolves to org_id internally; returns
+ * an empty list if the login doesn't match any org). `userLogin` adds
+ * per-viewer bookmark + subscription flags; omit it for an
+ * anonymous/signed-out call and every row's flags are simply false.
+ */
+export interface RepoDirectoryOptions {
+  orgLogin?: string;
+  userLogin?: string;
+}
+
+/**
  * One row per repo for the directory page (ADR 0027) — mission counts by
  * severity and the set of ecosystems present, without shipping every
  * mission's full payload the way the fetch-everything queries above do.
@@ -648,26 +669,69 @@ export async function getRepoEcosystems(
  * comment about why these queries live in packages/core in the first
  * place: correctness and cost here matter more than a single round trip.
  *
- * isBookmarked is false on every row. This is the login-independent base
- * /app caches under its "repos" tag (ADR 0033); getReposWithMissionSummary()
- * overlays the viewer's bookmarks on top of it, uncached.
+ * isBookmarked / isSubscribed are only present when userLogin was passed;
+ * they default to false otherwise (anonymous visit). The login-aware overlay
+ * runs in this file because both flags come from the same data source and
+ * had drifted between the core and /app implementations — keeping the
+ * overlay here means a caller can't accidentally render stale
+ * isBookmarked / hidden NotificationToggle just because they took the
+ * un-overlaid code path.
  */
-export async function getRepoDirectoryBase(db: ReadonlyDb): Promise<RepoWithMissionSummary[]> {
+export async function getRepoDirectoryBase(
+  db: ReadonlyDb,
+  options: RepoDirectoryOptions = {},
+): Promise<RepoWithMissionSummary[]> {
+  const { orgLogin, userLogin } = options;
+
+  // Resolve orgLogin → orgId once. An unknown org is an empty directory,
+  // not a thrown error — matches the pre-existing ByOrg behavior.
+  let orgId: string | null = null;
+  if (orgLogin !== undefined) {
+    const org = await db
+      .select({ id: organizations.id })
+      .from(organizations)
+      .where(eq(organizations.githubLogin, orgLogin))
+      .limit(1);
+    orgId = org[0]?.id ?? null;
+    if (orgId === null) return [];
+  }
+
+  const repoFilter = orgId === null ? undefined : eq(repos.orgId, orgId);
+  const repoJoin = orgId === null ? undefined : eq(repos.orgId, orgId);
+
   const [repoRows, ecosystemRows, severityRows] = await Promise.all([
-    db.select().from(repos),
-    db
-      .selectDistinct({ repoId: dependencies.repoId, ecosystem: dependencies.ecosystem })
-      .from(dependencies),
-    db
-      .select({
-        repoId: missions.repoId,
-        severity: advisories.severity,
-        count: sql<number>`count(*)::int`,
-      })
-      .from(missions)
-      .innerJoin(advisories, eq(missions.advisoryId, advisories.id))
-      .where(inArray(missions.status, ["open", "claimed"]))
-      .groupBy(missions.repoId, advisories.severity),
+    repoFilter === undefined ? db.select().from(repos) : db.select().from(repos).where(repoFilter),
+    repoJoin === undefined
+      ? db
+          .selectDistinct({ repoId: dependencies.repoId, ecosystem: dependencies.ecosystem })
+          .from(dependencies)
+      : db
+          .selectDistinct({ repoId: dependencies.repoId, ecosystem: dependencies.ecosystem })
+          .from(dependencies)
+          .innerJoin(repos, eq(dependencies.repoId, repos.id))
+          .where(repoJoin),
+    repoJoin === undefined
+      ? db
+          .select({
+            repoId: missions.repoId,
+            severity: advisories.severity,
+            count: sql<number>`count(*)::int`,
+          })
+          .from(missions)
+          .innerJoin(advisories, eq(missions.advisoryId, advisories.id))
+          .where(inArray(missions.status, ["open", "claimed"]))
+          .groupBy(missions.repoId, advisories.severity)
+      : db
+          .select({
+            repoId: missions.repoId,
+            severity: advisories.severity,
+            count: sql<number>`count(*)::int`,
+          })
+          .from(missions)
+          .innerJoin(advisories, eq(missions.advisoryId, advisories.id))
+          .innerJoin(repos, eq(missions.repoId, repos.id))
+          .where(and(inArray(missions.status, ["open", "claimed"]), repoJoin))
+          .groupBy(missions.repoId, advisories.severity),
   ]);
 
   const ecosystemsByRepo = new Map<string, Set<schema.Ecosystem>>();
@@ -685,97 +749,61 @@ export async function getRepoDirectoryBase(db: ReadonlyDb): Promise<RepoWithMiss
     countsByRepo.set(row.repoId, counts);
   }
 
-  return repoRows.map((repo) => ({
-    ...repo,
-    ecosystems: Array.from(ecosystemsByRepo.get(repo.id) ?? []),
-    missionCounts: countsByRepo.get(repo.id) ?? EMPTY_REPO_MISSION_COUNTS,
-    isBookmarked: false,
-  }));
+  // Login-aware overlay: both bookmark and subscription flags come from
+  // the same per-user data source, so fetching them in parallel and
+  // merging once keeps the directory's per-viewer shape consistent across
+  // every entry point (board-wide listing, per-org page, future surfaces).
+  let bookmarkedIds: Set<string> = new Set<string>();
+  let subscribedIds: Set<string> = new Set<string>();
+  if (userLogin !== undefined) {
+    const [bookmarks, subscriptions] = await Promise.all([
+      getBookmarkedRepoIds(db, userLogin),
+      getUserSubscriptions(db, userLogin),
+    ]);
+    bookmarkedIds = bookmarks;
+    subscribedIds = new Set(subscriptions.map((s: { repoId: string }) => s.repoId));
+  }
+
+  return repoRows.map((repo) => {
+    const isBookmarked = bookmarkedIds.has(repo.id);
+    const isSubscribed = subscribedIds.has(repo.id);
+    return {
+      ...repo,
+      ecosystems: Array.from(ecosystemsByRepo.get(repo.id) ?? []),
+      missionCounts: countsByRepo.get(repo.id) ?? EMPTY_REPO_MISSION_COUNTS,
+      isBookmarked,
+      // isSubscribed is only meaningful when userLogin was passed. Setting
+      // it to undefined for anonymous visitors lets the UI gate the
+      // notification toggle on a presence check rather than always-false
+      // (per ADR 0027's "false, not a tri-state" — except this field is
+      // genuinely tri-state: it can be absent entirely).
+      ...(userLogin !== undefined && { isSubscribed }),
+    };
+  });
 }
 
 /**
- * Same as getRepoDirectoryBase but filtered by organization.
+ * Thin wrapper for the per-org directory path — the function above already
+ * does the work; this exists so the old caller signature
+ * (db, orgLogin) keeps working without a breaking change.
  */
 export async function getRepoDirectoryBaseByOrg(
   db: ReadonlyDb,
   orgLogin: string,
 ): Promise<RepoWithMissionSummary[]> {
-  const org = await db
-    .select({ id: organizations.id })
-    .from(organizations)
-    .where(eq(organizations.githubLogin, orgLogin))
-    .limit(1);
-
-  const orgId = org[0]?.id;
-  if (!orgId) return [];
-
-  const [repoRows, ecosystemRows, severityRows] = await Promise.all([
-    db.select().from(repos).where(eq(repos.orgId, orgId)),
-    db
-      .selectDistinct({ repoId: dependencies.repoId, ecosystem: dependencies.ecosystem })
-      .from(dependencies)
-      .innerJoin(repos, eq(dependencies.repoId, repos.id))
-      .where(eq(repos.orgId, orgId)),
-    db
-      .select({
-        repoId: missions.repoId,
-        severity: advisories.severity,
-        count: sql<number>`count(*)::int`,
-      })
-      .from(missions)
-      .innerJoin(advisories, eq(missions.advisoryId, advisories.id))
-      .innerJoin(repos, eq(missions.repoId, repos.id))
-      .where(and(inArray(missions.status, ["open", "claimed"]), eq(repos.orgId, orgId)))
-      .groupBy(missions.repoId, advisories.severity),
-  ]);
-
-  const ecosystemsByRepo = new Map<string, Set<schema.Ecosystem>>();
-  for (const row of ecosystemRows) {
-    const set = ecosystemsByRepo.get(row.repoId) ?? new Set<schema.Ecosystem>();
-    set.add(row.ecosystem);
-    ecosystemsByRepo.set(row.repoId, set);
-  }
-
-  const countsByRepo = new Map<string, RepoMissionCounts>();
-  for (const row of severityRows) {
-    const counts = countsByRepo.get(row.repoId) ?? { ...EMPTY_REPO_MISSION_COUNTS };
-    counts[row.severity] += row.count;
-    counts.total += row.count;
-    countsByRepo.set(row.repoId, counts);
-  }
-
-  return repoRows.map((repo) => ({
-    ...repo,
-    ecosystems: Array.from(ecosystemsByRepo.get(repo.id) ?? []),
-    missionCounts: countsByRepo.get(repo.id) ?? EMPTY_REPO_MISSION_COUNTS,
-    isBookmarked: false,
-  }));
+  return getRepoDirectoryBase(db, { orgLogin });
 }
+
 /**
- * getRepoDirectoryBase() plus the viewer's bookmark flags. userLogin is
- * optional — omit it (e.g. a signed-out visitor) and every row's
- * isBookmarked is simply false, not a separate tri-state.
+ * Backwards-compatible alias for the board-wide read (ADR 0027) plus the
+ * viewer's bookmark + subscription flags. The implementation now lives in
+ * getRepoDirectoryBase above; this thin wrapper preserves the historical
+ * (db, userLogin) signature so existing tests and the /app wrapper don't
+ * need to change at the same time.
  */
 export async function getReposWithMissionSummary(
   db: ReadonlyDb,
   userLogin?: string,
 ): Promise<RepoWithMissionSummary[]> {
-  const repos = await getRepoDirectoryBase(db);
-  if (userLogin === undefined) {
-    return repos;
-  }
-  const [bookmarkedRepoIds, subscriptions] = await Promise.all([
-    getBookmarkedRepoIds(db, userLogin),
-    getUserSubscriptions(db, userLogin),
-  ]);
-  const subscribedRepoIds = new Set(subscriptions.map((s: { repoId: string }) => s.repoId));
-  return repos.map((repo) =>
-    bookmarkedRepoIds.has(repo.id) || subscribedRepoIds.has(repo.id)
-      ? {
-          ...repo,
-          isBookmarked: bookmarkedRepoIds.has(repo.id),
-          isSubscribed: subscribedRepoIds.has(repo.id),
-        }
-      : repo,
-  );
+  return getRepoDirectoryBase(db, userLogin === undefined ? {} : { userLogin });
 }
