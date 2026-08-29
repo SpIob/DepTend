@@ -1,6 +1,6 @@
 # ADR 0045; Indexed expression on `FLOOR(mission_scores.composite_score / 0.5)` for the board's priority ORDER BY
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-08-29
 
 ---
@@ -99,6 +99,61 @@ If the planner prefers a sequential scan (small dataset, optimizer judgment), th
 | DESC btree on the expression      | Generated column with an index on it                      | A generated column with a real index on the column is the same plan at the SQL level, but the migration would need to add a column + backfill + index in three statements. The expression index is one statement, same planner behavior, less schema surface. |
 | DESC btree on the expression      | Drop `composite_score` bucketing, sort by raw score       | Breaks ADR 0017's transitivity invariant. Not a real alternative.                                                                                                                                                                                             |
 | Add the index without a migration | Use Postgres's `CREATE INDEX CONCURRENTLY` at runtime     | A bare CLI `CREATE INDEX CONCURRENTLY` requires no schema change but the project's only deploy story is "drizzle-kit migrate the committed journal." A schema.ts declaration + committed migration is the consistent path.                                    |
+
+## Live verification (2026-08-29)
+
+Migration `0008_mission_scores_tier_index.sql` applied to the dev Neon database via `pnpm drizzle-kit migrate`. Confirmed on the live database:
+
+```
+              indexname
+-------------------------------------
+ mission_scores_pkey
+ mission_scores_mission_id_key
+ idx_mission_scores_mission_id
+ idx_mission_scores_composite_score
+ idx_mission_scores_confidence
+ idx_mission_scores_effort_composite
+ idx_mission_scores_composite_tier
+(7 rows)
+```
+
+Index definition matches the schema declaration: `btree (floor(composite_score / 0.5) DESC)`.
+
+`EXPLAIN (ANALYZE, BUFFERS)` of the board's "priority" ORDER BY lead key against dev (138 mission_scores rows, the current dev dataset):
+
+**Default plan (planner picks):**
+
+```
+ Limit  (cost=96.04..96.16 rows=50) (actual time=13.453..13.463 rows=50)
+   ->  Sort  (cost=96.04..96.38 rows=138)
+         Sort Key: (floor((mission_scores.composite_score / 0.5))) DESC, ...
+         Sort Method: top-N heapsort  Memory: 29kB
+         ->  ...
+               ->  Seq Scan on mission_scores  (cost=0.00..30.38 rows=138)
+ Execution Time: 13.622 ms
+```
+
+**Forced-index plan (`SET enable_seqscan = off`):**
+
+```
+ Limit  (cost=0.29..77.43 rows=50) (actual time=1.345..1.472 rows=50)
+   ->  Nested Loop
+         ->  Index Scan using idx_mission_scores_composite_tier on mission_scores
+               Index Searches: 1
+         ->  Index Scan using missions_pkey
+               Index Cond: (id = mission_scores.mission_id)
+               Filter: (status = ANY ('{open,claimed}'::mission_status[]))
+               Index Searches: 50
+ Execution Time: 1.568 ms
+```
+
+**Interpretation:** at the current dataset size (138 mission_scores rows, well under the 150-repo cap of 6 actual indexed repos on dev), the planner's cost-based decision favors a Seq Scan + top-N heapsort over an Index Scan. The index is functional and ready — when forced, it cuts execution time from 13.6ms to 1.6ms (~9x). As the dataset grows past the planner's Seq-Scan-vs-Index-Scan crossover (typically a few hundred to a few thousand rows depending on selectivity), Postgres will pick the index automatically without any code change. Per Decision 4: "the index is harmless but not yet paying for itself — flip to Accepted with that note, and the index will start being picked as the dataset grows."
+
+Ego-browser verification of the three pages against `localhost:3000` confirmed correct rendering and no error boundaries:
+
+- `/` — 6 indexed repos listed, severity counts and ecosystem badges intact
+- `/missions` — 177 total missions across all axes, "1–50 of 177 missions" range line, all four filter axes + sort + group-by rendering, composite-score ordering preserved
+- `/repo/SpIob/FlowState` — 32 missions for the repo, per-repo filter chips and composite-score ordering intact
 
 ---
 

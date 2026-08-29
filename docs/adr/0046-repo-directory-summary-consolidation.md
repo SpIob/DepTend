@@ -1,6 +1,6 @@
 # ADR 0046; Consolidate `getIndexedRepoCount` + `getTotalRepoCount` + `getSkippedRepos` into one cached read
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-08-29
 
 ---
@@ -153,6 +153,16 @@ The new `queries.test.ts` `getRepoDirectorySummary` block (mirroring the existin
 | Re-export the three legacy functions | Drop the three legacy exports, force every caller to use the new one | Two pages and one test file use them today; a future caller (a CLI command, a script, a future page) might only need one slice. The thin-accessor pattern is one line of code per export and keeps the public surface stable.                                                                                                              |
 | Switch to a SQL-only aggregation     | Use `json_agg` for the skipped list inside the count statement       | Mixing scalar projections with a row-typed `json_agg` in the same `SELECT` works but the cast/parse at the boundary is uglier than a separate `getSkippedRepos` call. The `Promise.all` pair is also a smaller delta from the current code shape.                                                                                          |
 | 60 s TTL vs shorter                  | 30 s TTL (matches the mission-action rate limiter)                   | The 60 s TTL is set by ADR 0033 and the cache-invalidation matrix it documents. Changing it here is a different ADR's work; the consolidation changes the shape of the cached read, not the freshness contract.                                                                                                                            |
+
+## Live verification (2026-08-29)
+
+Ego-browser verification of the three pages against `localhost:3000` confirmed the consolidated read renders correctly:
+
+- `/` header chrome: **"6 repos indexed"** (rendered via `getRepoDirectorySummary().indexedCount`). 6 repo cards listed with severity counts and ecosystem badges intact. The `totalCount` (6) and `skippedRepos` (3, not shown on the home page since the disclosure section only renders when `skippedRepos.length > 0` and the home page only renders `totalRepoCount` and `skippedRepos`) fields both populated from the same cached read.
+- `/missions` header chrome: **"6 repos indexed | 3 skipped"** (rendered via `getRepoDirectorySummary().indexedCount` and `getRepoDirectorySummary().skippedRepos`). 177 total missions across all axes, "1–50 of 177 missions" range line, all four filter axes + sort + group-by rendering, composite-score ordering preserved.
+- `/repo/SpIob/FlowState` — per-repo page renders unchanged; the per-repo page uses `getRepoBoardPage()` + `getBookmarkedRepoIds()` + `getRepoEcosystems()` directly, none of which the consolidation touched.
+
+No error boundaries triggered on any of the three pages. The `count(*) filter (where ingestion_status = 'complete')::int` + `count(*)::int` two-scalar statement (the new shape) and the unchanged `getSkippedRepos` query both succeed against dev Neon. The cache-invalidation matrix (cached-read.ts:14-31) is unchanged — every route that already calls `revalidateTag("repos")` invalidates the new `["repo-directory-summary"]` slot without any code change.
 
 ---
 
