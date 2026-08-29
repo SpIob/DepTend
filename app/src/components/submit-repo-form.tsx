@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { signIn, useSession } from "next-auth/react";
+import { useSession } from "next-auth/react";
+import { signInWithGitHub } from "@/lib/sign-in";
 
 type SubmitState =
   | { kind: "idle" }
@@ -65,7 +66,7 @@ export function SubmitRepoForm({
       <p className="text-ink-muted text-sm">
         <button
           type="button"
-          onClick={() => void signIn("github")}
+          onClick={() => void signInWithGitHub()}
           className="text-accent hover:text-ink underline decoration-dotted underline-offset-2"
         >
           Sign in with GitHub

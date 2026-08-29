@@ -20,7 +20,13 @@ export default function ErrorPage({
   reset: () => void;
 }): React.JSX.Element {
   useEffect(() => {
-    console.error(error);
+    // L2 (security audit 2026-08-29): log message, not the full Error
+    // object. Drizzle and the React server boundary sometimes populate
+    // thrown errors with request context (URL, headers, stack) that
+    // can echo user-controlled values into Vercel function logs.
+    // Matches the discipline in app/src/lib/rate-limit.ts and the
+    // two notifications routes - "log the line, not the stack."
+    console.error(error instanceof Error ? error.message : error);
   }, [error]);
 
   return (

@@ -38,22 +38,14 @@ export async function POST(
     return NextResponse.json({ error: "Invalid repo id." }, { status: 400 });
   }
 
-  try {
-    const db = getDb();
-    const removed = await unsubscribeFromRepo(db, login, repoId);
+  const db = getDb();
+  const removed = await unsubscribeFromRepo(db, login, repoId);
 
-    if (!removed) {
-      return NextResponse.json({ error: "Subscription not found." }, { status: 404 });
-    }
-
-    revalidateTag("repos");
-
-    return NextResponse.json({ message: "Unsubscribed from notifications." });
-  } catch (err) {
-    console.error("[notifications/unsubscribe] error:", err);
-    return NextResponse.json(
-      { error: "Failed to unsubscribe from notifications." },
-      { status: 500 },
-    );
+  if (!removed) {
+    return NextResponse.json({ error: "Subscription not found." }, { status: 404 });
   }
+
+  revalidateTag("repos");
+
+  return NextResponse.json({ message: "Unsubscribed from notifications." });
 }

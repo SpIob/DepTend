@@ -12,6 +12,61 @@ All notable changes to DepTend, condensed to one entry per phase.
 
 ## [Unreleased]
 
+**Security hardening pass (security audit 2026-08-29)**
+
+### Added
+
+- `app/src/lib/login.ts::isValidLogin` — GitHub login validation at the JWT boundary.
+  Mirrors GitHub's own account-name spec. A non-conforming login leaves the
+  session with `login: undefined`, so every downstream consumer (the rate-limit
+  Map, `repos.submitted_by`, `missions.claimed_by`, `repo_bookmarks.user_login`,
+  `notification_subscriptions.user_login`) naturally returns 401 instead of
+  accepting a malformed identifier. Validated once at sign-in time means a
+  malformed value can never reach the shared Map's keys.
+- `app/src/lib/sign-in.ts::signInWithGitHub` — single helper wrapping
+  next-auth's `signIn("github")` and pinning `callbackUrl` to
+  `window.location.origin + window.location.pathname`. Replaces five direct
+  `signIn("github")` call sites (`auth-status`, `bookmark-toggle`,
+  `mission-card`, `notification-toggle`, `submit-repo-form`) so a
+  `?callbackUrl=https://attacker/` query string on the OAuth start URL can't
+  redirect a freshly-signed-in user off-domain.
+- `Referrer-Policy: no-referrer` and an explicit `Permissions-Policy` denying
+  `camera`, `microphone`, `geolocation`, `interest-cohort`, `payment`, `usb` set
+  in the response headers by `app/src/middleware.ts`. The page uses none of
+  these features; outbound "View on GitHub" links no longer leak per-user URL
+  state to the third-party host; a future XSS-via-CSP-bypass would have fewer
+  browser capabilities to weaponize.
+- `app/src/app/api/repos/[id]/notifications/subscribe/route.test.ts` and
+  `…/unsubscribe/route.test.ts` — both routes had no colocated test file
+  before this pass; the seven other mutating routes did. The PR fills that gap
+  and pins the new M3 `eventTypes` allow-list contract.
+
+### Changed
+
+- `app/src/lib/auth.ts` now passes `NEXTAUTH_SECRET` explicitly via
+  `authOptions.secret`. A deploy missing the env var fails loudly at request
+  time, not at JWT-decode time. CI / test environments set a known dev value.
+- `app/src/lib/auth.ts`'s `jwt` callback now validates `user.login` against
+  GitHub's account-name spec via `isValidLogin` before stamping it onto the
+  token. A non-conforming value leaves `token.login` undefined, which the
+  `session` callback propagates as `session.user.login = undefined`.
+- `app/src/app/api/repos/[id]/notifications/subscribe/route.ts` now
+  allow-lists the `eventTypes` array against
+  `["new_mission", "claimed", "resolved", "reopened"]` (the set
+  `github-issues.ts` already typechecks against) and caps the array at 4
+  entries. Anything else is rejected with 400 before reaching the DB. The
+  column default and the route's no-body success path are unchanged.
+- `app/src/app/error.tsx` and the two notifications routes now log
+  `err instanceof Error ? err.message : err` instead of the full Error
+  object, matching the discipline already in use in
+  `app/src/lib/rate-limit.ts`. Drizzle sometimes populates thrown errors
+  with bound query parameters; the prior shape could echo user-controlled
+  values into Vercel function logs.
+
+### Removed
+
+- None.
+
 **Parallel OSV + registry fetches in `scripts/ingest.js`**
 
 ### Changed

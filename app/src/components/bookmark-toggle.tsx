@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { signIn, useSession } from "next-auth/react";
+import { useSession } from "next-auth/react";
+import { signInWithGitHub } from "@/lib/sign-in";
 import { extractErrorMessage } from "@/lib/fetch-error";
 
 type BookmarkRequestState =
@@ -51,7 +52,7 @@ export function BookmarkToggle({
     return (
       <button
         type="button"
-        onClick={() => void signIn("github")}
+        onClick={() => void signInWithGitHub()}
         title="Sign in with GitHub to bookmark this repo"
         aria-label="Sign in with GitHub to bookmark this repo"
         className="text-ink-muted hover:text-ink shrink-0 p-0.5 font-mono text-xl leading-none"

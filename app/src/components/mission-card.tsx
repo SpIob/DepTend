@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, memo } from "react";
-import { signIn, useSession } from "next-auth/react";
+import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import type { MissionStatus, MissionType, ScoreConfidence } from "@deptend/core/db/schema.js";
 import type { MissionWithScore } from "@deptend/core";
@@ -10,6 +10,7 @@ import { EcosystemBadge } from "./ecosystem-badge";
 import { Tag } from "./tag";
 import { EFFORT_LABELS } from "@/lib/mission-filter-options";
 import { extractErrorMessage } from "@/lib/fetch-error";
+import { signInWithGitHub } from "@/lib/sign-in";
 
 const CONFIDENCE_TEXT: Record<ScoreConfidence, string> = {
   high: "High confidence",
@@ -167,7 +168,7 @@ function MissionActions({
       <p className="text-ink-muted text-xs">
         <button
           type="button"
-          onClick={() => void signIn("github")}
+          onClick={() => void signInWithGitHub()}
           className="text-accent hover:text-ink underline decoration-dotted underline-offset-2"
         >
           Sign in with GitHub

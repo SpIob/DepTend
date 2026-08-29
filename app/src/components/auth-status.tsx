@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { signIn, signOut, useSession } from "next-auth/react";
+import { signOut, useSession } from "next-auth/react";
+import { signInWithGitHub } from "@/lib/sign-in";
 
 export function AuthStatus(): React.JSX.Element {
   const { data: session, status } = useSession();
@@ -36,7 +37,7 @@ export function AuthStatus(): React.JSX.Element {
       disabled={busy}
       onClick={() => {
         setBusy(true);
-        void signIn("github");
+        void signInWithGitHub();
       }}
       className="text-accent hover:text-ink font-mono text-xs underline decoration-dotted underline-offset-2 disabled:opacity-50"
     >

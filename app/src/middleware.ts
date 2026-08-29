@@ -28,6 +28,13 @@
  * style-src beyond 'unsafe-inline' (Tailwind ships as compiled CSS files,
  * but attribute-level styles are unverified against production; revisit
  * after the enforced flip has soaked).
+ *
+ * H1 (security audit 2026-08-29): in addition to the CSP, the middleware
+ * sets `Referrer-Policy: no-referrer` and a `Permissions-Policy` denying
+ * the browser features this app never uses (camera, microphone,
+ * geolocation, interest-cohort/FLoC, payment, USB). Vercel Hobby emits
+ * `Strict-Transport-Security` at the platform layer; that is verified,
+ * not set here, in the same change.
  */
 
 import { NextResponse, type NextRequest } from "next/server";
@@ -84,6 +91,31 @@ export function middleware(request: NextRequest): NextResponse {
     CSP_ENFORCED ? "Content-Security-Policy" : "Content-Security-Policy-Report-Only",
     csp,
   );
+
+  // H1 (security audit 2026-08-29): additional security headers.
+  // Referrer-Policy: no-referrer — every outbound link (e.g. "View on
+  // GitHub") would otherwise leak the full URL state, including any
+  // per-user filter state from /missions?q=...&severity=...&..., to
+  // the third-party host. This is the conservative default; not even
+  // the cross-origin path is shared.
+  // Permissions-Policy: explicit deny list for browser features the
+  // page never uses. If a future XSS-via-CSP-bypass lands, the
+  // attacker has fewer browser capabilities (camera, microphone,
+  // geolocation, FLoC, payment, USB) to weaponize as a result. Tighten
+  // further when an actual need to use a feature is identified.
+  response.headers.set("Referrer-Policy", "no-referrer");
+  response.headers.set(
+    "Permissions-Policy",
+    [
+      "camera=()",
+      "microphone=()",
+      "geolocation=()",
+      "interest-cohort=()",
+      "payment=()",
+      "usb=()",
+    ].join(", "),
+  );
+
   return response;
 }
 

@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { signIn, useSession } from "next-auth/react";
+import { useSession } from "next-auth/react";
+import { signInWithGitHub } from "@/lib/sign-in";
 import { extractErrorMessage } from "@/lib/fetch-error";
 
 type NotificationRequestState =
@@ -48,7 +49,7 @@ export function NotificationToggle({
     return (
       <button
         type="button"
-        onClick={() => void signIn("github")}
+        onClick={() => void signInWithGitHub()}
         title="Sign in with GitHub to subscribe to notifications"
         aria-label="Sign in with GitHub to subscribe to notifications"
         className="text-ink-muted hover:text-ink shrink-0 p-0.5 font-mono text-xs leading-none"
