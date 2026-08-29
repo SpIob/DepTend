@@ -347,6 +347,19 @@ export const missionScores = pgTable(
     index("idx_mission_scores_composite_score").on(table.compositeScore),
     index("idx_mission_scores_confidence").on(table.confidence),
     index("idx_mission_scores_effort_composite").on(table.effortLabel, table.compositeScore.desc()),
+    // Composite-score tier expression index for the board's ORDER BY (ADR 0045).
+    // Mirrors queries.ts:BOARD_TIER_EXPR exactly so the planner can replace the
+    // full sort with an ordered index scan. DESC matches the board's
+    // highest-tier-first ordering. Composite-score-tier formula unchanged
+    // from scorer/ranking.ts:compositeTier() — keeping these two paths in
+    // lockstep is the ADR 0017 invariant.
+    //
+    // Uses the raw column name string (not table.compositeScore) to avoid a
+    // circular-reference type error: this table's own initializer can't
+    // reference the table object before the table is fully constructed.
+    // The expression's text MUST stay byte-identical to
+    // queries.ts:BOARD_TIER_EXPR — divergence is a silent ordering bug.
+    index("idx_mission_scores_composite_tier").on(sql`FLOOR("composite_score" / 0.5) DESC`),
   ],
 );
 

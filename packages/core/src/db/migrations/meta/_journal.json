@@ -57,6 +57,13 @@
       "when": 1787891872493,
       "tag": "0007_foamy_chimera",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1787991872751,
+      "tag": "0008_mission_scores_tier_index",
+      "breakpoints": true
     }
   ]
 }

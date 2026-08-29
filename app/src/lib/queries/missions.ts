@@ -19,22 +19,21 @@ import { getBookmarkedRepoIds as coreGetBookmarkedRepoIds } from "@deptend/core/
 import {
   BOARD_PAGE_SIZE,
   getBoardMissionsWithScoresPage as coreGetBoardMissionsWithScoresPage,
-  getIndexedRepoCount as coreGetIndexedRepoCount,
   getRepoBoardPage as coreGetRepoBoardPage,
+  getRepoDirectorySummary as coreGetRepoDirectorySummary,
   getRepoEcosystems as coreGetRepoEcosystems,
   getRepoDirectoryBase as coreGetRepoDirectoryBase,
   getRepoMissionsWithScores as coreGetRepoMissionsWithScores,
-  getSkippedRepos as coreGetSkippedRepos,
-  getTotalRepoCount as coreGetTotalRepoCount,
   type BoardFilters,
   type BoardPage,
+  type RepoDirectorySummary,
   type SkippedRepo,
 } from "@deptend/core/db/queries.js";
 import { getRepoByOwnerAndName as coreGetRepoByOwnerAndName } from "@deptend/core/db/repos.js";
 import type { Ecosystem, MissionWithScore, Repo, RepoWithMissionSummary } from "@deptend/core";
 import { getDb } from "../db";
 
-export type { BoardFilters, BoardPage };
+export type { BoardFilters, BoardPage, RepoDirectorySummary, SkippedRepo };
 export { BOARD_PAGE_SIZE };
 
 /** Re-export for back-compat with existing imports in /app and tests. */
@@ -67,15 +66,31 @@ export function getBoardMissionsPage(filters: BoardFilters, page: number): Promi
 }
 
 export function getIndexedRepoCount(): Promise<number> {
-  return cachedRead(["indexed-repo-count"], "repos", () => coreGetIndexedRepoCount(getDb()));
+  return getRepoDirectorySummary().then((s) => s.indexedCount);
 }
 
 export function getTotalRepoCount(): Promise<number> {
-  return cachedRead(["total-repo-count"], "repos", () => coreGetTotalRepoCount(getDb()));
+  return getRepoDirectorySummary().then((s) => s.totalCount);
 }
 
 export function getSkippedRepos(): Promise<SkippedRepo[]> {
-  return cachedRead(["skipped-repos"], "repos", () => coreGetSkippedRepos(getDb()));
+  return getRepoDirectorySummary().then((s) => s.skippedRepos);
+}
+
+/**
+ * One cached read backs the three header-chrome consumers (`/`, `/missions`,
+ * any future page that wants the indexed count, the submission-cap count,
+ * and/or the skipped disclosure). Replaces what was three separate
+ * `cachedRead` slots (ADR 0046) — same 60 s TTL, same `"repos"` tag (so
+ * the existing revalidation matrix in cached-read.ts is unchanged), but
+ * a single HTTP round-trip pair on the miss path. Tagged for invalidation
+ * by the same set of routes (`withdraw` / `submit` / notification
+ * subscribe/unsubscribe) per cached-read.ts:14-31.
+ */
+export function getRepoDirectorySummary(): Promise<RepoDirectorySummary> {
+  return cachedRead(["repo-directory-summary"], "repos", () =>
+    coreGetRepoDirectorySummary(getDb()),
+  );
 }
 
 /**

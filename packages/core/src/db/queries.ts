@@ -275,7 +275,11 @@ const BOARD_MISSION_TYPE_EXPR = sql<string>`${missions.missionType}::text`;
 /** SQL mirror of ranking.ts's effortRank(). */
 const BOARD_EFFORT_RANK_EXPR = sql<number>`CASE ${missionScores.effortLabel} WHEN 'trivial' THEN 0 WHEN 'low' THEN 1 WHEN 'medium' THEN 2 WHEN 'high' THEN 3 END`;
 
-/** SQL mirror of ranking.ts's compositeTier() (same 0.5-wide buckets). */
+/** SQL mirror of ranking.ts's compositeTier() (same 0.5-wide buckets).
+ *  Indexable by idx_mission_scores_composite_tier (ADR 0045) so the planner
+ *  can replace the full sort with an ordered index scan on the board's
+ *  "priority" ORDER BY lead key. The expression MUST stay byte-identical to
+ *  scorer/ranking.ts:compositeTier() — divergence is a silent ordering bug. */
 const BOARD_TIER_EXPR = sql<number>`FLOOR(${missionScores.compositeScore} / 0.5)`;
 
 /** Newest known vulnerability first; NULL sorts last (ranking.ts's -Infinity). */
@@ -624,6 +628,51 @@ export async function getSkippedRepos(db: ReadonlyDb): Promise<SkippedRepo[]> {
     .select({ owner: repos.owner, name: repos.name, reason: repos.ingestionError })
     .from(repos)
     .where(eq(repos.ingestionStatus, "skipped"));
+}
+
+/**
+ * Combined header chrome the home page (`/`) and board page (`/missions`)
+ * render alongside their main content: the public-facing "N repos indexed"
+ * stat (only `status: 'complete'` repos), the "N repos submitted" stat
+ * (the MVP cap's actual denominator, every submitted repo), and the
+ * skipped-repo disclosure list.
+ *
+ * The two statements run in parallel (`Promise.all`) so callers see a single
+ * round-trip pair instead of three sequential round-trips — the
+ * consolidated form of what `/` and `/missions` used to do as three
+ * separate cached reads (ADR 0046). Both queries ride the existing
+ * `idx_repos_ingestion_status` index; at the current 150-repo cap each
+ * is a sub-millisecond index scan, but the real win is the eliminated
+ * HTTP round-trip + the single 60 s cached slot that replaces three.
+ *
+ * `getIndexedRepoCount` / `getTotalRepoCount` / `getSkippedRepos` remain
+ * exported as thin wrappers for any direct caller that only needs one
+ * slice; the canonical entry point is this function.
+ */
+export interface RepoDirectorySummary {
+  /** Count of repos with `ingestion_status = 'complete'` — the "indexed" stat. */
+  indexedCount: number;
+  /** Count of every submitted repo — the MVP cap's denominator. */
+  totalCount: number;
+  /** Repos with `ingestion_status = 'skipped'`, with the ingestor's reason. */
+  skippedRepos: SkippedRepo[];
+}
+
+export async function getRepoDirectorySummary(db: ReadonlyDb): Promise<RepoDirectorySummary> {
+  const [counts, skippedRepos] = await Promise.all([
+    db
+      .select({
+        indexedCount: sql<number>`count(*) filter (where ${repos.ingestionStatus} = 'complete')::int`,
+        totalCount: sql<number>`count(*)::int`,
+      })
+      .from(repos),
+    getSkippedRepos(db),
+  ]);
+  return {
+    indexedCount: counts[0]?.indexedCount ?? 0,
+    totalCount: counts[0]?.totalCount ?? 0,
+    skippedRepos,
+  };
 }
 
 /**

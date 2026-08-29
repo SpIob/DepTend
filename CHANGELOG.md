@@ -12,6 +12,79 @@ All notable changes to DepTend, condensed to one entry per phase.
 
 ## [Unreleased]
 
+**Mission board perf pass (2026-08-29)**
+
+Two independent changes that target the board's two highest-cost shared
+reads. The mission board itself (per-row `priority` ORDER BY) and the
+header-chrome on `/` and `/missions` (`indexed` / `total` / `skipped`
+counts) are the only reads a cold cache miss is forced to do on every
+request that ADR 0033 doesn't serve from `unstable_cache`. Tier 1 from
+the standing perf review. No public-API change; the new migration adds
+one index.
+
+### Added
+
+- `idx_mission_scores_composite_tier` — a btree on the
+  `FLOOR(composite_score / 0.5) DESC` expression that mirrors
+  `scorer/ranking.ts:compositeTier()` and the board's `BOARD_TIER_EXPR`
+  in `queries.ts`. Lets the planner replace the board's full-sort step
+  with an ordered index scan on the "priority" ORDER BY lead key. ADR 0045. New migration `0008_mission_scores_tier_index.sql`. Cross-checked
+  byte-identical against the JS expression — divergence is a silent
+  ordering bug (ADR 0017 invariant).
+
+### Changed
+
+- `getRepoDirectorySummary()` — a new cached read that returns
+  `{ indexedCount, totalCount, skippedRepos }` in one
+  `cachedRead` slot (`["repo-directory-summary"]`, tag `"repos"`,
+  60 s TTL). Replaces what `/` and `/missions` ran as three
+  independent reads on every miss. The two count projections land in
+  one `count(*) filter …, count(*)::int` statement; the skipped
+  list stays a separate `getSkippedRepos` call inside the same
+  `Promise.all`. Net: 3 round-trips → 2 on a cold-miss, one
+  cache slot instead of three. The three legacy exports
+  (`getIndexedRepoCount` / `getTotalRepoCount` / `getSkippedRepos`)
+  stay as derived accessors over the same cached slot for any future
+  caller that only needs one slice. ADR 0046. Re-validation matrix
+  unchanged — every route that already calls
+  `revalidateTag("repos")` keeps invalidating the new slot.
+
+---
+
+**Workspace dependency declarations (2026-08-29)**
+
+Survey-driven audit of every external package imported under
+`app/src/`, `packages/core/src/`, `cli/src/`, and `scripts/`. The
+trigger was the discovery that `packages/core/package.json` declared
+zero `dependencies` despite importing six external packages
+(`drizzle-orm`, `semver`, `smol-toml`, `@renovatebot/pep440`,
+`@yarnpkg/lockfile`, `@neondatabase/serverless`); the engine's build
+worked only because pnpm hoisted them from the root `package.json`'s
+`dependencies` block. Empirically verified: removing the root
+`dependencies` block and re-installing makes `pnpm --filter
+@deptend/core build` fail with 26 `TS2307: Cannot find module …`
+errors. ADR 0044.
+
+### Changed
+
+- `packages/core/package.json` now declares its own six runtime
+  `dependencies`. Per-package `pnpm install` inside `packages/core/`
+  now succeeds without depending on root's manifest.
+- The root `package.json` keeps the same `dependencies` block as the
+  single source of truth for `scripts/ingest.js` (which has no
+  `package.json` of its own to declare them in) and as a
+  duplication-with-single-source contract for core. Both stay
+  in lockstep going forward.
+
+### Removed
+
+- `app/package.json`'s `dependencies` block no longer includes
+  `drizzle-orm` or `@neondatabase/serverless`. Neither was ever
+  imported by code under `app/src/`; both were stale entries from
+  before ADR 0012 moved all Drizzle query-building out of `/app`.
+  pnpm dedupes, so install behavior is unchanged; the manifest now
+  reflects what `/app` actually uses.
+
 **Data-handling correctness + dedup pass (2026-08-29)**
 
 Survey-driven cleanup of the read layer and several write paths. Every

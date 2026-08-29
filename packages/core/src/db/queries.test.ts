@@ -29,6 +29,7 @@ import {
   getBoardMissionsWithScoresPage,
   getIndexedRepoCount,
   getRepoDirectoryBase,
+  getRepoDirectorySummary,
   getRepoEcosystems,
   getRepoMissionsWithScores,
   getSkippedRepos,
@@ -584,6 +585,70 @@ describe("getSkippedRepos", () => {
       { owner: "octo", name: "no-manifest", reason: "No package.json found" },
       { owner: "octo", name: "empty", reason: null },
     ]);
+  });
+});
+
+describe("getRepoDirectorySummary", () => {
+  function summaryRouter(opts: { counts: [number, number]; skipped: unknown[][] }): RowRouter {
+    return (sql: string): unknown[][] => {
+      if (sql.includes("count(*) filter")) return [opts.counts];
+      if (sql.includes("ingestion_error")) return opts.skipped;
+      return [];
+    };
+  }
+
+  it("combines indexed + total counts and skipped repos in one call", async () => {
+    const { db } = makeDb(
+      summaryRouter({
+        counts: [7, 12],
+        skipped: [
+          ["octo", "no-manifest", "No package.json found"],
+          ["octo", "empty", null],
+        ],
+      }),
+    );
+    const summary = await getRepoDirectorySummary(db);
+
+    expect(summary).toEqual({
+      indexedCount: 7,
+      totalCount: 12,
+      skippedRepos: [
+        { owner: "octo", name: "no-manifest", reason: "No package.json found" },
+        { owner: "octo", name: "empty", reason: null },
+      ],
+    });
+  });
+
+  it("fires both statements in a single round-trip pair (Promise.all)", async () => {
+    // makeDb records every captured statement, in the order it was awaited.
+    // Promise.all dispatches both, then resolves them in the order they
+    // settle. Counting captured calls (rather than the order) pins the
+    // intent: this is two statements in one round-trip pair, not four.
+    const { db, calls } = makeDb(
+      summaryRouter({
+        counts: [0, 0],
+        skipped: [],
+      }),
+    );
+    await getRepoDirectorySummary(db);
+
+    const countCalls = calls.filter((c) => c.sql.includes("count(*) filter"));
+    const skipCalls = calls.filter((c) => c.sql.includes("ingestion_error"));
+    expect(countCalls).toHaveLength(1);
+    expect(skipCalls).toHaveLength(1);
+    // The count SELECT projects both scalars in one statement — no
+    // separate round-trip for indexed vs. total.
+    expect(countCalls[0]?.sql).toContain("count(*) filter");
+    expect(countCalls[0]?.sql).toContain("count(*)::int");
+  });
+
+  it("returns zeros and empty skipped list when the count row is missing", async () => {
+    const { db } = makeDb(() => []);
+    expect(await getRepoDirectorySummary(db)).toEqual({
+      indexedCount: 0,
+      totalCount: 0,
+      skippedRepos: [],
+    });
   });
 });
 

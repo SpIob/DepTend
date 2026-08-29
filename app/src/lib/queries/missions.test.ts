@@ -15,15 +15,24 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getReposWithMissionSummary, reviveDates } from "./missions";
+import {
+  getIndexedRepoCount,
+  getRepoDirectorySummary,
+  getSkippedRepos,
+  getTotalRepoCount,
+  getReposWithMissionSummary,
+  reviveDates,
+} from "./missions";
 
 const unstableCache = vi.hoisted(() => vi.fn());
 vi.mock("next/cache", () => ({ unstable_cache: unstableCache }));
 
 const getRepoDirectoryBase = vi.hoisted(() => vi.fn());
+const coreGetRepoDirectorySummary = vi.hoisted(() => vi.fn());
 vi.mock("@deptend/core/db/queries.js", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   getRepoDirectoryBase,
+  getRepoDirectorySummary: coreGetRepoDirectorySummary,
 }));
 
 const getDb = vi.hoisted(() => vi.fn());
@@ -151,5 +160,70 @@ describe("cachedRead revival placement", () => {
       { __signedInDb: true },
       { userLogin: "octocat" },
     );
+  });
+});
+
+describe("getRepoDirectorySummary cached read (ADR 0046)", () => {
+  const SUMMARY_FIXTURE = {
+    indexedCount: 7,
+    totalCount: 12,
+    skippedRepos: [{ owner: "octo", name: "no-manifest", reason: "No package.json found" }],
+  };
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    unstableCache.mockImplementation(serializingCache);
+    coreGetRepoDirectorySummary.mockResolvedValue(SUMMARY_FIXTURE);
+  });
+
+  it("shares one cache slot for the three header-chrome consumers", async () => {
+    // Three call sites — getIndexedRepoCount, getTotalRepoCount, and
+    // getSkippedRepos — now share a single cached read. The cache key is
+    // the load-bearing contract: with the same key, a real unstable_cache
+    // would de-dupe the three lookups; with three different keys, the
+    // cache would be three independent slots and revalidateTag("repos")
+    // would have to invalidate all three. We assert the key here rather
+    // than the call count, because the test's mock unstable_cache
+    // intentionally doesn't de-dupe by key (see serializingCache above) —
+    // so a per-call count assertion would test the mock, not the contract.
+    await getIndexedRepoCount();
+    await getTotalRepoCount();
+    await getSkippedRepos();
+
+    // Every call into unstable_cache used the same key + tag — that's the
+    // one-slot invariant. Three calls is fine; three different keys is
+    // not.
+    expect(unstableCache).toHaveBeenCalledTimes(3);
+    for (const call of unstableCache.mock.calls) {
+      const [, keyParts, options] = call as [
+        unknown,
+        string[],
+        { revalidate: number; tags: string[] },
+      ];
+      expect(keyParts).toEqual(["repo-directory-summary"]);
+      expect(options).toEqual({ revalidate: 60, tags: ["repos"] });
+    }
+  });
+
+  it("wraps the summary read in unstable_cache with the documented key/tag/TTL", async () => {
+    await getRepoDirectorySummary();
+
+    const [cachedFn, keyParts, options] = unstableCache.mock.calls[0] as unknown as [
+      unknown,
+      string[],
+      { revalidate: number; tags: string[] },
+    ];
+    expect(typeof cachedFn).toBe("function");
+    // One cache key, one tag — replacing the three independent
+    // cachedRead slots (indexed-repo-count / total-repo-count /
+    // skipped-repos) that pre-ADR-0046 pages consumed in parallel.
+    expect(keyParts).toEqual(["repo-directory-summary"]);
+    expect(options).toEqual({ revalidate: 60, tags: ["repos"] });
+  });
+
+  it("derives each accessor from the shared cached summary", async () => {
+    expect(await getIndexedRepoCount()).toBe(7);
+    expect(await getTotalRepoCount()).toBe(12);
+    expect(await getSkippedRepos()).toEqual(SUMMARY_FIXTURE.skippedRepos);
   });
 });

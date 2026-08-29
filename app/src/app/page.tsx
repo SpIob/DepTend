@@ -1,11 +1,7 @@
 import Link from "next/link";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import {
-  getReposWithMissionSummary,
-  getSkippedRepos,
-  getTotalRepoCount,
-} from "@/lib/queries/missions";
+import { getRepoDirectorySummary, getReposWithMissionSummary } from "@/lib/queries/missions";
 import { AuthStatus } from "@/components/auth-status";
 import { SubmitRepoForm } from "@/components/submit-repo-form";
 import { RepoCard } from "@/components/repo-card";
@@ -60,10 +56,9 @@ export default async function RepoDirectoryPage(): Promise<React.JSX.Element> {
   const session = await getServerSession(authOptions);
   const login = session?.user?.login;
 
-  const [repos, totalRepoCount, skippedRepos] = await Promise.all([
+  const [repos, { totalCount: totalRepoCount, skippedRepos }] = await Promise.all([
     getReposWithMissionSummary(login),
-    getTotalRepoCount(),
-    getSkippedRepos(),
+    getRepoDirectorySummary(),
   ]);
 
   // Derived from the same fetch, not a second query — getIndexedRepoCount()

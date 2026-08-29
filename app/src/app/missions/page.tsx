@@ -2,9 +2,8 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import {
+  getRepoDirectorySummary,
   getBoardMissionsPage,
-  getIndexedRepoCount,
-  getSkippedRepos,
   BOARD_PAGE_SIZE,
   type BoardFilters,
 } from "@/lib/queries/missions";
@@ -71,11 +70,12 @@ export default async function AllMissionsPage({
   };
 
   // Repo count and skipped list only feed the header stats; they don't
-  // depend on the board's filters, so all three reads run together.
-  const [board, repoCount, skippedRepos] = await Promise.all([
+  // depend on the board's filters, so both reads run together. The single
+  // getRepoDirectorySummary() backs both fields in one cached slot
+  // (ADR 0046).
+  const [board, { indexedCount: indexedRepoCount, skippedRepos }] = await Promise.all([
     getBoardMissionsPage(filters, query.page),
-    getIndexedRepoCount(),
-    getSkippedRepos(),
+    getRepoDirectorySummary(),
   ]);
 
   // Canonicalize an out-of-range page (deep link past the end, or a filter
@@ -105,7 +105,7 @@ export default async function AllMissionsPage({
           </div>
           <div className="text-ink-muted flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-xs">
             <span>
-              {repoCount} {repoCount === 1 ? "repo" : "repos"} indexed
+              {indexedRepoCount} {indexedRepoCount === 1 ? "repo" : "repos"} indexed
             </span>
             {skippedRepos.length > 0 && (
               <>
