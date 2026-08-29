@@ -86,6 +86,10 @@ import {
   fetchGitHubRepoMeta,
   GitHubMetaError,
 } from "../packages/core/dist/ingestor/github-meta.js";
+import {
+  lookupGitHubOwnerMeta,
+  GitHubOrgMetaError,
+} from "../packages/core/dist/ingestor/github-org-meta.js";
 
 // ---------------------------------------------------------------------------
 // Entry point
@@ -262,9 +266,44 @@ async function ingestRepo(
   log("info", `[${label}] Starting ingestion`);
 
   try {
-    // 1. Fetch current repo metadata from GitHub
+    // 1. Fetch current repo metadata from GitHub, plus the org/user
+    // profile for `owner` (ADR 0047). The two calls are independent
+    // and both public, so they run in parallel rather than serially —
+    // cuts roughly half the per-repo GitHub wall time.
     const { owner, name } = parseGithubUrl(repo.githubUrl ?? repo.url);
-    const ghMeta = await fetchGitHubRepoMeta(owner, name, githubToken);
+    const [ghMeta, orgResult] = await Promise.allSettled([
+      fetchGitHubRepoMeta(owner, name, githubToken),
+      lookupGitHubOwnerMeta(owner, githubToken),
+    ]);
+
+    if (ghMeta.status === "rejected") {
+      // Repo-meta failure is fatal — re-throw with the original
+      // fetchGitHubRepoMeta's typed error intact for the caller's
+      // existing 404/429 branching.
+      throw ghMeta.reason;
+    }
+
+    // ghMeta is a PromiseSettledResult after Promise.allSettled; the
+    // rejection branch above threw, so the only remaining case is
+    // fulfilled. The values object is structurally identical to the
+    // fulfilled shape, so we can destructure once here and reassign
+    // ghMeta to the resolved value for the existing `ghMeta.X` callers
+    // below. Plain JS — TS isn't checking this file, so the reassign
+    // is the simplest way to keep the rest of the function unchanged.
+    ghMeta = ghMeta.value;
+
+    const org = orgResult.status === "fulfilled" ? orgResult.value : null;
+    if (orgResult.status === "rejected" && !(orgResult.reason instanceof GitHubOrgMetaError)) {
+      // Network error on the org fetch is non-fatal — log and proceed
+      // without org metadata. A typed GitHubOrgMetaError (not_found
+      // for an actually-missing login) is also non-fatal; that's the
+      // hard case the GitHubOrgMetaError instance check guards against.
+      log("warn", `[${label}] org metadata fetch failed: ${String(orgResult.reason)}`);
+    } else if (orgResult.status === "rejected" && orgResult.reason.kind === "rate_limited") {
+      // Rate limit is fatal — the next cron run will also hit it, so
+      // better to fail fast and let the cron operator see the error.
+      throw orgResult.reason;
+    }
 
     const repoInput = {
       githubUrl: `https://github.com/${ghMeta.full_name}`,
@@ -356,13 +395,25 @@ async function ingestRepo(
 
     // 6. Write to database
     log("info", `[${label}] Writing to database`);
-    const output = await writer.write({
+    // Pass the org metadata when the fetch succeeded. The writer's
+    // org step is a no-op when this is undefined, so callers that
+    // haven't yet migrated (the legacy test fixture, manifest-check.ts)
+    // are unaffected.
+    const writerInput = {
       repo: repoInput,
       ingestorResult,
       osvResult,
       registryResult,
       triggeredBy,
-    });
+    };
+    if (org !== null) {
+      writerInput.org = {
+        githubLogin: org.login,
+        name: org.name,
+        avatarUrl: org.avatarUrl,
+      };
+    }
+    const output = await writer.write(writerInput);
 
     log("info", `[${label}] Done`, {
       repoId: output.repoId,

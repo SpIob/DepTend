@@ -21,7 +21,8 @@
  * way it always has been here.
  */
 
-import { fetchWithRetry, type FetchRetryOptions } from "./fetch-retry.js";
+import { fetchJson } from "./fetch-json.js";
+import type { FetchRetryOptions } from "./fetch-retry.js";
 
 const GITHUB_API_BASE = "https://api.github.com";
 const USER_AGENT = "deptend.dev/0.1.0 (https://github.com/deptend/deptend.dev)";
@@ -120,36 +121,37 @@ export async function fetchGitHubRepoMeta(
   };
   if (token) headers.Authorization = `Bearer ${token}`;
 
-  let response: Response;
-  try {
-    response = await fetchWithRetry(url, { headers }, options);
-  } catch (err) {
-    throw new Error(`Network error calling GitHub API for ${owner}/${name}: ${String(err)}`);
-  }
-
-  if (response.status === 404) {
-    throw new GitHubMetaError(
-      "not_found",
-      `GitHub repo not found: ${owner}/${name}. ` +
-        `It may be private, deleted, or the URL may be incorrect.`,
-    );
-  }
-
-  if (response.status === 403 || response.status === 429) {
-    const remaining = response.headers.get("x-ratelimit-remaining");
-    const reset = response.headers.get("x-ratelimit-reset");
-    const resetTime = reset ? new Date(Number(reset) * 1000).toISOString() : "unknown";
-    throw new GitHubMetaError(
-      "rate_limited",
-      `GitHub API rate limit hit (HTTP ${String(response.status)}). ` +
-        `Remaining: ${remaining ?? "unknown"}. Resets at: ${resetTime}. ` +
-        `Set GITHUB_TOKEN to raise the limit to 5,000 req/hr.`,
-    );
-  }
-
-  if (!response.ok) {
-    throw new Error(`GitHub API returned HTTP ${String(response.status)} for ${owner}/${name}`);
-  }
-
-  return response.json() as Promise<GitHubRepoMeta>;
+  // Translate 404 → "not_found" and 403/429 → "rate_limited" into
+  // GitHubMetaError before the generic HTTP error path. Other non-OK
+  // responses (and network errors / parse failures) fall through to
+  // the helper's default Error message.
+  return fetchJson<GitHubRepoMeta>(
+    url,
+    { headers },
+    {
+      ...(options !== undefined ? { fetchOptions: options } : {}),
+      errorPrefix: `GitHub API for ${owner}/${name}`,
+      classifyStatus: (response) => {
+        if (response.status === 404) {
+          throw new GitHubMetaError(
+            "not_found",
+            `GitHub repo not found: ${owner}/${name}. ` +
+              `It may be private, deleted, or the URL may be incorrect.`,
+          );
+        }
+        if (response.status === 403 || response.status === 429) {
+          const remaining = response.headers.get("x-ratelimit-remaining");
+          const reset = response.headers.get("x-ratelimit-reset");
+          const resetTime = reset ? new Date(Number(reset) * 1000).toISOString() : "unknown";
+          throw new GitHubMetaError(
+            "rate_limited",
+            `GitHub API rate limit hit (HTTP ${String(response.status)}). ` +
+              `Remaining: ${remaining ?? "unknown"}. Resets at: ${resetTime}. ` +
+              `Set GITHUB_TOKEN to raise the limit to 5,000 req/hr.`,
+          );
+        }
+        return undefined;
+      },
+    },
+  );
 }

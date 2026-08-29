@@ -52,7 +52,9 @@
 import type { NewAdvisory, Severity, Ecosystem } from "../db/schema.js";
 import type { OsvVersionRange } from "../db/json-types.js";
 import type { ParsedDependency } from "../ingestor/interface.js";
-import { DEFAULT_RETRY_DELAY_MS, fetchWithRetry } from "./fetch-retry.js";
+import { DEFAULT_RETRY_DELAY_MS } from "./fetch-retry.js";
+import { fetchJson } from "./fetch-json.js";
+import { runBounded } from "./concurrency.js";
 
 // ---------------------------------------------------------------------------
 // OSV API constants
@@ -253,33 +255,18 @@ export class OsvFetcher {
       })),
     };
 
-    let response: Response;
-    try {
-      response = await fetchWithRetry(
-        this.batchUrl,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(requestBody),
-        },
-        { retryDelayMs: this.retryDelayMs },
-      );
-    } catch (err) {
-      throw new Error(`Network error querying OSV batch API: ${String(err)}`);
-    }
-
-    if (!response.ok) {
-      throw new Error(
-        `OSV batch API returned HTTP ${String(response.status)}: ${response.statusText}`,
-      );
-    }
-
-    let batchResponse: OsvBatchResponse;
-    try {
-      batchResponse = (await response.json()) as OsvBatchResponse;
-    } catch (err) {
-      throw new Error(`Failed to parse OSV batch API response: ${String(err)}`);
-    }
+    const batchResponse = await fetchJson<OsvBatchResponse>(
+      this.batchUrl,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(requestBody),
+      },
+      {
+        fetchOptions: { retryDelayMs: this.retryDelayMs },
+        errorPrefix: "OSV batch API",
+      },
+    );
 
     if (!Array.isArray(batchResponse.results)) {
       throw new Error("OSV batch API response missing expected 'results' array.");
@@ -376,77 +363,47 @@ export class OsvFetcher {
     const advisories = new Map<string, NewAdvisory>();
     const failedIds = new Set<string>();
 
-    // Semaphore for bounded concurrency
-    let running = 0;
-    const queue: (() => Promise<void>)[] = [];
-
-    const runNext = async (): Promise<void> => {
-      if (queue.length === 0) return;
-      running++;
-      const task = queue.shift();
-      if (task === undefined) {
-        running--;
-        return;
-      }
+    // Bounded-concurrency worker pool (see concurrency.ts). Per-item
+    // failures (network, HTTP, parse) are caught and recorded as warnings
+    // so a single bad advisory id doesn't fail the whole batch — every
+    // other id in the batch still lands.
+    const results = await runBounded(ids, this.concurrency, async (id) => {
       try {
-        await task();
-      } finally {
-        running--;
-        await runNext();
+        const vuln = await this.fetchVulnById(id);
+        const packageName = firstPackageForId.get(id) ?? "";
+        return {
+          kind: "ok" as const,
+          id,
+          advisory: this.mapVulnToAdvisory(vuln, packageName, ecosystem, warnings),
+        };
+      } catch (err) {
+        return {
+          kind: "fail" as const,
+          id,
+          error:
+            `Failed to fetch full details for advisory ${id}: ${String(err)}. ` +
+            `Skipped — this advisory will not appear in results this run.`,
+        };
       }
-    };
+    });
 
-    const enqueue = (task: () => Promise<void>): void => {
-      queue.push(task);
-      if (running < this.concurrency) {
-        void runNext();
+    for (const result of results) {
+      if (result.kind === "ok") {
+        advisories.set(result.id, result.advisory);
+      } else {
+        failedIds.add(result.id);
+        warnings.push(result.error);
       }
-    };
-
-    await Promise.all(
-      ids.map(
-        (id) =>
-          new Promise<void>((resolve) => {
-            enqueue(async () => {
-              try {
-                const vuln = await this.fetchVulnById(id);
-                const packageName = firstPackageForId.get(id) ?? "";
-                advisories.set(id, this.mapVulnToAdvisory(vuln, packageName, ecosystem, warnings));
-              } catch (err) {
-                failedIds.add(id);
-                warnings.push(
-                  `Failed to fetch full details for advisory ${id}: ${String(err)}. ` +
-                    `Skipped — this advisory will not appear in results this run.`,
-                );
-              }
-              resolve();
-            });
-          }),
-      ),
-    );
+    }
 
     return { advisories, failedIds };
   }
 
   private async fetchVulnById(id: string): Promise<OsvVulnerability> {
-    let response: Response;
-    try {
-      response = await fetchWithRetry(`${this.vulnUrlBase}/${encodeURIComponent(id)}`, undefined, {
-        retryDelayMs: this.retryDelayMs,
-      });
-    } catch (err) {
-      throw new Error(`Network error: ${String(err)}`);
-    }
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${String(response.status)}`);
-    }
-
-    try {
-      return (await response.json()) as OsvVulnerability;
-    } catch (err) {
-      throw new Error(`Failed to parse response: ${String(err)}`);
-    }
+    return fetchJson<OsvVulnerability>(`${this.vulnUrlBase}/${encodeURIComponent(id)}`, undefined, {
+      fetchOptions: { retryDelayMs: this.retryDelayMs },
+      errorPrefix: "OSV vuln detail",
+    });
   }
 
   // ---------------------------------------------------------------------------

@@ -3,6 +3,9 @@
  */
 
 import { eq } from "drizzle-orm";
+import type { NeonHttpDatabase } from "drizzle-orm/neon-http";
+import type { NeonDatabase } from "drizzle-orm/neon-serverless";
+import * as schema from "./schema.js";
 import {
   organizations,
   organizationMembers,
@@ -11,6 +14,16 @@ import {
   type OrganizationMember,
 } from "./schema.js";
 import type { ReadonlyDb } from "./queries.js";
+
+/**
+ * The minimum Drizzle DB shape `upsertOrganization` exercises (just
+ * `insert(...).onConflictDoUpdate().returning()`). Accepts both the
+ * /app HTTP driver (`NeonHttpDatabase<typeof schema>`) and the ingestor's
+ * WebSocket driver (`NeonDatabase<...>`) so the writer can call it without
+ * spawning a second connection.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type DrizzleDb = NeonHttpDatabase<typeof schema> | NeonDatabase<any>;
 
 /**
  * Get organization by GitHub login
@@ -73,9 +86,15 @@ export async function getOrganizationWithMembers(
 
 /**
  * Upsert organization (create or update)
+ *
+ * Accepts both the /app HTTP driver (`ReadonlyDb`) and the ingestor's
+ * WebSocket driver (`NeonDatabase<any>`) — both expose the same Drizzle
+ * query builder API and we only use `insert(...).onConflictDoUpdate().returning()`.
+ * Typing the parameter as a structural Drizzle DB is more honest than
+ * picking one driver and casting the other at every call site.
  */
 export async function upsertOrganization(
-  db: ReadonlyDb,
+  db: DrizzleDb,
   input: NewOrganization,
 ): Promise<Organization> {
   const inserted = await db

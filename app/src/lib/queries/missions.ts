@@ -130,9 +130,15 @@ export function getRepoMissionsWithScores(repoId: string): Promise<MissionWithSc
  * repo" because pagination never actually paginates here. Filters still
  * need to be in the key because the page's chip clicks do navigate.
  */
-export function getRepoBoardPage(repoId: string, filters: BoardFilters): Promise<BoardPage> {
-  return cachedRead(["repo-board-page", repoId, boardFiltersCacheKey(filters)], "missions", () =>
-    coreGetRepoBoardPage(getDb(), repoId, filters),
+export function getRepoBoardPage(
+  repoId: string,
+  filters: BoardFilters,
+  options: { limit?: number; offset?: number } = {},
+): Promise<BoardPage> {
+  return cachedRead(
+    ["repo-board-page", repoId, boardFiltersCacheKey(filters), String(options.limit ?? "")],
+    "missions",
+    () => coreGetRepoBoardPage(getDb(), repoId, filters, options),
   );
 }
 

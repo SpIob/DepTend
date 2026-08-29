@@ -48,7 +48,7 @@
  */
 
 import { and, eq, inArray, notInArray, sql } from "drizzle-orm";
-import type { NeonDatabase, NeonTransaction } from "drizzle-orm/neon-serverless";
+import { type AnyNeonDb, type DbOrTx } from "../db/db-types.js";
 import {
   advisories,
   dependencies,
@@ -103,13 +103,6 @@ export interface GenerateMissionsOutput {
   /** Non-fatal downstream-dependents lookup observations (ADR 0032) — for logging */
   warnings: string[];
 }
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type AnyNeonDb = NeonDatabase<any>;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type AnyNeonTx = NeonTransaction<any, any>;
-/** Accepts both the outer db instance and the transaction callback parameter */
-type DbOrTx = AnyNeonDb | AnyNeonTx;
 
 // ---------------------------------------------------------------------------
 // MissionWriter

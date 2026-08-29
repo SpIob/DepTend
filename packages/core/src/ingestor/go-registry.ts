@@ -33,16 +33,12 @@
  *   path segment), a Go module path's "/" separators are meaningful,
  *   literal path hierarchy the proxy protocol expects to see as-is.
  *
- * Fetching strategy: same bounded-concurrency approach as
- * NpmRegistryFetcher/PyPIRegistryFetcher (default: 10 concurrent
- * requests). Unlike crates.io (ruled out partly for this reason during
- * ADR 0024's ecosystem comparison), proxy.golang.org publishes no explicit
- * per-second rate limit for this endpoint — 10 is carried over as the same
- * conservative default the other two fetchers already use, not a
- * Go-specific documented number. Same per-repo (not per-run) budget
- * reasoning as registry.ts/pypi-registry.ts: scripts/ingest.js processes
- * repos strictly sequentially, so this never has to account for multiple
- * repos' registry fetches overlapping.
+ * The fetch / dedup / bounded-concurrency / response-shape-checking shell
+ * lives in RegistryFetcher (registry-base.ts); this subclass only owns
+ * the Go-specific bits: the case-encoded URL, the pre-resolved source
+ * repo (the module path IS the repo), the "Version" (capital V) field
+ * name on the proxy response, and the override for the 404 message
+ * ("not found in the Go module proxy" rather than the base's default).
  *
  * Known, accepted gap (ADR 0024, Decision 4): the module proxy's @latest
  * endpoint carries no deprecation signal. Go does support a `// Deprecated:`
@@ -63,30 +59,26 @@
  * ADR: docs/adr/0024-phase7-go-ecosystem.md
  */
 
-import type { ParsedDependency } from "./interface.js";
-import { fetchWithRetry, type FetchRetryOptions } from "./fetch-retry.js";
-import type { PackageMetadata } from "./registry.js";
+import type { FetchRetryOptions } from "./fetch-retry.js";
+import {
+  RegistryFetcher,
+  type FetchOneResult,
+  type ParsedRegistryResponse,
+} from "./registry-base.js";
 import { parseSourceRepo, type SourceRepoRef } from "./source-repo.js";
 
-// ---------------------------------------------------------------------------
-// Go module proxy @latest response shape (fields we care about only)
-// ---------------------------------------------------------------------------
+export type {
+  PackageMetadata,
+  RegistryFetchResult as GoRegistryFetchResult,
+} from "./registry-base.js";
+
+const GO_PROXY_BASE = "https://proxy.golang.org";
+const DEFAULT_CONCURRENCY = 10;
 
 interface GoProxyLatest {
   Version?: string;
   Time?: string;
   [key: string]: unknown;
-}
-
-// ---------------------------------------------------------------------------
-// Public result types
-// ---------------------------------------------------------------------------
-
-export interface GoRegistryFetchResult {
-  /** Metadata keyed by module path. */
-  metadata: Map<string, PackageMetadata>;
-  /** Data-quality warnings to surface in the UI. */
-  warnings: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -117,162 +109,49 @@ export function encodeGoModulePath(modulePath: string): string {
   return result;
 }
 
-// ---------------------------------------------------------------------------
-// GoRegistryFetcher
-// ---------------------------------------------------------------------------
-
-const GO_PROXY_BASE = "https://proxy.golang.org";
-const DEFAULT_CONCURRENCY = 10;
-
-export class GoRegistryFetcher {
-  private readonly registryBase: string;
-  private readonly concurrency: number;
-  private readonly fetchRetryOptions: FetchRetryOptions;
-
+export class GoRegistryFetcher extends RegistryFetcher {
   constructor(
-    registryBase = GO_PROXY_BASE,
-    concurrency = DEFAULT_CONCURRENCY,
+    registryBase: string = GO_PROXY_BASE,
+    concurrency: number = DEFAULT_CONCURRENCY,
     fetchRetryOptions: FetchRetryOptions = {},
   ) {
-    this.registryBase = registryBase.replace(/\/$/, "");
-    this.concurrency = concurrency;
-    this.fetchRetryOptions = fetchRetryOptions;
-  }
-
-  /**
-   * Fetch latest-version metadata for all provided dependencies.
-   * Deduplicates by module path before fetching.
-   *
-   * Never throws — individual module failures are recorded as warnings
-   * and produce a partial-metadata entry so the pipeline can continue.
-   */
-  async fetchMetadata(dependencies: ParsedDependency[]): Promise<GoRegistryFetchResult> {
-    const warnings: string[] = [];
-
-    if (dependencies.length === 0) {
-      return { metadata: new Map(), warnings };
-    }
-
-    // Deduplicate — multiple dep_type entries for the same package_name
-    // need only one registry lookup (go.mod only ever produces
-    // "production", per ADR 0024, but this stays consistent with
-    // registry.ts/pypi-registry.ts's own dedup regardless).
-    const uniqueModules = [...new Set(dependencies.map((d) => d.package_name))];
-
-    // Run with bounded concurrency to avoid overwhelming the proxy.
-    const results = await this.fetchWithConcurrencyLimit(uniqueModules, this.concurrency);
-
-    const metadata = new Map<string, PackageMetadata>();
-
-    for (const result of results) {
-      if (result.warning !== undefined) {
-        warnings.push(result.warning);
-      }
-      metadata.set(result.packageName, {
-        packageName: result.packageName,
-        latestVersion: result.latestVersion,
-        // Always false/null for Phase 7 — see module docstring.
-        isDeprecated: false,
-        deprecationNote: null,
-        sourceRepo: result.sourceRepo,
-      });
-    }
-
-    return { metadata, warnings };
-  }
-
-  // ---------------------------------------------------------------------------
-  // Private helpers
-  // ---------------------------------------------------------------------------
-
-  /**
-   * Run fetchOne for each module path with at most `limit` in-flight at once.
-   */
-  private async fetchWithConcurrencyLimit(
-    packageNames: string[],
-    limit: number,
-  ): Promise<FetchOneResult[]> {
-    const results: FetchOneResult[] = [];
-    let index = 0;
-
-    async function worker(fetcher: GoRegistryFetcher): Promise<void> {
-      while (index < packageNames.length) {
-        const current = index++;
-        const name = packageNames[current];
-        if (name === undefined) continue;
-        results[current] = await fetcher.fetchOne(name);
-      }
-    }
-
-    const workers = Array.from({ length: Math.min(limit, packageNames.length) }, () =>
-      worker(this),
+    super(
+      {
+        registryBase: GO_PROXY_BASE,
+        defaultConcurrency: DEFAULT_CONCURRENCY,
+        registryLabel: "Go module proxy",
+        versionFieldName: "Version",
+      },
+      registryBase,
+      concurrency,
+      fetchRetryOptions,
     );
-    await Promise.all(workers);
+  }
 
-    return results;
+  protected override notFoundMessage(packageName: string): string {
+    return (
+      `Module "${packageName}" not found in the Go module proxy (404). ` +
+      `It may be unpublished, private, or the module path may be incorrect.`
+    );
   }
 
   /**
-   * Fetch metadata for a single module path.
-   * Returns a partial result with warnings on any failure — never throws.
+   * Go module paths conventionally ARE the repo location (e.g.
+   * "github.com/gorilla/mux"). Resolve once up front so the result
+   * is still present on 404 / network failure / parse error, not
+   * just on the happy path.
    */
-  private async fetchOne(packageName: string): Promise<FetchOneResult> {
-    const url = `${this.registryBase}/${encodeGoModulePath(packageName)}/@latest`;
+  protected override preResolveSourceRepo(packageName: string): SourceRepoRef | null {
+    return parseSourceRepo(packageName);
+  }
 
-    // Unlike npm/PyPI, this needs no response data at all — the module
-    // path itself typically *is* the repo location (e.g.
-    // "github.com/gorilla/mux"). Resolved independent of the fetch below
-    // so it's still present even on a network failure or 404.
-    const sourceRepo = parseSourceRepo(packageName);
+  protected buildPackageUrl(packageName: string): string {
+    return `${this.registryBase}/${encodeGoModulePath(packageName)}/@latest`;
+  }
 
-    let response: Response;
-    try {
-      response = await fetchWithRetry(url, undefined, this.fetchRetryOptions);
-    } catch (err) {
-      return failedResult(
-        packageName,
-        `Network error fetching Go module metadata for "${packageName}": ${String(err)}`,
-        sourceRepo,
-      );
-    }
-
-    if (response.status === 404) {
-      return failedResult(
-        packageName,
-        `Module "${packageName}" not found in the Go module proxy (404). ` +
-          `It may be unpublished, private, or the module path may be incorrect.`,
-        sourceRepo,
-      );
-    }
-
-    if (!response.ok) {
-      return failedResult(
-        packageName,
-        `Unexpected HTTP ${String(response.status)} fetching Go module metadata for "${packageName}".`,
-        sourceRepo,
-      );
-    }
-
-    let body: unknown;
-    try {
-      body = await response.json();
-    } catch (err) {
-      return failedResult(
-        packageName,
-        `Failed to parse Go module proxy response for "${packageName}": ${String(err)}`,
-        sourceRepo,
-      );
-    }
-
-    if (typeof body !== "object" || body === null || Array.isArray(body)) {
-      return failedResult(
-        packageName,
-        `Go module proxy returned an unexpected response shape for "${packageName}".`,
-        sourceRepo,
-      );
-    }
-
-    const proxyResult = body as GoProxyLatest;
+  protected mapResponse(packageName: string, parsed: ParsedRegistryResponse): FetchOneResult {
+    const proxyResult = parsed.body as GoProxyLatest;
+    const sourceRepo = parsed.preResolvedSourceRepo;
 
     const latestVersion =
       typeof proxyResult.Version === "string" && proxyResult.Version.trim() !== ""
@@ -281,47 +160,25 @@ export class GoRegistryFetcher {
 
     if (latestVersion === null) {
       // Not a hard failure — the module exists but the response has no
-      // Version field.
+      // Version field. sourceRepo is independent (resolved from the
+      // module path itself) so still present.
       return {
         packageName,
         latestVersion: null,
+        isDeprecated: false,
+        deprecationNote: null,
         sourceRepo,
-        warning:
-          `Go module proxy response for "${packageName}" has no Version field. ` +
-          `Latest version will be recorded as unknown.`,
+        warning: this.noVersionWarning(packageName),
       };
     }
 
     return {
       packageName,
       latestVersion,
+      isDeprecated: false,
+      deprecationNote: null,
       sourceRepo,
       warning: undefined,
     };
   }
-}
-
-// ---------------------------------------------------------------------------
-// Internal types
-// ---------------------------------------------------------------------------
-
-interface FetchOneResult {
-  packageName: string;
-  latestVersion: string | null;
-  sourceRepo: SourceRepoRef | null;
-  /** Set when a non-fatal data-quality issue occurred. */
-  warning: string | undefined;
-}
-
-function failedResult(
-  packageName: string,
-  warning: string,
-  sourceRepo: SourceRepoRef | null = null,
-): FetchOneResult {
-  return {
-    packageName,
-    latestVersion: null,
-    sourceRepo,
-    warning,
-  };
 }

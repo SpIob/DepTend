@@ -28,7 +28,6 @@
  */
 
 import { eq, inArray, sql } from "drizzle-orm";
-import type { NeonDatabase, NeonTransaction } from "drizzle-orm/neon-serverless";
 import {
   advisories,
   dependencyAdvisories,
@@ -39,9 +38,10 @@ import {
   type NewDependency,
   type NewIngestionRun,
 } from "../db/schema.js";
+import { type AnyNeonDb, type DbOrTx } from "../db/db-types.js";
+import { upsertOrganization } from "../db/organizations.js";
 import type { OsvFetchResult } from "./osv.js";
 import type { NpmRegistryFetchResult } from "./registry.js";
-import type { PyPIRegistryFetchResult } from "./pypi-registry.js";
 import type { IngestorResult } from "./interface.js";
 
 // ---------------------------------------------------------------------------
@@ -70,8 +70,18 @@ export interface WriteIngestionInput {
   // ever reads from registryResult, so a union costs nothing here and
   // avoids touching registry.ts/pypi-registry.ts, both already shipped and
   // tested (ADR 0022).
-  registryResult: NpmRegistryFetchResult | PyPIRegistryFetchResult;
+  registryResult: NpmRegistryFetchResult;
   triggeredBy: "cron" | "manual" | "submit";
+  /**
+   * Optional GitHub-side owner (org or user) profile for `repo.owner`,
+   * fetched by scripts/ingest.js via lookupGitHubOwnerMeta(). When
+   * present, the writer upserts the row into `organizations` and sets
+   * `repos.org_id` for the just-upserted repo — populating the per-org
+   * directory page (ADR 0047). Optional because the legacy test fixture
+   * and the submission manifest pre-check don't go through GitHub org
+   * fetching; an absent `org` is a no-op for those callers.
+   */
+  org?: { githubLogin: string; name: string | null; avatarUrl: string | null };
 }
 
 export interface WriteIngestionOutput {
@@ -97,13 +107,6 @@ export interface WriteIngestionOutput {
 // IngestionWriter
 // ---------------------------------------------------------------------------
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type AnyNeonDb = NeonDatabase<any>;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type AnyNeonTx = NeonTransaction<any, any>;
-/** Accepts both the outer db instance and the transaction callback parameter */
-type DbOrTx = AnyNeonDb | AnyNeonTx;
-
 export class IngestionWriter {
   constructor(private readonly db: AnyNeonDb) {}
 
@@ -121,6 +124,23 @@ export class IngestionWriter {
 
     // 1. Upsert repo
     const repoId = await this.upsertRepo(input.repo);
+
+    // 1b. If the caller supplied GitHub-side owner metadata, upsert the
+    // org row and link the repo to it. Done BEFORE the transactional
+    // advisory/dependency writes so a downstream failure of those writes
+    // still leaves the org/repo association in place — the next cron run
+    // can re-attempt without the link silently regressing to NULL.
+    // (ADR 0047.)
+    let orgId: string | null = null;
+    if (input.org !== undefined) {
+      const orgRow = await upsertOrganization(this.db, {
+        githubLogin: input.org.githubLogin,
+        name: input.org.name,
+        avatarUrl: input.org.avatarUrl,
+      });
+      orgId = orgRow.id;
+      await this.db.update(repos).set({ orgId }).where(eq(repos.id, repoId));
+    }
 
     // 2. Open ingestion run
     const runId = await this.openRun(repoId, input.triggeredBy);
@@ -333,7 +353,7 @@ export class IngestionWriter {
     tx: DbOrTx,
     repoId: string,
     ingestorResult: IngestorResult,
-    registryResult: NpmRegistryFetchResult | PyPIRegistryFetchResult,
+    registryResult: NpmRegistryFetchResult,
     osvResult: OsvFetchResult,
   ): Promise<{ depCount: number; depAdvisoryCount: number }> {
     if (ingestorResult.dependencies.length === 0) {

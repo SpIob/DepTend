@@ -89,7 +89,12 @@ export default async function RepoPage({
   };
 
   const [board, bookmarkedIds, ecosystems] = await Promise.all([
-    getRepoBoardPage(repo.id, filters),
+    // Per-repo caller passes a non-default limit so a single repo with more
+    // missions than BOARD_PAGE_SIZE doesn't silently truncate the user's
+    // list at 50. The per-repo page suppresses pagination (pageSize =
+    // board.missions.length, pageCount = 1) so the result is rendered whole.
+    // ADR 0031's pagination is unaffected on /missions.
+    getRepoBoardPage(repo.id, filters, { limit: 1000 }),
     login === undefined ? Promise.resolve(new Set<string>()) : getBookmarkedRepoIds(login),
     getRepoEcosystems(repo.id),
   ]);

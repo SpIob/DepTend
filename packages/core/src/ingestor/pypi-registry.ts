@@ -9,8 +9,8 @@
  *   - deprecationNote — always null for Phase 6 (see below)
  *
  * ...plus one field NOT persisted to the DB — `sourceRepo`, best-effort
- * resolved from info.project_urls/home_page (ADR 0029, Decision 1). PyPI
- * has no fixed schema for project_urls key names, so this is genuinely
+ * resolved from info.project_urls/home_page (ADR 0029, Decision 1). PyPI has
+ * no fixed schema for project_urls key names, so this is genuinely
  * best-effort — null more often than npm/Go's own resolution, by design,
  * not a bug. See resolvePyPISourceRepo() below.
  *
@@ -22,22 +22,18 @@
  * contexts.
  * No new runtime dependencies — uses the global fetch API (Node 18+).
  *
- * Fetching strategy:
- *   Same bounded-concurrency approach as NpmRegistryFetcher (default: 10
- *   concurrent requests). PyPI doesn't publish a specific unauthenticated
- *   rate limit for this endpoint the way npm's registry docs do — 10 is
- *   carried over as a conservative default matching npm's own, not a
- *   PyPI-specific documented number. Same per-repo (not per-run) budget
- *   reasoning as registry.ts: scripts/ingest.js processes repos strictly
- *   sequentially, so this never has to account for multiple repos'
- *   registry fetches overlapping.
+ * The fetch / dedup / bounded-concurrency / response-shape-checking shell
+ * lives in RegistryFetcher (registry-base.ts); this subclass only owns
+ * the PyPI-specific bits: the URL shape, the `info` sub-object
+ * unwrapping, the source-repo resolution heuristic, and the override
+ * for the 404 message ("on PyPI" not "in the PyPI registry").
  *
  * Known, accepted gap (ADR 0022): PyPI has no package-level "deprecated"
- * flag analogous to npm's. The closest signal, info.yanked, means something
- * narrower — a specific release was pulled, not "don't use this package" —
- * so it's deliberately not used as a proxy here. isDeprecated/
- * deprecationNote are always false/null for every PyPI dependency in
- * Phase 6, documented rather than guessed at.
+ * flag analogous to npm's. The closest signal, info.yanked, means
+ * something narrower — a specific release was pulled, not "don't use
+ * this package" — so it's deliberately not used as a proxy here.
+ * isDeprecated/deprecationNote are always false/null for every PyPI
+ * dependency in Phase 6, documented rather than guessed at.
  *
  * Phase 6 scope — intentionally out of scope (mirrors registry.ts's own
  * Phase 1 scope note):
@@ -49,14 +45,21 @@
  * ADR: docs/adr/0022-phase6-pypi-ecosystem.md
  */
 
-import type { ParsedDependency } from "./interface.js";
-import { fetchWithRetry, type FetchRetryOptions } from "./fetch-retry.js";
-import type { PackageMetadata } from "./registry.js";
+import type { FetchRetryOptions } from "./fetch-retry.js";
+import {
+  RegistryFetcher,
+  type FetchOneResult,
+  type ParsedRegistryResponse,
+} from "./registry-base.js";
 import { parseSourceRepo, type SourceRepoRef } from "./source-repo.js";
 
-// ---------------------------------------------------------------------------
-// PyPI JSON API response shape (fields we care about only)
-// ---------------------------------------------------------------------------
+export type {
+  PackageMetadata,
+  RegistryFetchResult as PyPIRegistryFetchResult,
+} from "./registry-base.js";
+
+const PYPI_REGISTRY_BASE = "https://pypi.org/pypi";
+const DEFAULT_CONCURRENCY = 10;
 
 interface PyPIProjectJson {
   // Explicitly | null, not just optional — unlike Step 2's TOML case, JSON
@@ -76,17 +79,6 @@ interface PyPIProjectJson {
     [key: string]: unknown;
   } | null;
   [key: string]: unknown;
-}
-
-// ---------------------------------------------------------------------------
-// Public result types
-// ---------------------------------------------------------------------------
-
-export interface PyPIRegistryFetchResult {
-  /** Metadata keyed by package name. */
-  metadata: Map<string, PackageMetadata>;
-  /** Data-quality warnings to surface in the UI. */
-  warnings: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -134,153 +126,45 @@ function resolvePyPISourceRepo(info: {
   return null;
 }
 
-// ---------------------------------------------------------------------------
-// PyPIRegistryFetcher
-// ---------------------------------------------------------------------------
-
-const PYPI_REGISTRY_BASE = "https://pypi.org/pypi";
-const DEFAULT_CONCURRENCY = 10;
-
-export class PyPIRegistryFetcher {
-  private readonly registryBase: string;
-  private readonly concurrency: number;
-  private readonly fetchRetryOptions: FetchRetryOptions;
-
+export class PyPIRegistryFetcher extends RegistryFetcher {
   constructor(
-    registryBase = PYPI_REGISTRY_BASE,
-    concurrency = DEFAULT_CONCURRENCY,
+    registryBase: string = PYPI_REGISTRY_BASE,
+    concurrency: number = DEFAULT_CONCURRENCY,
     fetchRetryOptions: FetchRetryOptions = {},
   ) {
-    this.registryBase = registryBase.replace(/\/$/, "");
-    this.concurrency = concurrency;
-    this.fetchRetryOptions = fetchRetryOptions;
-  }
-
-  /**
-   * Fetch latest version metadata for all provided dependencies.
-   * Deduplicates by package name before fetching.
-   *
-   * Never throws — individual package failures are recorded as warnings
-   * and produce a partial-metadata entry so the pipeline can continue.
-   */
-  async fetchMetadata(dependencies: ParsedDependency[]): Promise<PyPIRegistryFetchResult> {
-    const warnings: string[] = [];
-
-    if (dependencies.length === 0) {
-      return { metadata: new Map(), warnings };
-    }
-
-    // Deduplicate — multiple dep_type entries for the same package_name
-    // need only one registry lookup.
-    const uniquePackages = [...new Set(dependencies.map((d) => d.package_name))];
-
-    // Run with bounded concurrency to avoid overwhelming the registry.
-    const results = await this.fetchWithConcurrencyLimit(uniquePackages, this.concurrency);
-
-    const metadata = new Map<string, PackageMetadata>();
-
-    for (const result of results) {
-      if (result.warning !== undefined) {
-        warnings.push(result.warning);
-      }
-      metadata.set(result.packageName, {
-        packageName: result.packageName,
-        latestVersion: result.latestVersion,
-        // Always false/null for Phase 6 — see module docstring.
-        isDeprecated: false,
-        deprecationNote: null,
-        sourceRepo: result.sourceRepo,
-      });
-    }
-
-    return { metadata, warnings };
-  }
-
-  // ---------------------------------------------------------------------------
-  // Private helpers
-  // ---------------------------------------------------------------------------
-
-  /**
-   * Run fetchOne for each package name with at most `limit` in-flight at once.
-   */
-  private async fetchWithConcurrencyLimit(
-    packageNames: string[],
-    limit: number,
-  ): Promise<FetchOneResult[]> {
-    const results: FetchOneResult[] = [];
-    let index = 0;
-
-    async function worker(fetcher: PyPIRegistryFetcher): Promise<void> {
-      while (index < packageNames.length) {
-        const current = index++;
-        const name = packageNames[current];
-        if (name === undefined) continue;
-        results[current] = await fetcher.fetchOne(name);
-      }
-    }
-
-    const workers = Array.from({ length: Math.min(limit, packageNames.length) }, () =>
-      worker(this),
+    super(
+      {
+        registryBase: PYPI_REGISTRY_BASE,
+        defaultConcurrency: DEFAULT_CONCURRENCY,
+        registryLabel: "PyPI registry",
+        versionFieldName: "version",
+      },
+      registryBase,
+      concurrency,
+      fetchRetryOptions,
     );
-    await Promise.all(workers);
-
-    return results;
   }
 
-  /**
-   * Fetch metadata for a single package name.
-   * Returns a partial result with warnings on any failure — never throws.
-   */
-  private async fetchOne(packageName: string): Promise<FetchOneResult> {
-    const url = `${this.registryBase}/${encodeURIComponent(packageName)}/json`;
+  protected override notFoundMessage(packageName: string): string {
+    // PyPI's 404 message used "on PyPI" (idiomatic for the PyPI project
+    // index) rather than the base's default "in the <label>" template —
+    // preserve the original wording for log-search continuity.
+    return (
+      `Package "${packageName}" not found on PyPI (404). ` +
+      `It may be unpublished, removed, or the name may be incorrect.`
+    );
+  }
 
-    let response: Response;
-    try {
-      response = await fetchWithRetry(url, undefined, this.fetchRetryOptions);
-    } catch (err) {
-      return failedResult(
-        packageName,
-        `Network error fetching PyPI metadata for "${packageName}": ${String(err)}`,
-      );
-    }
+  protected buildPackageUrl(packageName: string): string {
+    return `${this.registryBase}/${encodeURIComponent(packageName)}/json`;
+  }
 
-    if (response.status === 404) {
-      return failedResult(
-        packageName,
-        `Package "${packageName}" not found on PyPI (404). ` +
-          `It may be unpublished, removed, or the name may be incorrect.`,
-      );
-    }
-
-    if (!response.ok) {
-      return failedResult(
-        packageName,
-        `Unexpected HTTP ${String(response.status)} fetching PyPI metadata for "${packageName}".`,
-      );
-    }
-
-    let body: unknown;
-    try {
-      body = await response.json();
-    } catch (err) {
-      return failedResult(
-        packageName,
-        `Failed to parse PyPI registry response for "${packageName}": ${String(err)}`,
-      );
-    }
-
-    if (typeof body !== "object" || body === null || Array.isArray(body)) {
-      return failedResult(
-        packageName,
-        `PyPI registry returned an unexpected response shape for "${packageName}".`,
-      );
-    }
-
-    const project = body as PyPIProjectJson;
+  protected mapResponse(packageName: string, parsed: ParsedRegistryResponse): FetchOneResult {
+    const project = parsed.body as PyPIProjectJson;
     const info = project.info;
 
     if (typeof info !== "object" || info === null || Array.isArray(info)) {
-      return failedResult(
+      return this.failedResult(
         packageName,
         `PyPI registry response for "${packageName}" is missing an "info" object.`,
       );
@@ -297,39 +181,22 @@ export class PyPIRegistryFetcher {
       return {
         packageName,
         latestVersion: null,
+        // Always false/null for Phase 6 — see module docstring.
+        isDeprecated: false,
+        deprecationNote: null,
         sourceRepo,
-        warning:
-          `PyPI registry response for "${packageName}" has no version field. ` +
-          `Latest version will be recorded as unknown.`,
+        warning: this.noVersionWarning(packageName),
       };
     }
 
     return {
       packageName,
       latestVersion,
+      // Always false/null for Phase 6 — see module docstring.
+      isDeprecated: false,
+      deprecationNote: null,
       sourceRepo,
       warning: undefined,
     };
   }
-}
-
-// ---------------------------------------------------------------------------
-// Internal types
-// ---------------------------------------------------------------------------
-
-interface FetchOneResult {
-  packageName: string;
-  latestVersion: string | null;
-  sourceRepo: SourceRepoRef | null;
-  /** Set when a non-fatal data-quality issue occurred. */
-  warning: string | undefined;
-}
-
-function failedResult(packageName: string, warning: string): FetchOneResult {
-  return {
-    packageName,
-    latestVersion: null,
-    sourceRepo: null,
-    warning,
-  };
 }

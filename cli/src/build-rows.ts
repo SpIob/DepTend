@@ -25,7 +25,6 @@ import type { Advisory, Dependency, Repo } from "@deptend/core/db/schema.js";
 import type { IngestorResult } from "@deptend/core/ingestor/interface.js";
 import type { OsvFetchResult } from "@deptend/core/ingestor/osv.js";
 import type { NpmRegistryFetchResult } from "@deptend/core/ingestor/registry.js";
-import type { PyPIRegistryFetchResult } from "@deptend/core/ingestor/pypi-registry.js";
 import type { GitHubRepoMeta } from "@deptend/core/ingestor/github-meta.js";
 
 /** Builds an in-memory Repo row from GitHub API metadata. */
@@ -65,7 +64,7 @@ export function buildRepo(ghMeta: GitHubRepoMeta): Repo {
 export function buildDependencies(
   repoId: string,
   ingestorResult: IngestorResult,
-  registryResult: NpmRegistryFetchResult | PyPIRegistryFetchResult,
+  registryResult: NpmRegistryFetchResult,
 ): Dependency[] {
   const now = new Date();
 

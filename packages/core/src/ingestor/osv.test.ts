@@ -692,7 +692,7 @@ describe("OsvFetcher", () => {
       vi.stubGlobal("fetch", fetchMock);
 
       await expect(fetcher.fetchAdvisories([dep("pkg")])).rejects.toThrow(
-        /Network error querying OSV/,
+        /OSV batch API.*network error/,
       );
       expect(fetchMock).toHaveBeenCalledTimes(2);
     });
@@ -719,7 +719,7 @@ describe("OsvFetcher", () => {
         vi.fn((): Response => new Response("not json", { status: 200 })),
       );
 
-      await expect(fetcher.fetchAdvisories([dep("pkg")])).rejects.toThrow(/Failed to parse OSV/);
+      await expect(fetcher.fetchAdvisories([dep("pkg")])).rejects.toThrow(/OSV batch API.*parse/);
     });
 
     it("throws when response is missing the results array", async () => {

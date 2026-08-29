@@ -20,7 +20,7 @@ import type { WriteIngestionInput } from "./writer.js";
 import type { IngestorResult } from "./interface.js";
 import type { OsvFetchResult } from "./osv.js";
 import type { NpmRegistryFetchResult } from "./registry.js";
-import { advisories, dependencies, type NewAdvisory } from "../db/schema.js";
+import { advisories, dependencies, repos, type NewAdvisory } from "../db/schema.js";
 
 /** The exact type IngestionWriter's constructor expects, derived directly
  * from the class so the mock stays in sync if the constructor signature
@@ -118,15 +118,24 @@ function makeMockDb(overrides: {
     insertedValues: [],
   };
 
-  // Counter to distinguish successive .returning() calls
-  let returningCallCount = 0;
-
   /**
    * @param insertTableName - when this chain originated from insert(table),
    *   the table name, so .values() can record which table its rows were
    *   meant for. Left undefined for update()/select()/delete() chains.
    */
   function makeChain(insertTableName?: string): Chain {
+    // Route the chain's returning() result by the originating insert
+    // table name rather than call order. Inserts are:
+    //     - the repos upsert
+    //     - the optional organizations upsert (only when WriteIngestionInput.org
+    //       is provided; the writer adds it after the repo upsert per ADR 0047)
+    //     - the ingestion_runs insert
+    // Inside the transaction:
+    //     - advisories
+    //     - dependencies
+    //     - dependency_advisories
+    //     - dependencies (prune delete)
+    // Per-table routing is more robust than a counter as the writer grows.
     const chain: Chain = {
       values: (rows: unknown[]): Chain => {
         if (insertTableName !== undefined) {
@@ -142,13 +151,24 @@ function makeMockDb(overrides: {
       where: (): Promise<unknown[]> => Promise.resolve([]),
       from: (): Chain => chain,
       returning: (): Promise<unknown[]> => {
-        returningCallCount++;
-        // 1st returning call → repos upsert
-        if (returningCallCount === 1) return Promise.resolve([repoRow]);
-        // 2nd returning call → ingestion_runs insert
-        if (returningCallCount === 2) return Promise.resolve([runRow]);
-        // 3rd returning call → dependencies upsert
-        if (returningCallCount === 3) return Promise.resolve(depRows);
+        if (insertTableName === getTableName(advisories)) {
+          return Promise.resolve(advisoryRows);
+        }
+        if (insertTableName === getTableName(dependencies)) {
+          return Promise.resolve(depRows);
+        }
+        if (insertTableName === getTableName(repos)) {
+          return Promise.resolve([repoRow]);
+        }
+        if (insertTableName === "ingestion_runs") {
+          return Promise.resolve([runRow]);
+        }
+        if (insertTableName === "organizations") {
+          // The org upsert returns the org row. We don't track that separately
+          // in makeMockDb's overrides; hand back a synthetic orgRow and let
+          // tests assert on the insertedValues + update(repos).set() instead.
+          return Promise.resolve([{ id: "org-uuid-1", githubLogin: "stub" }]);
+        }
         return Promise.resolve([]);
       },
     };
@@ -444,6 +464,70 @@ describe("IngestionWriter", () => {
 
       expect(result.advisoriesWritten).toBe(0);
       expect(result.dependencyAdvisoriesWritten).toBe(0);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // ADR 0047: optional `org` upsert before the transactional write block,
+  // so the per-org directory page can resolve. When the caller doesn't pass
+  // `org`, this step is a no-op — keeps manifest-check.ts and the legacy
+  // test fixture working without forcing them to fetch GitHub-side org
+  // metadata just to call the writer.
+  // -------------------------------------------------------------------------
+  describe("write — org step (ADR 0047)", () => {
+    it("upserts the org and links the repo when `org` is provided", async () => {
+      const input = makeInput({
+        org: {
+          githubLogin: "octocat",
+          name: "Octo Org",
+          avatarUrl: "https://avatars.githubusercontent.com/u/1",
+        },
+      });
+
+      await writer.write(input);
+
+      // Org row was inserted with the right shape
+      const orgInsert = db._calls.insertedValues.find((v) => v.table === "organizations");
+      expect(orgInsert).toBeDefined();
+      // .values() records whatever was passed; upsertOrganization passes
+      // a single object, so rows[0] is the inserted org (or rows itself if
+      // a future bulk insert is added).
+      const rawRows = orgInsert?.rows as unknown;
+      const insertedOrg = Array.isArray(rawRows)
+        ? (rawRows[0] as Record<string, unknown> | undefined)
+        : (rawRows as Record<string, unknown> | undefined);
+      expect(insertedOrg).toEqual({
+        githubLogin: "octocat",
+        name: "Octo Org",
+        avatarUrl: "https://avatars.githubusercontent.com/u/1",
+      });
+
+      // repos.orgId was set via update().set({orgId}) — the second update()
+      // call is the one before closeRun (repos.ingestionStatus).
+      // 1st update = repos.orgId, 2nd update = closeRun on ingestion_runs,
+      // 3rd update = repos.ingestionStatus.
+      const orgIdSet = db._calls.setCalls.find((s) =>
+        Object.prototype.hasOwnProperty.call(s, "orgId"),
+      );
+      expect(orgIdSet).toBeDefined();
+      expect(orgIdSet?.orgId).toBe("org-uuid-1");
+    });
+
+    it("skips the org step entirely when `org` is not provided", async () => {
+      // Default makeInput() has no org field.
+      const input = makeInput();
+
+      await writer.write(input);
+
+      // No organizations table should have been touched.
+      const orgInsert = db._calls.insertedValues.find((v) => v.table === "organizations");
+      expect(orgInsert).toBeUndefined();
+
+      // No update should have set orgId.
+      const orgIdSet = db._calls.setCalls.find((s) =>
+        Object.prototype.hasOwnProperty.call(s, "orgId"),
+      );
+      expect(orgIdSet).toBeUndefined();
     });
   });
 

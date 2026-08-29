@@ -79,21 +79,42 @@ export function buildSignalKey(dependencyId: string, targetVersion: string | nul
 // ---------------------------------------------------------------------------
 
 /**
- * Normalizes a release tag ("v1.2.3", "1.2.3") into a comparable version
- * string for the given ecosystem, or null if it doesn't parse — an
- * unparseable tag (a codename, "nightly", a non-version tag some repos
- * use for non-release tags) is skipped rather than guessed at.
+ * Per-ecosystem version parsing/comparison dispatch — release-tag matching
+ * only, NOT the semver_bump inference mission-scorer.ts owns (see module
+ * docstring). Two near-identical 2-case ternaries lived here before
+ * (`parseReleaseTag` and `compareVersions`); the dispatch table below
+ * folds them into a `Record<Ecosystem, …>` so adding a new ecosystem is
+ * one row, not two patched functions.
+ *
+ * `parseReleaseTag` normalizes a release tag ("v1.2.3", "1.2.3") into a
+ * comparable version string for the given ecosystem, or null if it
+ * doesn't parse — an unparseable tag (a codename, "nightly", a non-version
+ * tag some repos use for non-release tags) is skipped rather than guessed
+ * at.
  */
+const RELEASE_TAG_PARSER: Record<Ecosystem, (candidate: string) => string | null> = {
+  pypi: (candidate) => pep440Valid(candidate),
+  // Both npm and Go use semver-style version strings. `semver.valid` accepts
+  // the bare form ("1.2.3") and rejects anything else; the leading
+  // "v"/"V" strip happens in parseReleaseTag's caller since the strip is
+  // shared across both ecosystems.
+  npm: (candidate) => semver.valid(candidate),
+  go: (candidate) => semver.valid(candidate),
+};
+
 function parseReleaseTag(ecosystem: Ecosystem, tag: string): string | null {
   const candidate = tag.trim().replace(/^[vV](?=\d)/, "");
-  if (ecosystem === "pypi") {
-    return pep440Valid(candidate);
-  }
-  return semver.valid(candidate);
+  return RELEASE_TAG_PARSER[ecosystem](candidate);
 }
 
+const VERSION_COMPARATOR: Record<Ecosystem, (a: string, b: string) => number> = {
+  pypi: pep440Compare,
+  npm: semver.compare,
+  go: semver.compare,
+};
+
 function compareVersions(ecosystem: Ecosystem, a: string, b: string): number {
-  return ecosystem === "pypi" ? pep440Compare(a, b) : semver.compare(a, b);
+  return VERSION_COMPARATOR[ecosystem](a, b);
 }
 
 // ---------------------------------------------------------------------------

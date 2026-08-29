@@ -206,7 +206,7 @@ describe("fetchGitHubRepoMeta", () => {
     vi.stubGlobal("fetch", mockFetch(500, null));
 
     await expect(fetchGitHubRepoMeta(OWNER, NAME, null, NO_DELAY)).rejects.toThrow(
-      /GitHub API returned HTTP 500 for owner\/repo/,
+      /GitHub API for owner\/repo.*HTTP 500/s,
     );
   });
 
@@ -217,7 +217,7 @@ describe("fetchGitHubRepoMeta", () => {
     );
 
     await expect(fetchGitHubRepoMeta(OWNER, NAME, null, NO_DELAY)).rejects.toThrow(
-      /Network error calling GitHub API for owner\/repo.*ECONNRESET/s,
+      /GitHub API for owner\/repo.*network error.*ECONNRESET/s,
     );
   });
 });

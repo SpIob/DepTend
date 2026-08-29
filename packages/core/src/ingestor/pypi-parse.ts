@@ -347,24 +347,21 @@ function attemptRequirementsTxt(raw: string | null, source: string): Requirement
     const withoutComment = line.replace(/\s+#.*$/, "").trim();
     if (withoutComment === "") continue;
 
-    const parsedEntry = parsePep508(withoutComment);
-    if (parsedEntry === null) {
-      warnings.push(`Skipping unparseable requirements.txt line at ${source}: "${line}"`);
-      continue;
-    }
-
-    if (!isValidPyPIPackageName(parsedEntry.name)) {
-      warnings.push(
-        `Skipping invalid package name "${parsedEntry.name}" in requirements.txt at ${source}.`,
-      );
-      continue;
-    }
-
-    dependencies.push({
-      package_name: parsedEntry.name,
-      version_spec: parsedEntry.versionSpec,
-      dep_type: "production",
-    });
+    tryAddPep508Entry(
+      withoutComment,
+      "production",
+      dependencies,
+      (reason, entryText) => {
+        switch (reason) {
+          case "not-string":
+          case "unparseable":
+            return `Skipping unparseable requirements.txt line at ${source}: "${line}"`;
+          case "invalid-name":
+            return `Skipping invalid package name "${entryText}" in requirements.txt at ${source}.`;
+        }
+      },
+      warnings,
+    );
   }
 
   return { resolved: true, dependencies, warnings };
@@ -437,33 +434,35 @@ function parsePep508(entry: string): Pep508Entry | null {
   return { name, versionSpec: rest };
 }
 
-function pushParsedPep508(
+/**
+ * Three-step validation + push, shared by both PEP 508 entry sources
+ * (pyproject.toml arrays and requirements.txt lines). Each caller passes
+ * an `onSkip` callback that builds a context-specific warning string —
+ * the pyproject path says which key ([project.dependencies] vs
+ * [project.optional-dependencies.test]), the requirements path says
+ * which line of the file.
+ */
+function tryAddPep508Entry(
   entry: unknown,
-  fieldDescription: string,
-  source: string,
   depType: ParsedDependency["dep_type"],
   dependencies: ParsedDependency[],
+  onSkip: (reason: "not-string" | "unparseable" | "invalid-name", entry: string) => string,
   warnings: string[],
 ): void {
   if (typeof entry !== "string" || entry.trim() === "") {
-    warnings.push(
-      `Skipping non-string or empty entry in "${fieldDescription}" in pyproject.toml at ${source}.`,
-    );
+    warnings.push(onSkip("not-string", String(entry)));
     return;
   }
 
-  const parsedEntry = parsePep508(entry.trim());
+  const trimmed = entry.trim();
+  const parsedEntry = parsePep508(trimmed);
   if (parsedEntry === null) {
-    warnings.push(
-      `Skipping unparseable entry "${entry}" in "${fieldDescription}" in pyproject.toml at ${source}.`,
-    );
+    warnings.push(onSkip("unparseable", trimmed));
     return;
   }
 
   if (!isValidPyPIPackageName(parsedEntry.name)) {
-    warnings.push(
-      `Skipping invalid package name "${parsedEntry.name}" in "${fieldDescription}" in pyproject.toml at ${source}.`,
-    );
+    warnings.push(onSkip("invalid-name", parsedEntry.name));
     return;
   }
 
@@ -472,6 +471,32 @@ function pushParsedPep508(
     version_spec: parsedEntry.versionSpec,
     dep_type: depType,
   });
+}
+
+function pushParsedPep508(
+  entry: unknown,
+  fieldDescription: string,
+  source: string,
+  depType: ParsedDependency["dep_type"],
+  dependencies: ParsedDependency[],
+  warnings: string[],
+): void {
+  tryAddPep508Entry(
+    entry,
+    depType,
+    dependencies,
+    (reason, entryText) => {
+      switch (reason) {
+        case "not-string":
+          return `Skipping non-string or empty entry in "${fieldDescription}" in pyproject.toml at ${source}.`;
+        case "unparseable":
+          return `Skipping unparseable entry "${entryText}" in "${fieldDescription}" in pyproject.toml at ${source}.`;
+        case "invalid-name":
+          return `Skipping invalid package name "${entryText}" in "${fieldDescription}" in pyproject.toml at ${source}.`;
+      }
+    },
+    warnings,
+  );
 }
 
 // ---------------------------------------------------------------------------

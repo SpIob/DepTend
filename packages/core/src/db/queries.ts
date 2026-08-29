@@ -398,43 +398,45 @@ function buildBoardTallySelect(
       repoScope,
     )}))::int`,
   };
-  // Column names are prefixed by axis because severity and effort share the
-  // values "low"/"medium"/"high" — severity_low vs effort_low must not collide.
-  for (const value of severityEnum.enumValues) {
-    tallySelect[`severity_${value}`] =
-      sql`(count(*) filter (where ${BOARD_SEVERITY_EXPR} = ${value} and ${condSql(
-        parts.ecosystem,
-        parts.effort,
-        parts.missionType,
-        repoScope,
-      )}))::int`;
-  }
-  for (const value of ecosystemEnum.enumValues) {
-    tallySelect[`ecosystem_${value}`] =
-      sql`(count(*) filter (where ${BOARD_ECOSYSTEM_EXPR} = ${value} and ${condSql(
-        parts.severity,
-        parts.effort,
-        parts.missionType,
-        repoScope,
-      )}))::int`;
-  }
-  for (const value of effortLabelEnum.enumValues) {
-    tallySelect[`effort_${value}`] =
-      sql`(count(*) filter (where ${BOARD_EFFORT_EXPR} = ${value} and ${condSql(
-        parts.severity,
-        parts.ecosystem,
-        parts.missionType,
-        repoScope,
-      )}))::int`;
-  }
-  for (const value of missionTypeEnum.enumValues) {
-    tallySelect[`missionType_${value}`] =
-      sql`(count(*) filter (where ${BOARD_MISSION_TYPE_EXPR} = ${value} and ${condSql(
-        parts.severity,
-        parts.ecosystem,
-        parts.effort,
-        repoScope,
-      )}))::int`;
+  // Per-axis table driven by the four closed-enum axes. Each entry knows
+  // its enum values, the SQL expression the count compares against, the
+  // tally-key prefix (so severity_low vs effort_low never collide —
+  // see the comment on `total` below), and which axes to keep in the
+  // per-axis filter ("how many if I also picked this"). Each loop below is
+  // `for (const value of axis.values)` generating one count(*) column
+  // per enum value, where the FILTER clause excludes the axis's own
+  // condition (the count would otherwise equal `total`).
+  const axes: readonly {
+    values:
+      readonly Severity[] | readonly Ecosystem[] | readonly EffortLabel[] | readonly MissionType[];
+    expr: SQL;
+    prefix: "severity" | "ecosystem" | "effort" | "missionType";
+  }[] = [
+    { values: severityEnum.enumValues, expr: BOARD_SEVERITY_EXPR, prefix: "severity" },
+    { values: ecosystemEnum.enumValues, expr: BOARD_ECOSYSTEM_EXPR, prefix: "ecosystem" },
+    { values: effortLabelEnum.enumValues, expr: BOARD_EFFORT_EXPR, prefix: "effort" },
+    { values: missionTypeEnum.enumValues, expr: BOARD_MISSION_TYPE_EXPR, prefix: "missionType" },
+  ];
+
+  for (const axis of axes) {
+    const otherAxisParts: BoardConditionParts = {
+      status: parts.status,
+      q: parts.q,
+      severity: axis.prefix === "severity" ? undefined : parts.severity,
+      ecosystem: axis.prefix === "ecosystem" ? undefined : parts.ecosystem,
+      effort: axis.prefix === "effort" ? undefined : parts.effort,
+      missionType: axis.prefix === "missionType" ? undefined : parts.missionType,
+    };
+    for (const value of axis.values) {
+      tallySelect[`${axis.prefix}_${value}`] =
+        sql`(count(*) filter (where ${axis.expr} = ${value} and ${condSql(
+          otherAxisParts.severity,
+          otherAxisParts.ecosystem,
+          otherAxisParts.effort,
+          otherAxisParts.missionType,
+          repoScope,
+        )}))::int`;
+    }
   }
   return tallySelect;
 }
@@ -488,6 +490,46 @@ async function runBoardTally(
 }
 
 /**
+ * Shared body of getBoardMissionsWithScoresPage and getRepoBoardPage:
+ * run the row query and the tally query in parallel, then assemble the
+ * BoardPage. The two public functions differ only in whether a `repoScope`
+ * is included in the row query's WHERE (and passed to the tally); this
+ * helper takes that scope as a single optional argument so the two
+ * callers stay one-liners.
+ */
+async function fetchBoardPage(
+  db: ReadonlyDb,
+  parts: BoardConditionParts,
+  filters: BoardFilters,
+  options: { limit: number; offset: number; repoScope?: SQL },
+): Promise<BoardPage> {
+  const whereParts = [
+    parts.status,
+    parts.q,
+    parts.severity,
+    parts.ecosystem,
+    parts.effort,
+    parts.missionType,
+    ...(options.repoScope !== undefined ? [options.repoScope] : []),
+  ];
+
+  const [rows, { total, facets }] = await Promise.all([
+    missionJoinRows(db)
+      .where(and(...whereParts))
+      .orderBy(...boardOrderBy(filters.sort))
+      .limit(options.limit)
+      .offset(options.offset),
+    runBoardTally(db, parts, options.repoScope),
+  ]);
+
+  return {
+    missions: rows.map(toMissionWithScore),
+    total,
+    facets,
+  };
+}
+
+/**
  * One page of the board-wide /missions listing (ADR 0031): open+claimed
  * missions matching the given filters, ordered server-side, plus the
  * unpaginated total and per-axis facet counts the filter UI needs.
@@ -514,30 +556,7 @@ export async function getBoardMissionsWithScoresPage(
   const limit = Math.max(1, options.limit ?? BOARD_PAGE_SIZE);
   const offset = Math.max(0, options.offset ?? 0);
   const parts = buildBoardConditionParts(filters);
-
-  const [rows, { total, facets }] = await Promise.all([
-    missionJoinRows(db)
-      .where(
-        and(
-          parts.status,
-          parts.q,
-          parts.severity,
-          parts.ecosystem,
-          parts.effort,
-          parts.missionType,
-        ),
-      )
-      .orderBy(...boardOrderBy(filters.sort))
-      .limit(limit)
-      .offset(offset),
-    runBoardTally(db, parts, undefined),
-  ]);
-
-  return {
-    missions: rows.map(toMissionWithScore),
-    total,
-    facets,
-  };
+  return fetchBoardPage(db, parts, filters, { limit, offset });
 }
 
 /**
@@ -549,6 +568,12 @@ export async function getBoardMissionsWithScoresPage(
  * pagination). Kept as a sibling of getBoardMissionsWithScoresPage rather
  * than a repoId field on BoardFilters so the public filter type stays
  * about board scope, not single-repo shortcuts.
+ *
+ * `options.limit` defaults to BOARD_PAGE_SIZE (50) so an unpaged caller
+ * still gets a server-side LIMIT — the board-wide list never asks for
+ * everything. The per-repo page passes its own limit (see app/src/app/repo/
+ * [owner]/[name]/page.tsx) because it suppresses pagination and would
+ * otherwise silently drop a single repo's missions past 50.
  */
 export async function getRepoBoardPage(
   db: ReadonlyDb,
@@ -559,32 +584,11 @@ export async function getRepoBoardPage(
   const limit = Math.max(1, options.limit ?? BOARD_PAGE_SIZE);
   const offset = Math.max(0, options.offset ?? 0);
   const parts = buildBoardConditionParts(filters);
-  const repoScope = eq(missions.repoId, repoId);
-
-  const [rows, { total, facets }] = await Promise.all([
-    missionJoinRows(db)
-      .where(
-        and(
-          parts.status,
-          parts.q,
-          parts.severity,
-          parts.ecosystem,
-          parts.effort,
-          parts.missionType,
-          repoScope,
-        ),
-      )
-      .orderBy(...boardOrderBy(filters.sort))
-      .limit(limit)
-      .offset(offset),
-    runBoardTally(db, parts, repoScope),
-  ]);
-
-  return {
-    missions: rows.map(toMissionWithScore),
-    total,
-    facets,
-  };
+  return fetchBoardPage(db, parts, filters, {
+    limit,
+    offset,
+    repoScope: eq(missions.repoId, repoId),
+  });
 }
 
 /** Count of repos that have completed at least one ingestion run. */
