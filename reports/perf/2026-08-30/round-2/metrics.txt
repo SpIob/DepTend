@@ -1,0 +1,21 @@
+=== Round 2 warm metrics ===
+
+--- home (3 warm repeats) ---
+  iter=1:  FCP=0.4 s  LCP=0.6 s  TBT=10 ms  CLS=0.03  DocTTFB=Root document took 40 ms  score=100/100  bytes=Total size was 138 KiB
+  iter=2:  FCP=0.4 s  LCP=0.6 s  TBT=0 ms  CLS=0.03  DocTTFB=Root document took 40 ms  score=100/100  bytes=Total size was 136 KiB
+  iter=3:  FCP=0.4 s  LCP=0.7 s  TBT=30 ms  CLS=0.03  DocTTFB=Root document took 40 ms  score=100/100  bytes=Total size was 137 KiB
+
+--- missions (3 warm repeats) ---
+  iter=1:  FCP=0.4 s  LCP=0.7 s  TBT=20 ms  CLS=0  DocTTFB=Root document took 40 ms  score=100/100  bytes=Total size was 155 KiB
+  iter=2:  FCP=0.5 s  LCP=0.8 s  TBT=30 ms  CLS=0  DocTTFB=Root document took 40 ms  score=99/100  bytes=Total size was 155 KiB
+  iter=3:  FCP=0.4 s  LCP=0.7 s  TBT=30 ms  CLS=0.002  DocTTFB=Root document took 40 ms  score=100/100  bytes=Total size was 155 KiB
+
+--- org-spiob (3 warm repeats) ---
+  iter=1:  FCP=0.4 s  LCP=0.6 s  TBT=0 ms  CLS=0.038  DocTTFB=Root document took 40 ms  score=100/100  bytes=Total size was 137 KiB
+  iter=2:  FCP=0.4 s  LCP=0.6 s  TBT=0 ms  CLS=0.038  DocTTFB=Root document took 40 ms  score=100/100  bytes=Total size was 137 KiB
+  iter=3:  FCP=0.4 s  LCP=0.5 s  TBT=10 ms  CLS=0.038  DocTTFB=Root document took 40 ms  score=100/100  bytes=Total size was 137 KiB
+
+--- repo-requests (3 warm repeats) ---
+  iter=1:  FCP=0.4 s  LCP=0.7 s  TBT=40 ms  CLS=0  DocTTFB=Root document took 40 ms  score=100/100  bytes=Total size was 164 KiB
+  iter=2:  FCP=0.4 s  LCP=0.7 s  TBT=20 ms  CLS=0  DocTTFB=Root document took 40 ms  score=100/100  bytes=Total size was 164 KiB
+  iter=3:  FCP=0.4 s  LCP=0.8 s  TBT=50 ms  CLS=0  DocTTFB=Root document took 40 ms  score=100/100  bytes=Total size was 164 KiB

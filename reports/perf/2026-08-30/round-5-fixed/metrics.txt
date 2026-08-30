@@ -1,0 +1,25 @@
+=== Round 5 FIXED metrics ===
+
+--- org-spiob-cold ---
+  FCP=0.4 s  LCP=0.7 s  TBT=0 ms  CLS=0.009  DocTTFB=Root document took 40 ms  score=100/100  bytes=Total size was 143 KiB
+
+--- org-spiob-warm-1 ---
+  FCP=0.4 s  LCP=0.6 s  TBT=0 ms  CLS=0.008  DocTTFB=Root document took 40 ms  score=100/100  bytes=Total size was 141 KiB
+
+--- org-spiob-warm-2 ---
+  FCP=0.4 s  LCP=0.5 s  TBT=0 ms  CLS=0.008  DocTTFB=Root document took 40 ms  score=100/100  bytes=Total size was 141 KiB
+
+--- org-spiob-warm-3 ---
+  FCP=0.4 s  LCP=0.5 s  TBT=0 ms  CLS=0.008  DocTTFB=Root document took 40 ms  score=100/100  bytes=Total size was 141 KiB
+
+--- org-psf-cold ---
+  FCP=0.3 s  LCP=0.5 s  TBT=0 ms  CLS=0.032  DocTTFB=Root document took 40 ms  score=100/100  bytes=Total size was 141 KiB
+
+--- org-psf-warm-1 ---
+  FCP=0.4 s  LCP=0.5 s  TBT=0 ms  CLS=0.032  DocTTFB=Root document took 40 ms  score=100/100  bytes=Total size was 140 KiB
+
+--- org-psf-warm-2 ---
+  FCP=0.3 s  LCP=0.4 s  TBT=0 ms  CLS=0.033  DocTTFB=Root document took 40 ms  score=100/100  bytes=Total size was 140 KiB
+
+--- org-psf-warm-3 ---
+  FCP=0.3 s  LCP=0.5 s  TBT=0 ms  CLS=0.032  DocTTFB=Root document took 40 ms  score=100/100  bytes=Total size was 140 KiB

@@ -1,0 +1,30 @@
+=== curl probes: /repo/SpIob/deptend-go-test-fixture (55 missions) ===
+  iter=1  status=200  ttfb=0.219709s  total=0.330607s  size=549644
+  iter=2  status=200  ttfb=0.190900s  total=0.271982s  size=549644
+  iter=3  status=200  ttfb=0.181312s  total=0.281658s  size=549644
+  iter=4  status=200  ttfb=0.171948s  total=0.264913s  size=549644
+  iter=5  status=200  ttfb=0.175928s  total=0.287006s  size=549644
+  iter=6  status=200  ttfb=0.186091s  total=0.290464s  size=549644
+  iter=7  status=200  ttfb=0.192159s  total=0.270900s  size=549644
+  iter=8  status=200  ttfb=0.173290s  total=0.255885s  size=549644
+  iter=9  status=200  ttfb=0.183394s  total=0.265334s  size=549644
+  iter=10  status=200  ttfb=0.169849s  total=0.242914s  size=549644
+
+=== curl probes: /repo/psf/requests (51 missions) for comparison ===
+  iter=1  status=200  ttfb=0.209073s  total=0.284305s  size=450408
+  iter=2  status=200  ttfb=0.203602s  total=0.284032s  size=450408
+  iter=3  status=200  ttfb=0.202690s  total=0.286900s  size=450408
+  iter=4  status=200  ttfb=0.171734s  total=0.257122s  size=450408
+  iter=5  status=200  ttfb=0.170152s  total=0.246038s  size=450408
+  iter=6  status=200  ttfb=0.186843s  total=0.279539s  size=450408
+  iter=7  status=200  ttfb=0.181275s  total=0.250405s  size=450408
+  iter=8  status=200  ttfb=0.278338s  total=0.345506s  size=450408
+  iter=9  status=200  ttfb=0.198391s  total=0.275513s  size=450408
+  iter=10  status=200  ttfb=0.202821s  total=0.323127s  size=450408
+
+=== curl probes: /repo/SpIob/Bagong-Enerhiya (smallest) ===
+  iter=1  status=200  ttfb=0.202739s  total=0.219607s  size=23391
+  iter=2  status=200  ttfb=0.189394s  total=0.201668s  size=23391
+  iter=3  status=200  ttfb=0.198791s  total=0.202239s  size=23391
+  iter=4  status=200  ttfb=0.198060s  total=0.208735s  size=23391
+  iter=5  status=200  ttfb=0.177733s  total=0.197781s  size=23391

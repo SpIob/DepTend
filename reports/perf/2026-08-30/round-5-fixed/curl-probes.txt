@@ -1,0 +1,23 @@
+=== curl probes: /org/SpIob (now renders 3 repos) ===
+  iter=1  status=200  ttfb=0.205972s  total=0.235319s  size=29460
+  iter=2  status=200  ttfb=0.178519s  total=0.222979s  size=29460
+  iter=3  status=200  ttfb=0.179986s  total=0.202668s  size=29460
+  iter=4  status=200  ttfb=0.190254s  total=0.229432s  size=29460
+  iter=5  status=200  ttfb=0.174143s  total=0.187254s  size=29460
+  iter=6  status=200  ttfb=0.185921s  total=0.210830s  size=29460
+  iter=7  status=200  ttfb=0.169537s  total=0.184153s  size=29460
+  iter=8  status=200  ttfb=0.166508s  total=0.178135s  size=29460
+  iter=9  status=200  ttfb=0.168624s  total=0.182510s  size=29460
+  iter=10  status=200  ttfb=0.178043s  total=0.197869s  size=29460
+
+=== curl probes: /org/psf (now renders 1 repo) ===
+  iter=1  status=200  ttfb=0.173709s  total=0.183151s  size=23108
+  iter=2  status=200  ttfb=0.174431s  total=0.186161s  size=23108
+  iter=3  status=200  ttfb=0.178781s  total=0.181169s  size=23108
+  iter=4  status=200  ttfb=0.165337s  total=0.173729s  size=23108
+  iter=5  status=200  ttfb=0.178370s  total=0.187978s  size=23108
+  iter=6  status=200  ttfb=0.170255s  total=0.177145s  size=23108
+  iter=7  status=200  ttfb=0.167795s  total=0.172821s  size=23108
+  iter=8  status=200  ttfb=0.174264s  total=0.222277s  size=23108
+  iter=9  status=200  ttfb=0.186880s  total=0.198941s  size=23108
+  iter=10  status=200  ttfb=0.165277s  total=0.173602s  size=23108

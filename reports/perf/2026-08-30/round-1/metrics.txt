@@ -1,0 +1,45 @@
+=== Round 1 cold metrics ===
+
+--- home-cold ---
+FCP:        0.8 s
+LCP:        1.1 s
+TBT:        20 ms
+CLS:        0.033
+Speed Idx:  0.9 s
+TTFB:       Root document took 40 ms
+Perf score: 97/100
+Page bytes: Total size was 141 KiB
+DOM nodes:  null
+
+--- missions-cold ---
+FCP:        0.6 s
+LCP:        1.0 s
+TBT:        10 ms
+CLS:        0
+Speed Idx:  0.8 s
+TTFB:       Root document took 40 ms
+Perf score: 99/100
+Page bytes: Total size was 155 KiB
+DOM nodes:  null
+
+--- org-spiob-cold ---
+FCP:        0.4 s
+LCP:        0.8 s
+TBT:        40 ms
+CLS:        0.038
+Speed Idx:  0.5 s
+TTFB:       Root document took 40 ms
+Perf score: 100/100
+Page bytes: Total size was 138 KiB
+DOM nodes:  null
+
+--- repo-requests-cold ---
+FCP:        0.6 s
+LCP:        1.0 s
+TBT:        10 ms
+CLS:        0
+Speed Idx:  0.8 s
+TTFB:       Root document took 40 ms
+Perf score: 99/100
+Page bytes: Total size was 164 KiB
+DOM nodes:  null

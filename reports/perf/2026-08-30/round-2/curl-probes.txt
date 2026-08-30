@@ -1,0 +1,49 @@
+=== curl warm probes (10x each) ===
+
+--- https://deptend.vercel.app/ ---
+  iter=1  status=200  ttfb=0.194437s  total=0.207073s  size=34061
+  iter=2  status=200  ttfb=0.178713s  total=0.192132s  size=34061
+  iter=3  status=200  ttfb=0.183642s  total=0.192219s  size=34061
+  iter=4  status=200  ttfb=0.191351s  total=0.205835s  size=34061
+  iter=5  status=200  ttfb=0.181350s  total=0.190751s  size=34061
+  iter=6  status=200  ttfb=0.168521s  total=0.180688s  size=34061
+  iter=7  status=200  ttfb=0.176053s  total=0.184594s  size=34061
+  iter=8  status=200  ttfb=0.172648s  total=0.181393s  size=34061
+  iter=9  status=200  ttfb=0.166094s  total=0.174971s  size=34061
+  iter=10  status=200  ttfb=0.173216s  total=0.184080s  size=34061
+
+--- https://deptend.vercel.app/missions ---
+  iter=1  status=200  ttfb=0.166814s  total=0.286367s  size=478299
+  iter=2  status=200  ttfb=0.185394s  total=0.270254s  size=478299
+  iter=3  status=200  ttfb=0.199111s  total=0.291053s  size=478299
+  iter=4  status=200  ttfb=0.178468s  total=0.253727s  size=478299
+  iter=5  status=200  ttfb=0.171746s  total=0.249445s  size=478299
+  iter=6  status=200  ttfb=0.167346s  total=0.239460s  size=478299
+  iter=7  status=200  ttfb=0.168021s  total=0.260668s  size=478299
+  iter=8  status=200  ttfb=0.178945s  total=0.270564s  size=478299
+  iter=9  status=200  ttfb=0.183910s  total=0.261940s  size=478299
+  iter=10  status=200  ttfb=0.167031s  total=0.242667s  size=478299
+
+--- https://deptend.vercel.app/org/SpIob ---
+  iter=1  status=200  ttfb=0.183718s  total=0.186834s  size=15525
+  iter=2  status=200  ttfb=0.197965s  total=0.239301s  size=15525
+  iter=3  status=200  ttfb=0.177254s  total=0.182878s  size=15525
+  iter=4  status=200  ttfb=0.198134s  total=0.208269s  size=15525
+  iter=5  status=200  ttfb=0.178172s  total=0.186409s  size=15525
+  iter=6  status=200  ttfb=0.160424s  total=0.171087s  size=15525
+  iter=7  status=200  ttfb=0.171755s  total=0.178993s  size=15525
+  iter=8  status=200  ttfb=0.170090s  total=0.179033s  size=15525
+  iter=9  status=200  ttfb=0.207842s  total=0.228883s  size=15525
+  iter=10  status=200  ttfb=0.198491s  total=0.223220s  size=15525
+
+--- https://deptend.vercel.app/repo/psf/requests ---
+  iter=1  status=200  ttfb=0.188779s  total=0.280315s  size=450408
+  iter=2  status=200  ttfb=0.166670s  total=0.250923s  size=450408
+  iter=3  status=200  ttfb=0.228920s  total=0.315189s  size=450408
+  iter=4  status=200  ttfb=0.202002s  total=0.296272s  size=450408
+  iter=5  status=200  ttfb=0.188156s  total=0.274893s  size=450408
+  iter=6  status=200  ttfb=0.209894s  total=0.287568s  size=450408
+  iter=7  status=200  ttfb=0.198775s  total=0.268950s  size=450408
+  iter=8  status=200  ttfb=0.215592s  total=0.335187s  size=450408
+  iter=9  status=200  ttfb=0.186870s  total=0.294230s  size=450408
+  iter=10  status=200  ttfb=0.251736s  total=0.337474s  size=450408

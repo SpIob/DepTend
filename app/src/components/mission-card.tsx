@@ -18,10 +18,17 @@ const CONFIDENCE_TEXT: Record<ScoreConfidence, string> = {
   low: "Low confidence",
 };
 
+// Confidence foreground colors. The "low" case used to be
+// `text-severity-high` (red), but that hue is the same as the
+// card's severity-high bar, so a low-confidence card and a
+// high-severity card both showed red text. The ⚠ glyph + ink-muted
+// foreground + the red left-border accent in the "Why low
+// confidence" block now carry the warning signal without claiming
+// to be severity information. See ADR 0050.
 const CONFIDENCE_CLASS: Record<ScoreConfidence, string> = {
   high: "text-ink-muted",
   medium: "text-severity-medium",
-  low: "text-severity-high",
+  low: "text-ink-muted",
 };
 
 const MISSION_TYPE_LABELS: Record<MissionType, string> = {
@@ -40,6 +47,36 @@ const MISSION_TYPE_CLASS: Record<MissionType, string> = {
 
 function osvUrl(osvId: string): string {
   return `https://osv.dev/vulnerability/${encodeURIComponent(osvId)}`;
+}
+
+/**
+ * Short-form OSV ID for at-a-glance disambiguation. Two advisories
+ * against the same package at the same severity and the same fix
+ * version produce the same `mission.title` (mission-copy.ts's
+ * `buildTitle` is deterministic per (package, severity, missionType)).
+ * The short prefix is the first two dash-separated chunks of the OSV
+ * ID — enough to tell two rows apart at a glance without crowding
+ * the title, and short enough to stay readable when wrapped or
+ * truncated. Examples:
+ *
+ *   GHSA-x527-x647-q7gg  -> GHSA-x527
+ *   CVE-2024-12345       -> CVE-2024
+ *   PYSEC-2023-12345     -> PYSEC-2023
+ *   GO-2024-1234         -> GO-2024
+ *
+ * Returns null for inputs that don't have a recognizable scheme or
+ * are otherwise too short to chop, so the title render can fall back
+ * to no suffix. See ADR 0051.
+ */
+function shortOsvId(osvId: string): string | null {
+  const parts = osvId.split("-");
+  if (parts.length < 2) {
+    return null;
+  }
+  // `.toString()` keeps the @typescript-eslint/restrict-template-expressions
+  // rule happy; the parts are guaranteed defined by the length check above
+  // and the OSV IDs in our dataset are always non-empty strings.
+  return `${parts[0]?.toString() ?? ""}-${parts[1]?.toString() ?? ""}`;
 }
 
 /** What changes on a mission after a successful claim/unclaim call. */
@@ -248,6 +285,11 @@ export function MissionCard({
   const isLowConfidence = score.confidence === "low";
   const isClaimed = mission.status === "claimed";
   const priorityPct = Math.min(100, Math.max(0, (score.compositeScore / 10) * 100));
+  // Short OSV prefix appended to the title when there is one — see
+  // shortOsvId's docstring for the disambiguation rationale. Null
+  // when the OSV ID isn't shaped like a recognizable scheme, in
+  // which case the title renders without a suffix.
+  const osvShortId = advisory === null ? null : shortOsvId(advisory.osvId);
 
   return (
     <article className="border-border bg-surface hover:border-ink-muted/50 flex overflow-hidden rounded-md border transition-shadow hover:shadow-md">
@@ -274,7 +316,19 @@ export function MissionCard({
 
           <span className="flex min-w-0 flex-col gap-0.5 sm:flex-1">
             <span className="flex min-w-0 items-baseline gap-2">
-              <h3 className="text-ink min-w-0 truncate text-sm font-semibold">{mission.title}</h3>
+              <h3 className="text-ink min-w-0 truncate text-sm font-semibold">
+                {mission.title}
+                {osvShortId !== null && (
+                  // Short OSV prefix appended to the title. Two
+                  // advisories on the same package+severity can produce
+                  // identical titles; the prefix is enough to tell the
+                  // rows apart at a glance without crowding the title
+                  // bar. The full OSV ID is still in the Source line
+                  // in the body for any reader who needs to look it
+                  // up. See ADR 0051.
+                  <span className="text-ink-muted ml-1 font-normal">({osvShortId})</span>
+                )}
+              </h3>
               {advisory?.fixedVersion != null && (
                 <FixedVersionTag version={advisory.fixedVersion} />
               )}
@@ -290,7 +344,7 @@ export function MissionCard({
                 <>
                   {" "}
                   <span aria-hidden="true">·</span>{" "}
-                  <span className="text-severity-high font-semibold">⚠ low confidence</span>
+                  <span className="text-ink font-semibold">⚠ low confidence</span>
                 </>
               )}
             </p>
@@ -418,6 +472,14 @@ export function MissionCard({
               </div>
 
               {score.confidenceNotes !== null && score.confidenceNotes.length > 0 && (
+                // Low-confidence notes need a visible cue but must NOT
+                // re-use the severity-high red on the foreground text:
+                // the same hue is already taken by the card's severity
+                // bar, so a "Why low confidence" header in red reads
+                // like another severity signal. Keep the red on the
+                // left-border accent (where it can't be confused with
+                // a severity bar in the same row) and demote the text
+                // to muted+semibold. See ADR 0050.
                 <div
                   className={
                     isLowConfidence
@@ -426,7 +488,11 @@ export function MissionCard({
                   }
                 >
                   <p
-                    className={`mb-1 uppercase ${isLowConfidence ? "text-severity-high font-semibold" : "text-ink-muted"}`}
+                    className={
+                      isLowConfidence
+                        ? "text-ink-muted mb-1 font-mono text-xs font-semibold uppercase tracking-wide"
+                        : "text-ink-muted mb-1 font-mono text-xs uppercase tracking-wide"
+                    }
                   >
                     Why {CONFIDENCE_TEXT[score.confidence].toLowerCase()}
                   </p>

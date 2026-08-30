@@ -307,6 +307,24 @@ explicitly rather than silently treating mock coverage as equivalent.
   components, server pages, and auth/dispatch glue remain verified only by manual/live
   testing; don't assume coverage exists there just because it exists elsewhere.
 
+### Performance testing
+
+- The `smoke` job in `.github/workflows/ci.yml` curls `/`, `/missions`, `/org/SpIob`,
+  `/repo/SpIob/deptend-go-test-fixture` and asserts HTTP 200 + non-404 body for each.
+  Catches the class of bug where a page renders an error boundary in production but unit
+  tests, route tests, and typecheck are all green — the 2026-08-30 perf series found
+  exactly this on every `/org/[org]` URL until `scripts/backfill-orgs.mjs` was run.
+  Hits production (not a preview URL); the four URLs are static and the global Vercel
+  edge cache absorbs the CI traffic.
+- `.github/workflows/perf.yml` runs Lighthouse against the same four URLs weekly
+  (Sundays 02:00 UTC) plus on `workflow_dispatch`. Asserts LCP < 1500 ms and perf score
+  ≥ 90 per page. The full perf dataset (cold + warm × 3 repeats × 4 pages) is in
+  `reports/perf/2026-08-30/` and was the source of the 2026-08-30 series; the weekly job
+  is a regression check, not a substitute.
+- Adding a new public page? Add the path to both `smoke` and `perf` so the regression
+  net covers it. Skipping either job is a deliberate decision to accept a blind spot;
+  flag it as a decision point instead.
+
 ---
 
 ## 10. ADR & Changelog Process
@@ -318,6 +336,16 @@ explicitly rather than silently treating mock coverage as equivalent.
   merely passing the standard checks), and this flip has repeatedly been left as trailing
   housekeeping across phases. Don't let a new ADR sit in `Proposed` indefinitely; flag it if it's
   been verified but not flipped.
+- **Live verification before `Accepted`.** An ADR's flip from `Proposed` to `Accepted` is
+  conditional on live verification against the production site (or, for ingestion-only changes,
+  against the dev Neon database). Verification evidence — a `curl` output, a Lighthouse JSON,
+  an `EXPLAIN ANALYZE` result, a screenshot — is attached to the ADR as a code-block quote or
+  a linked artifact path. ADRs that ship without this evidence stay in `Proposed`. The
+  standing discipline in §0.1 ("phase-status docs, ADRs, and comments in this repo have drifted
+  from reality multiple times") is the reason this rule exists; it is not negotiable per-PR.
+  The `smoke` job in `.github/workflows/ci.yml` is the ongoing live-verification harness for
+  page-render claims: any future ADR that says "this fix shipped to `/org/[org]`" must be
+  backed by a green `smoke` job run against the live URL, not a code-only review.
 - **Changelog entries are added in the same commit/PR as the ADR that motivates them**; never
   backfilled later. `CHANGELOG.md` uses dated/phase-based headers, not semver; don't bump
   `package.json`'s version as part of a changelog entry; it deliberately stays `0.0.1`.
@@ -430,6 +458,13 @@ function` error boundaries until it was found live (ADR 0033 correction note). E
   timestamp column here is named `*At`, which is what `reviveDates()` keys on; route any new
   cached read returning Dates through it. Route-level tests that exercise a handler calling
   `revalidateTag` need `next/cache` mocked.
+- `app/src/middleware.ts` emits a `Server-Timing: total;dur=<ms>` response header on every
+  non-asset request (ADR 0052). The `dur` value covers the middleware phase only — nonce
+  generation, CSP build, `NextResponse.next()` setup — not the page render or DB queries
+  that follow. Any future expensive sync work added to middleware (e.g. sync crypto, sync
+  I/O) is now visible in the header on every response; keep middleware cheap. Per-segment
+  timing (cache vs DB vs render) is a flagged follow-up in ADR 0052 — the App Router
+  middleware architecture cannot read segments set during the page render.
 - Mocked transports can't catch SQL that Postgres rejects: queries.test.ts's fake driver
   asserts statement TEXT and never executes it, so a `COALESCE(text_col, uuid_col)` type
   mismatch (42804) shipped inside ADR 0031's board ORDER BY and took `/missions` down live.
@@ -515,6 +550,13 @@ Resolved since the last audit (kept here so nobody re-litigates them):
   colocated route-level suites (see §9).
 - ~~`ingest.yml` referencing `secrets.GH_INGEST_TOKEN`~~; confirmed fixed: it uses the
   auto-injected `${{ github.token }}`.
+- ~~`/org/[org]` served a 404 body in production even for known orgs~~; ADR 0047's
+  `lookupGitHubOwnerMeta` was wired into the writer, but `scripts/backfill-orgs.mjs` had
+  never actually been run, and the script itself had an env-var bug (line 46 read
+  `DATABASE_URL` — the pooled endpoint — instead of `DATABASE_URL_UNPOOLED`, so the
+  documented invocation was a silent no-op). Both fixed 2026-08-30: backfill run with the
+  unpooled URL populated 2 orgs and linked all 4 repos; the script's env-var bug is a
+  separate follow-up commit. Verification: `reports/perf/2026-08-30/round-5-fixed/`.
 
 ---
 

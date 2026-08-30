@@ -1,0 +1,30 @@
+=== curl probes: /org/SpIob (returns 200 with 404 body) ===
+  iter=1  status=200  ttfb=0.231032s  total=0.242449s  size=15525
+  iter=2  status=200  ttfb=0.190854s  total=0.206781s  size=15525
+  iter=3  status=200  ttfb=0.206804s  total=0.218838s  size=15525
+  iter=4  status=200  ttfb=0.185519s  total=0.198152s  size=15525
+  iter=5  status=200  ttfb=0.196747s  total=0.207593s  size=15525
+  iter=6  status=200  ttfb=0.172990s  total=0.180890s  size=15525
+  iter=7  status=200  ttfb=0.177335s  total=0.186698s  size=15525
+  iter=8  status=200  ttfb=0.180220s  total=0.187755s  size=15525
+  iter=9  status=200  ttfb=0.183420s  total=0.191059s  size=15525
+  iter=10  status=200  ttfb=0.181375s  total=0.191005s  size=15525
+
+=== curl probes: /org/psf ===
+  iter=1  status=200  ttfb=0.185869s  total=0.189453s  size=15515
+  iter=2  status=200  ttfb=0.195846s  total=0.196710s  size=15515
+  iter=3  status=200  ttfb=0.186915s  total=0.195422s  size=15515
+  iter=4  status=200  ttfb=0.211495s  total=0.218991s  size=15515
+  iter=5  status=200  ttfb=0.202251s  total=0.210780s  size=15515
+  iter=6  status=200  ttfb=0.171313s  total=0.185649s  size=15515
+  iter=7  status=200  ttfb=0.196341s  total=0.205825s  size=15515
+  iter=8  status=200  ttfb=0.184883s  total=0.191972s  size=15515
+  iter=9  status=200  ttfb=0.171463s  total=0.183860s  size=15515
+  iter=10  status=200  ttfb=0.187406s  total=0.193581s  size=15515
+
+=== curl probes: /org/nonexistent-zzz ===
+  iter=1  status=200  ttfb=0.217320s  total=0.230253s  size=15588
+  iter=2  status=200  ttfb=0.195679s  total=0.202306s  size=15588
+  iter=3  status=200  ttfb=0.181433s  total=0.194431s  size=15588
+  iter=4  status=200  ttfb=0.191881s  total=0.207935s  size=15588
+  iter=5  status=200  ttfb=0.179381s  total=0.185476s  size=15588

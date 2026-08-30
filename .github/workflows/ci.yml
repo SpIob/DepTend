@@ -75,3 +75,59 @@ jobs:
       - name: Dependency audit (advisory)
         continue-on-error: true
         run: pnpm audit --prod
+
+  # Production smoke test: catches the class of bug where a page renders
+  # an error boundary / 404 body in production but unit tests, route tests,
+  # and typecheck are all green. The 5-round perf series on 2026-08-30
+  # found exactly this — every /org/[org] URL was a 404 in production
+  # because the backfill script had never been run, and the audit
+  # cadence trusted the source-code state over the live-deployment state.
+  # Hitting the live site from CI closes that gap.
+  #
+  # Runs against production (no Vercel preview URL injection in this
+  # workflow). The check is anonymous (no auth, no rate-limited writes),
+  # the four URLs are static, and the global Vercel edge cache absorbs
+  # the CI traffic fine. If /org/[org] or /missions ever go down again,
+  # the next PR's CI catches it before merge.
+  smoke:
+    name: Production smoke test
+    runs-on: ubuntu-latest
+    needs: [ci]
+    permissions:
+      contents: read
+    steps:
+      - name: Curl public pages
+        run: |
+          set -euo pipefail
+          declare -a PATHS=(
+            "/"
+            "/missions"
+            "/org/SpIob"
+            "/repo/SpIob/deptend-go-test-fixture"
+          )
+          for path in "${PATHS[@]}"; do
+            url="https://deptend.vercel.app${path}"
+            # -L follows redirects; -o /dev/null drops the body; -w captures metadata.
+            # body-$(mktemp) is the full body for the 404 check.
+            body=$(mktemp)
+            status=$(curl -fsSL -o "$body" -w '%{http_code}' "$url")
+            if [[ "$status" != "200" ]]; then
+              echo "FAIL: ${url} returned HTTP ${status}"
+              cat "$body"
+              rm "$body"
+              exit 1
+            fi
+            # Strip <script> and <style> blocks before matching: the not-found
+            # component's "404 — not found" text lives in the JS bundle and
+            # would produce a false positive if matched against the raw HTML.
+            # Using perl rather than sed because sed's non-greedy `.*?` is
+            # GNU-only and breaks on the BSD sed that ships on macOS.
+            visible=$(perl -0777 -pe 's|<script[^>]*>.*?</script>||gs; s|<style[^>]*>.*?</style>||gs' "$body" | tr -d '\n')
+            if [[ "$visible" == *"404 — not found"* ]] || [[ "$visible" == *"404 - not found"* ]]; then
+              echo "FAIL: ${url} served a 404 body in production"
+              rm "$body"
+              exit 1
+            fi
+            echo "OK: ${url} (HTTP ${status}, $(wc -c <"$body") bytes)"
+            rm "$body"
+          done

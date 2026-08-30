@@ -1,0 +1,52 @@
+=== curl probes: warm (same filter URL, 10x) ===
+--- https://deptend.vercel.app/missions?severity=critical&severity=high&ecosystem=npm&ecosystem=pypi&effort=small&effort=tiny&missionType=security&missionType=dependency&sort=quick-wins ---
+  iter=1  status=200  ttfb=0.224912s  total=0.244293s  size=37667
+  iter=2  status=200  ttfb=0.208161s  total=0.229684s  size=37667
+  iter=3  status=200  ttfb=0.175404s  total=0.227272s  size=37667
+  iter=4  status=200  ttfb=0.187248s  total=0.206607s  size=37667
+  iter=5  status=200  ttfb=0.213749s  total=0.228801s  size=37667
+  iter=6  status=200  ttfb=0.203549s  total=0.215235s  size=37667
+  iter=7  status=200  ttfb=0.220156s  total=0.229197s  size=37667
+  iter=8  status=200  ttfb=0.177181s  total=0.188076s  size=37667
+  iter=9  status=200  ttfb=0.193324s  total=0.194499s  size=37667
+  iter=10  status=200  ttfb=0.197024s  total=0.215338s  size=37667
+
+=== curl probes: cold (unique ?q= token per iter, 10x) ===
+  iter=1  status=200  ttfb=0.193557s  total=0.207841s  size=27902  q=zz15035
+  iter=2  status=200  ttfb=0.180147s  total=0.186881s  size=27902  q=zz15035
+  iter=3  status=200  ttfb=0.205699s  total=0.221205s  size=27902  q=zz15035
+  iter=4  status=200  ttfb=0.198535s  total=0.207979s  size=27902  q=zz15035
+  iter=5  status=200  ttfb=0.205765s  total=0.212360s  size=27902  q=zz15035
+  iter=6  status=200  ttfb=0.208670s  total=0.219375s  size=27902  q=zz15035
+  iter=7  status=200  ttfb=0.184997s  total=0.204261s  size=27902  q=zz15035
+  iter=8  status=200  ttfb=0.211805s  total=0.229328s  size=27902  q=zz15035
+  iter=9  status=200  ttfb=0.210144s  total=0.217417s  size=27902  q=zz15035
+  iter=10  status=200  ttfb=0.189160s  total=0.197016s  size=27902  q=zz15035
+=== curl probes: cache-miss with matching q (5x) ===
+
+  iter=1  status=200  ttfb=0.264003s  total=0.298594s  size=27928  q=requests
+  iter=2  status=200  ttfb=0.195753s  total=0.209641s  size=27928  q=requests
+  iter=3  status=200  ttfb=0.188059s  total=0.220590s  size=27928  q=requests
+  iter=4  status=200  ttfb=0.219583s  total=0.232967s  size=27928  q=requests
+  iter=5  status=200  ttfb=0.191870s  total=0.203948s  size=27928  q=requests
+
+=== curl probes: same matching q repeated (cache hit, 5x) ===
+  iter=1  status=200  ttfb=0.177864s  total=0.186033s  size=27928  q=requests
+  iter=2  status=200  ttfb=0.193917s  total=0.202607s  size=27928  q=requests
+  iter=3  status=200  ttfb=0.173755s  total=0.180745s  size=27928  q=requests
+  iter=4  status=200  ttfb=0.195973s  total=0.199234s  size=27928  q=requests
+  iter=5  status=200  ttfb=0.222077s  total=0.229391s  size=27928  q=requests
+
+=== curl probes: no-filter (default) cold 5x ===
+  iter=1  status=200  ttfb=0.203473s  total=0.273984s  size=478374  nocache=https://deptend.vercel.app/missions?nocache=1788057127356
+  iter=2  status=200  ttfb=0.201668s  total=0.279491s  size=478374  nocache=https://deptend.vercel.app/missions?nocache=1788057127702
+  iter=3  status=200  ttfb=0.206049s  total=0.312667s  size=478374  nocache=https://deptend.vercel.app/missions?nocache=1788057128059
+  iter=4  status=200  ttfb=0.207218s  total=0.292940s  size=478374  nocache=https://deptend.vercel.app/missions?nocache=1788057128450
+  iter=5  status=200  ttfb=0.215442s  total=0.321357s  size=478374  nocache=https://deptend.vercel.app/missions?nocache=1788057128862
+
+=== curl probes: no-filter (default) warm 5x ===
+  iter=1  status=200  ttfb=0.191167s  total=0.262179s  size=478299
+  iter=2  status=200  ttfb=0.189889s  total=0.262643s  size=478299
+  iter=3  status=200  ttfb=0.195078s  total=0.263665s  size=478299
+  iter=4  status=200  ttfb=0.189084s  total=0.262344s  size=478299
+  iter=5  status=200  ttfb=0.200425s  total=0.281016s  size=478299

@@ -1,0 +1,24 @@
+=== Round 3 /missions with full filter set ===
+
+--- WARM (3 repeats on same filter URL) ---
+  iter=1:  FCP=0.4 s  LCP=0.6 s  TBT=10 ms  CLS=0  DocTTFB=Root document took 40 ms  score=100/100  bytes=Total size was 141 KiB
+  iter=2:  FCP=0.4 s  LCP=0.6 s  TBT=10 ms  CLS=0  DocTTFB=Root document took 40 ms  score=100/100  bytes=Total size was 141 KiB
+  iter=3:  FCP=0.4 s  LCP=0.7 s  TBT=0 ms  CLS=0  DocTTFB=Root document took 40 ms  score=100/100  bytes=Total size was 141 KiB
+
+--- COLD (5 runs, each with unique ?q= token to force cache miss) ---
+  iter=1:  FCP=0.4 s  LCP=0.7 s  TBT=20 ms  CLS=0  DocTTFB=Root document took 40 ms  score=100/100  bytes=Total size was 139 KiB
+  iter=2:  FCP=0.4 s  LCP=0.6 s  TBT=20 ms  CLS=0  DocTTFB=Root document took 40 ms  score=100/100  bytes=Total size was 139 KiB
+  iter=3:  FCP=0.4 s  LCP=0.7 s  TBT=20 ms  CLS=0  DocTTFB=Root document took 40 ms  score=100/100  bytes=Total size was 139 KiB
+  iter=4:  FCP=0.4 s  LCP=0.7 s  TBT=0 ms  CLS=0  DocTTFB=Root document took 40 ms  score=100/100  bytes=Total size was 139 KiB
+  iter=5:  FCP=0.4 s  LCP=0.7 s  TBT=20 ms  CLS=0  DocTTFB=Root document took 40 ms  score=100/100  bytes=Total size was 139 KiB
+
+--- Server response time raw ms (warm) ---
+41
+36
+35
+--- Server response time raw ms (cold) ---
+38
+35
+37
+41
+36

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import type { BoardFacets } from "@deptend/core/db/queries.js";
 import type { MissionWithScore } from "@deptend/core";
@@ -152,7 +152,19 @@ export function PaginatedMissionBoard({
 }): React.JSX.Element {
   const router = useRouter();
   const pathname = usePathname();
-  const [isPending, startTransition] = useTransition();
+  // The "Updating…" indicator is now driven by a local in-flight counter
+  // (one request in = ++, RSC settles = --) instead of useTransition. The
+  // transition-based version piled up on rapid clicks because a second
+  // startTransition would queue behind the first and never settle until
+  // Vercel's free-tier Neon round-trip (~20s) cleared. Imperative
+  // router.replace + a counter keeps the indicator honest and prevents
+  // the per-click stall the audit surfaced.
+  const [inFlight, setInFlight] = useState(0);
+  const inFlightRef = useRef(0);
+  useEffect(() => {
+    inFlightRef.current = inFlight;
+  }, [inFlight]);
+  const isPending = inFlight > 0;
 
   const [missions, setMissions] = useState(initialMissions);
   const [search, setSearch] = useState(initialQuery.q);
@@ -166,10 +178,19 @@ export function PaginatedMissionBoard({
   // Instead, when the server hands back a fresh missions array, adopt it —
   // the React-documented adjust-state-on-prop-change pattern. Local state
   // that the user owns (search text, grouping) intentionally survives.
+  //
+  // The "fresh missions array arrived" check is also where we settle the
+  // in-flight counter: every navigation the user fires increments it,
+  // and each completed server response decrements it. The counter can
+  // safely drop to zero and stay there if a request was abandoned.
   const [lastServerMissions, setLastServerMissions] = useState(initialMissions);
   if (lastServerMissions !== initialMissions) {
     setLastServerMissions(initialMissions);
     setMissions(initialMissions);
+    if (inFlightRef.current > 0) {
+      inFlightRef.current -= 1;
+      setInFlight(inFlightRef.current);
+    }
   }
 
   const isFiltered =
@@ -205,9 +226,14 @@ export function PaginatedMissionBoard({
       clearTimeout(pendingSearchNav.current);
       pendingSearchNav.current = null;
     }
-    startTransition(() => {
-      router.replace(href);
-    });
+    // Imperative router.replace — not wrapped in startTransition. See
+    // the inFlight comment above for why: stacking transitions on the
+    // free-tier Neon round-trip (≈20s on Vercel) caused a second click
+    // to queue indefinitely behind the first. router.replace is what
+    // Next's <Link> uses internally for the same URL-only state change.
+    inFlightRef.current += 1;
+    setInFlight(inFlightRef.current);
+    router.replace(href);
   }
 
   // Builds a board URL from the server-rendered filter state plus per-call

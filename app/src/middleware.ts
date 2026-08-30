@@ -35,6 +35,19 @@
  * geolocation, interest-cohort/FLoC, payment, USB). Vercel Hobby emits
  * `Strict-Transport-Security` at the platform layer; that is verified,
  * not set here, in the same change.
+ *
+ * S1 (perf observability, ADR 0052): the middleware additionally sets a
+ * `Server-Timing` header on every non-asset response with one segment,
+ * `total`, whose `dur` is the wall-clock time from middleware entry to
+ * response build. This is genuinely always-on (set here, in the only
+ * place that can set a response header in Next 15 App Router middleware).
+ * The 60 s `unstable_cache` cache-hit / cache-miss gap, the 5-table
+ * join duration, and the render time are NOT split into separate
+ * segments in this iteration — that would require per-segment timing
+ * hooks in the read paths, and the read paths cannot write response
+ * headers from inside App Router page renders. The total-time signal
+ * is the honest, low-risk first step; per-segment is the explicit
+ * follow-up flagged in the ADR.
  */
 
 import { NextResponse, type NextRequest } from "next/server";
@@ -75,6 +88,13 @@ function buildCsp(nonce: string): string {
 }
 
 export function middleware(request: NextRequest): NextResponse {
+  // S1 (ADR 0052): start the request-duration clock before any other work
+  // so the recorded `total` segment covers nonce generation, CSP build, and
+  // the synchronous NextResponse.next() setup. The page render that
+  // happens after this function returns is NOT inside this duration; the
+  // header is honestly named `total` for the middleware phase, not for the
+  // full request. Per-segment split (cache vs DB vs render) is a follow-up.
+  const startedAt = performance.now();
   const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
   const csp = buildCsp(nonce);
 
@@ -115,6 +135,14 @@ export function middleware(request: NextRequest): NextResponse {
       "usb=()",
     ].join(", "),
   );
+
+  // S1 (ADR 0052): emit the middleware-phase wall-clock as a Server-Timing
+  // segment. Rounded to 1 decimal of milliseconds to keep the header
+  // short; sub-ms resolution is noise on a network-attached measurement.
+  // `description` is omitted (the standard says it's optional); clients
+  // that care about it can pull a separate metric from their own probe.
+  const elapsedMs = performance.now() - startedAt;
+  response.headers.set("Server-Timing", `total;dur=${elapsedMs.toFixed(1)}`);
 
   return response;
 }

@@ -1,0 +1,22 @@
+=== Mission counts (from mission IDs in HTML) ===
+  psf/requests: 0 distinct mission IDs
+  SpIob/deptend-go-test-fixture: 0 distinct mission IDs
+  SpIob/Bagong-Enerhiya: 0 distinct mission IDs
+  SpIob/FlowState: 0 distinct mission IDs
+
+=== Round 4 /repo/[owner]/[name] metrics ===
+
+--- repo-large-cold ---
+  FCP=0.4 s  LCP=0.8 s  TBT=60 ms  CLS=0.001  DocTTFB=Root document took 40 ms  score=99/100  bytes=Total size was 165 KiB
+
+--- repo-small-cold ---
+  FCP=0.4 s  LCP=0.8 s  TBT=40 ms  CLS=0  DocTTFB=Root document took 40 ms  score=99/100  bytes=Total size was 164 KiB
+
+--- repo-large-warm-1 ---
+  FCP=0.4 s  LCP=0.9 s  TBT=50 ms  CLS=0  DocTTFB=Root document took 40 ms  score=99/100  bytes=Total size was 165 KiB
+
+--- repo-large-warm-2 ---
+  FCP=0.4 s  LCP=0.8 s  TBT=40 ms  CLS=0  DocTTFB=Root document took 40 ms  score=99/100  bytes=Total size was 165 KiB
+
+--- repo-large-warm-3 ---
+  FCP=0.4 s  LCP=0.8 s  TBT=50 ms  CLS=0  DocTTFB=Root document took 40 ms  score=100/100  bytes=Total size was 165 KiB

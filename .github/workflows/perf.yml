@@ -1,0 +1,115 @@
+name: Weekly performance audit
+
+on:
+  schedule:
+    # Sundays at 02:00 UTC. GitHub's cron syntax: minute hour day month weekday.
+    - cron: "0 2 * * 0"
+  workflow_dispatch:
+    inputs:
+      pages:
+        description: "Comma-separated list of paths to audit (overrides the default set)"
+        required: false
+        type: string
+        default: ""
+
+concurrency:
+  group: perf-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  perf:
+    name: Lighthouse audit
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Install Chromium for Lighthouse. The Playwright-provided
+      # chrome-headless-shell binary is the smallest viable download
+      # (no full Chrome UI), which keeps the per-run minutes low.
+      # `playwright install --with-deps` also pulls system libs
+      # (libnss3, libatk1.0, etc.) needed to actually launch headless.
+      - name: Install Playwright Chromium
+        run: |
+          npm install -g playwright@latest
+          npx playwright install --with-deps chromium
+
+      - name: Run Lighthouse against public pages
+        env:
+          # The four URLs from the 2026-08-30 perf test series. Same set
+          # the smoke job in ci.yml checks for 200 + non-404 body; this
+          # job additionally quantifies the cold-cache LCP / TBT / CLS
+          # and uploads the JSON so a future regression on read-path perf
+          # is catchable from the artifacts.
+          PAGES: "/, /missions, /org/SpIob, /repo/SpIob/deptend-go-test-fixture"
+        run: |
+          set -euo pipefail
+          mkdir -p reports/perf
+          # If the user passed a custom list via workflow_dispatch, use that.
+          if [[ -n "${{ inputs.pages }}" ]]; then
+            IFS=',' read -ra PATHS <<< "${{ inputs.pages }}"
+          else
+            IFS=',' read -ra PATHS <<< "${PAGES//, /,}"
+          fi
+          # Each page gets a fresh user-data-dir so the browser's HTTP
+          # cache doesn't pollute the cold measurement. Single-run
+          # (no warm repeats) for the weekly audit; deeper cold/warm
+          # comparison lives in reports/perf/2026-08-30/.
+          for path in "${PATHS[@]}"; do
+            slug=$(echo "$path" | tr '/' '_' | sed 's/^_//; s/_$//; s/__/_/g')
+            if [[ -z "$slug" ]]; then slug="root"; fi
+            userdir="/tmp/lh-cold-$slug-$$"
+            echo "::group::Lighthouse $path"
+            npx --yes lighthouse \
+              "https://deptend.vercel.app${path}" \
+              --quiet \
+              --output json --output-path "reports/perf/${slug}.json" \
+              --output html --output-path "reports/perf/${slug}.html" \
+              --only-categories=performance \
+              --form-factor=desktop \
+              --screenEmulation.disabled \
+              --throttling-method=provided \
+              --chrome-flags="--headless=new --no-sandbox --disable-gpu --user-data-dir=${userdir} --disable-cache --disk-cache-size=1"
+            echo "::endgroup::"
+          done
+
+      - name: Assert LCP and perf score thresholds
+        # These thresholds match the steady-state performance observed in
+        # reports/perf/2026-08-30/ (LCP < 1.0 s, perf score >= 95 for every
+        # page). Tightening further would need a baseline of more data; the
+        # current thresholds would have caught a 3-4× regression in any of
+        # the four pages.
+        run: |
+          set -euo pipefail
+          failures=0
+          for json in reports/perf/*.json; do
+            lcp=$(jq -r '.audits["largest-contentful-paint"].numericValue' "$json")
+            score=$(jq -r '.categories.performance.score * 100 | floor' "$json")
+            slug=$(basename "$json" .json)
+            echo "${slug}: LCP=${lcp}ms score=${score}"
+            # LCP threshold: 1500 ms (1.5× the worst cold LCP observed
+            # in 2026-08-30, which was / at 1121 ms). Catches a 50 %
+            # regression without flaking on the natural variance.
+            if (( $(echo "$lcp > 1500" | bc -l) )); then
+              echo "FAIL: ${slug} LCP ${lcp}ms exceeds 1500 ms threshold"
+              failures=$((failures + 1))
+            fi
+            if (( score < 90 )); then
+              echo "FAIL: ${slug} perf score ${score} below 90 threshold"
+              failures=$((failures + 1))
+            fi
+          done
+          if (( failures > 0 )); then
+            echo "${failures} page(s) failed thresholds"
+            exit 1
+          fi
+
+      - name: Upload Lighthouse artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: lighthouse-${{ github.run_id }}
+          path: reports/perf/
+          retention-days: 90

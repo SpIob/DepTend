@@ -4,3 +4,8 @@ build
 node_modules
 pnpm-lock.yaml
 *.sql
+# Performance test artifacts from reports/perf/* are JSON (Lighthouse output)
+# and ad-hoc markdown summaries; excluding them keeps `pnpm format:check` from
+# failing on artifacts that aren't part of the source-of-truth repo surface.
+reports/perf/
+
