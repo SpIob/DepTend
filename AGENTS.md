@@ -481,6 +481,70 @@ alternative but requires`fillPlaceholders`plumbing at the call site; the bulk UP
 in`scorer/writer.ts`(ADR 0043) is the only place in this codebase that needs the bulk`VALUES (…)`shape, and it works with`sql.param`. Live verification against dev Neon
 caught the `$$1` bug in the first cut of the bulk UPDATE; a mock would not have.
 
+**Live DB queries without shelling out to psql**
+
+When a diagnostic needs a read-only SQL look against the production or dev
+Neon database and shelling out to `psql` isn't an option (e.g. the URL lives
+in `.env.local` and you don't want to read it into a shell, or the env
+isn't available in the agent's sandbox at all), the
+**ego-browser → Neon SQL editor in the user's browser** pattern works and
+is reproducible. The shape, end-to-end, is below; the §1.2/§1.3 phase of the
+2026-08-30 `/org/[org]` 404 fix used exactly this approach with three
+diagnostic queries and one in-place data fix, and is the canonical example
+(`reports/perf/2026-08-30/round-5-fixed/diagnostic-queries.md`).
+
+- **URL shape:** `https://console.neon.tech/app/projects/<project-id>/branches/<branch-id>/sql-editor?database=<db-name>`.
+  All three ids are visible in the Neon console sidebar / URL after the
+  user picks a project and branch. The `database=` query string must match
+  the actual Postgres database name (e.g. `neondb`); a wrong name lands on
+  the "All OK" overview, not the editor.
+- **Branch selection:** the editor defaults to whatever branch the URL
+  encodes, but the sidebar shows `production / dev` chips; the SQL editor
+  itself has a `Run` button that runs against whichever branch the
+  breadcrumbs say. **Verify the branch** by reading the breadcrumbs
+  (`heading: production` or `heading: dev`) before running anything that
+  matters; the URL is easy to misread.
+- **Editor surface:** the SQL editor is a CodeMirror 6 instance
+  (`.cm-content` is the editable div, `contenteditable="true"`). The
+  hidden `textarea` is **not** the input — `fillInput` and `typeText`
+  against the visible editor don't reach CodeMirror. The two patterns
+  that actually work:
+  1. Focus the editor (`document.querySelector('.cm-content').focus()`,
+     select-all, then `document.execCommand('insertText', false, sqlString)`).
+     Deprecated in the spec but still functional in 2026 Chromium; works
+     for both cold-start (`New Query` button) and reuse of an existing
+     editor.
+  2. The visible `Run` button is enabled only after text is in the
+     editor. Find it by `btns.find(b => b.textContent.trim() === 'Run' &&
+!b.disabled)`; the same selector also matches disabled instances, so
+     the disabled check is load-bearing.
+- **Results panel:** appears below the editor as a simple table (`<table>`
+  with `#` row indices) for SELECTs with rows, or as a status line ("No
+  result" / "Statement executed successfully") for empty results.
+  Insert/update/delete return only a row count and a "X ms" elapsed time.
+  The result panel text is on the same page, so
+  `document.body.innerText.substring(editorIdx, ...)` after a run captures
+  both the SQL and the result.
+- **Tab reuse across heredoc rounds:** the ego-browser task-space model
+  is single-browser-instance across heredoc rounds; refs (`@N` from
+  `snapshotText()`) reset every call but the underlying DOM persists. So
+  `await openOrReuseTab(url, { wait: true })` works for repeated
+  navigations, and `await gotoAndWait(url)` works to switch branches
+  (e.g. dev → production) without losing the task space.
+- **What this does NOT give you:** an EXPLAIN plan, a transaction
+  boundary, write access (the editor is in the user's account context;
+  anything that runs has the user's full DB permissions — be careful with
+  UPDATE/INSERT/DELETE), or any audit trail beyond the page's own
+  History sidebar (which lists the past N queries with timestamps and is
+  the only record of what you ran).
+- **When to use this vs. `psql`:** use ego-browser when the URL is in
+  `.env.local` and the user has explicitly said not to read it into a
+  shell, or when sandboxed network egress can't reach Neon's pg endpoint
+  (the console UI is a regular HTTPS site, so it usually works where
+  `psql $DATABASE_URL` doesn't). Use `psql` for EXPLAIN ANALYZE,
+  transactions, COPY, or any non-SELECT that needs a transaction
+  boundary. **The two are complementary, not substitutes.**
+
 **Auth**
 
 - next-auth v4 on Vercel builds the OAuth `redirect_uri` from the request's `Host` header, not
