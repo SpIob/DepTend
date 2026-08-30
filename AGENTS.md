@@ -621,6 +621,23 @@ Resolved since the last audit (kept here so nobody re-litigates them):
   documented invocation was a silent no-op). Both fixed 2026-08-30: backfill run with the
   unpooled URL populated 2 orgs and linked all 4 repos; the script's env-var bug is a
   separate follow-up commit. Verification: `reports/perf/2026-08-30/round-5-fixed/`.
+- ~~Ingest cron failed 2026-08-30 09:40 UTC (run 33304652258): `Assignment to constant
+variable` at `scripts/ingest.js:293`~~. Root cause: c32878f's "SyntaxError bugfix"
+  replaced a parse-time `const ghMeta = ghMeta.value` with a runtime reassignment
+  of the same name — but the outer `const [ghMeta, orgResult] = await
+Promise.allSettled(...)` destructure on the line above was never updated, so
+  the reassignment became a `TypeError` at runtime. `node --check` is silent
+  on this class of bug (parse clean, runtime throws). Fixed in the same commit
+  as the new colocated regression test (`scripts/ingest.test.js`); the fix
+  binds the allSettled tuple to `ghMetaResult` and unwraps `.value` into a
+  fresh `const ghMeta` on the next line. `ingestRepo` was made `export`-able
+  and the `main()` call is gated on `import.meta.url` so test imports don't
+  kick off a real cron run. New `scripts/` pnpm-workspace member + minimal
+  `scripts/vitest.config.mjs`. Live verification per AGENTS.md §6's
+  meta-lesson: a follow-up `workflow_dispatch` against `psf/requests` on
+  the deployed site. The test asserts the bug-specific log line never
+  appears, since `ingestRepo`'s outer try/catch swallows the TypeError and
+  `return false`s — the only assertion shape that catches the regression.
 
 ---
 

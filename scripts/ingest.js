@@ -247,8 +247,14 @@ async function main() {
 /**
  * Run the full ingestion pipeline for a single repo.
  * Returns true on success, false on failure (errors are logged, not thrown).
+ *
+ * Exported (with a small set of mocks) by scripts/ingest.test.js as the
+ * regression target for the c32878f "Assignment to constant variable"
+ * bug. The test calls ingestRepo directly; the main() call at the bottom
+ * of this file is gated on import.meta.url so importing the module
+ * from a test doesn't kick off a real cron run.
  */
-async function ingestRepo(
+export async function ingestRepo(
   repo,
   db,
   writer,
@@ -271,26 +277,26 @@ async function ingestRepo(
     // and both public, so they run in parallel rather than serially —
     // cuts roughly half the per-repo GitHub wall time.
     const { owner, name } = parseGithubUrl(repo.githubUrl ?? repo.url);
-    const [ghMeta, orgResult] = await Promise.allSettled([
+    const [ghMetaResult, orgResult] = await Promise.allSettled([
       fetchGitHubRepoMeta(owner, name, githubToken),
       lookupGitHubOwnerMeta(owner, githubToken),
     ]);
 
-    if (ghMeta.status === "rejected") {
+    if (ghMetaResult.status === "rejected") {
       // Repo-meta failure is fatal — re-throw with the original
       // fetchGitHubRepoMeta's typed error intact for the caller's
       // existing 404/429 branching.
-      throw ghMeta.reason;
+      throw ghMetaResult.reason;
     }
 
-    // ghMeta is a PromiseSettledResult after Promise.allSettled; the
-    // rejection branch above threw, so the only remaining case is
-    // fulfilled. The values object is structurally identical to the
-    // fulfilled shape, so we can destructure once here and reassign
-    // ghMeta to the resolved value for the existing `ghMeta.X` callers
-    // below. Plain JS — TS isn't checking this file, so the reassign
-    // is the simplest way to keep the rest of the function unchanged.
-    ghMeta = ghMeta.value;
+    // ghMetaResult is the PromiseSettledResult from Promise.allSettled;
+    // the rejection branch above threw, so the only remaining case is
+    // fulfilled. The .value is structurally identical to
+    // fetchGitHubRepoMeta's fulfilled shape, so unwrap once into a
+    // fresh `const ghMeta` for the existing `ghMeta.X` callers below.
+    // (Earlier draft reassigned the destructure's const binding, which
+    // is a runtime TypeError — see AGENTS.md §12.)
+    const ghMeta = ghMetaResult.value;
 
     const org = orgResult.status === "fulfilled" ? orgResult.value : null;
     if (orgResult.status === "rejected" && !(orgResult.reason instanceof GitHubOrgMetaError)) {
@@ -707,5 +713,12 @@ function fatal(message) {
 // ---------------------------------------------------------------------------
 // Run
 // ---------------------------------------------------------------------------
+// Only invoke main() when this file is the process entry point. When the
+// module is imported (e.g. by scripts/ingest.test.js, which calls ingestRepo
+// directly), skip the cron-style main() call — otherwise a test import
+// would try to open a real Neon pool and require DATABASE_URL.
+import { pathToFileURL } from "node:url";
 
-main();
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
+  main();
+}

@@ -1,3 +1,14 @@
 {
-  "type": "module"
+  "name": "scripts",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Internal monorepo entry points: ingestion pipeline + one-off backfills. Plain JS (no tsconfig); vitest added for the c32878f regression test (scripts/ingest.test.js).",
+  "type": "module",
+  "scripts": {
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "echo 'no tsconfig in scripts/ — plain JS only'"
+  },
+  "devDependencies": {
+    "vitest": "^2.0.0"
+  }
 }

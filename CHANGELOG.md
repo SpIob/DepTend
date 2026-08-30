@@ -118,6 +118,69 @@ border-severity-high` accent. Same red cue at the eye-line,
 
 ---
 
+**Ingest cron regression fix + colocated test (2026-08-30)**
+
+The scheduled ingest run at 09:40 UTC (workflow run 33304652258) failed
+with `TypeError: Assignment to constant variable` at `scripts/ingest.js:293`
+when re-ingesting the stale `psf/requests` repo. The same commit's own
+"node --check" verification missed the bug because it's a runtime error,
+not a parse error.
+
+### Fixed
+
+- **Ingest cron failed on every stale-complete repo.** The
+  c32878f "SyntaxError bugfix" replaced a parse-time
+  `const ghMeta = ghMeta.value` (which `node --check` would have
+  caught) with a plain reassignment of the same name, but the outer
+  `const [ghMeta, orgResult] = await Promise.allSettled([...])`
+  destructure on the line above was never updated. The reassignment
+  now throws at runtime, which is why the previous SyntaxError fix
+  shipped green on typecheck/test/build/lint but red on the first
+  stale-complete cron pick. Fixed by binding the allSettled tuple to
+  `ghMetaResult` and unwrapping `.value` into a fresh `const ghMeta`
+  on the next line. 2 lines of executable code; ~6 lines of comment
+  trim. `scripts/ingest.js:251` also gains an `export` keyword (so
+  the new test can call `ingestRepo` directly), and the `main()`
+  call at the bottom is gated on `import.meta.url` so a test
+  import doesn't kick off a real cron run. Live verification: a
+  follow-up `workflow_dispatch` against `psf/requests` on the
+  deployed site (per AGENTS.md §6's meta-lesson that mocks don't
+  match real contracts).
+
+### Added
+
+- `scripts/ingest.test.js` — colocated regression test (1 test,
+  runs in `pnpm --filter scripts test`). The test spies on
+  `console.log` and asserts the bug-specific log line
+  (`Ingestion failed: Assignment to constant variable`) never
+  appears; this is the only assertion shape that catches the
+  regression, because `ingestRepo`'s outer try/catch swallows
+  the TypeError and `return false`s. With the fix in place the
+  test passes; reverting the 2-line fix on the script makes the
+  test fail with the exact log line. Empirical confirmation
+  (verified locally on 2026-08-30).
+- `scripts/vitest.config.mjs` — minimal vitest config for the new
+  `scripts/` workspace member. File extension is `.mjs` (not `.ts`)
+  on purpose: the project's ESLint config typed-lints every `.ts`
+  file with a `parserOptions.project` entry, and `scripts/` has no
+  tsconfig, so a `.ts` config would fail lint. `.mjs` sits inside
+  the existing `scripts/**/*.{js,mjs}` block of `eslint.config.mjs`.
+- `scripts/package.json` — gains a `test` script (the file already
+  existed with just `{"type":"module"}`). Added to the pnpm
+  workspace via `pnpm-workspace.yaml` so `pnpm -r test` picks it
+  up; one new vitest as a devDep (already in the root's
+  transitive resolution, now per-workspace for the new
+  `scripts/` package).
+
+### Tests
+
+- `pnpm -r test` is green: 953 tests passing across 56 test files
+  (was 952 / 55; +1 regression test, +1 test file).
+- `pnpm typecheck`, `pnpm build`, `pnpm lint --max-warnings 0`,
+  `pnpm format:check` all green.
+
+---
+
 **Per-org directory page + per-repo truncation fix (2026-08-29)**
 
 Two UI-test findings fixed in one pass: the `/org/[org]` route was
