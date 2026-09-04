@@ -43,9 +43,25 @@ import {
   GitHubOrgMetaError,
 } from "../packages/core/dist/ingestor/github-org-meta.js";
 
-const DATABASE_URL = process.env.DATABASE_URL;
-if (DATABASE_URL === undefined || DATABASE_URL === "") {
-  console.error("Error: DATABASE_URL is not set.");
+// Per AGENTS.md §5 / ADR 0023: `DATABASE_URL` is the pooled PgBouncer
+// endpoint; `DATABASE_URL_UNPOOLED` is the direct endpoint required for
+// the writes this script does (org upserts + repos.orgId updates, which
+// hit enum-typed columns and can run into PgBouncer's prepared-statement
+// quirks). When the unpooled URL is set we prefer it; otherwise we fall
+// back to the pooled one. See the 2026-08-30 backfill log
+// (reports/perf/2026-08-30/round-5-fixed/backfill-log.md) for the
+// original failure mode this fix closes.
+//
+// resolveDatabaseUrl() is exported and unit-tested in
+// scripts/backfill-orgs.test.js so the env-var preference can't silently
+// regress to the wrong side again.
+const { resolveDatabaseUrl } = await import("./backfill-orgs-url.js");
+const DATABASE_URL = resolveDatabaseUrl(process.env);
+if (DATABASE_URL === null) {
+  console.error(
+    "Error: neither DATABASE_URL_UNPOOLED nor DATABASE_URL is set. " +
+      "Copy .env.example to .env.local and fill in the Neon connection string(s).",
+  );
   process.exit(1);
 }
 
