@@ -18,7 +18,7 @@
     "@deptend/core": "workspace:*"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0",
+    "@types/node": "^26.3.0",
     "typescript": "^5.5.0",
     "vitest": "^2.0.0"
   }
