@@ -10,8 +10,6 @@
 
 import type { Ecosystem } from "../db/schema.js";
 
-export type { Ecosystem };
-
 export interface ParsedDependency {
   package_name: string;
   version_spec: string;

@@ -12,9 +12,11 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { POST } from "./route";
 import { checkMissionActionLimit } from "@/lib/rate-limit";
+import { createRouteTestHarness, DB, VALID_ID } from "@/lib/test-helpers/route-test-setup";
+import { POST } from "./route";
 
+// ---- Top-level mocks (required by vitest) ----
 const getServerSession = vi.hoisted(() => vi.fn());
 vi.mock("next-auth", () => ({ getServerSession }));
 vi.mock("@/lib/auth", () => ({ authOptions: {} }));
@@ -31,88 +33,44 @@ vi.mock("@deptend/core/notifications/subscriptions.js", async (importOriginal) =
   unsubscribeFromRepo,
 }));
 
-const DB = { __readonlyDbSentinel: true } as const;
-const VALID_ID = "123e4567-e89b-12d3-a456-426614174000";
-
-function signedIn(login = `user-${crypto.randomUUID()}`): string {
-  getServerSession.mockResolvedValue({ user: { login } });
-  getDb.mockReturnValue(DB);
-  return login;
-}
-
-function post(): Promise<Response> {
-  return POST(
-    new Request(`http://localhost/api/repos/${VALID_ID}/notifications/unsubscribe`, {
+// ---- Test harness ----
+const { signedIn, post, mocks, runSharedTests, runSuccessTest } = createRouteTestHarness({
+  handler: POST,
+  rateLimiter: checkMissionActionLimit,
+  baseUrl: "http://localhost/api/repos",
+  buildRequest: (id) => {
+    return new Request(`http://localhost/api/repos/${id}/notifications/unsubscribe`, {
       method: "POST",
       headers: { origin: "http://localhost", host: "localhost" },
-    }),
-    { params: Promise.resolve({ id: VALID_ID }) },
-  );
-}
-
-beforeEach(() => {
-  vi.resetAllMocks();
+    });
+  },
+  makeCoreCallArgs: (login, id) => [DB, login, id],
+  coreFn: unsubscribeFromRepo,
+  revalidateTag,
+  getServerSession,
+  getDb,
 });
 
 describe("POST /api/repos/[id]/notifications/unsubscribe", () => {
-  it("returns 403 for a cross-origin POST before any other gate", async () => {
-    signedIn();
-    const response = await POST(
-      new Request(`http://localhost/api/repos/${VALID_ID}/notifications/unsubscribe`, {
-        method: "POST",
-        headers: { origin: "https://evil.example", host: "localhost" },
-      }),
-      { params: Promise.resolve({ id: VALID_ID }) },
-    );
-    expect(response.status).toBe(403);
-    expect(unsubscribeFromRepo).not.toHaveBeenCalled();
-  });
-
-  it("returns 401 with no session", async () => {
-    getServerSession.mockResolvedValue(null);
-    const response = await post();
-    expect(response.status).toBe(401);
-    expect(unsubscribeFromRepo).not.toHaveBeenCalled();
-  });
-
-  it("returns 429 once the shared mission-action budget is exhausted", async () => {
-    const login = signedIn();
-    for (let i = 0; i < 20; i++) {
-      checkMissionActionLimit(login);
-    }
-    const response = await post();
-    expect(response.status).toBe(429);
-    expect(unsubscribeFromRepo).not.toHaveBeenCalled();
-  });
-
-  it("returns 400 for a malformed repo id before touching the DB", async () => {
-    signedIn();
-    const response = await POST(
-      new Request("http://localhost/api/repos/not-a-uuid/notifications/unsubscribe", {
-        method: "POST",
-        headers: { origin: "http://localhost", host: "localhost" },
-      }),
-      { params: Promise.resolve({ id: "not-a-uuid" }) },
-    );
-    expect(response.status).toBe(400);
-    expect(unsubscribeFromRepo).not.toHaveBeenCalled();
-  });
+  beforeEach(mocks.beforeEach);
+  runSharedTests();
 
   it("returns 404 when core reports no subscription existed", async () => {
     const login = signedIn();
     unsubscribeFromRepo.mockResolvedValue(false);
-    const response = await post();
+    const response = await post(VALID_ID);
     expect(response.status).toBe(404);
     expect(unsubscribeFromRepo).toHaveBeenCalledWith(DB, login, VALID_ID);
     expect(revalidateTag).not.toHaveBeenCalled();
   });
 
-  it("returns 200 and revalidates the repos tag on a successful unsubscribe", async () => {
-    const login = signedIn();
-    unsubscribeFromRepo.mockResolvedValue(true);
-    const response = await post();
-    expect(response.status).toBe(200);
-    expect(unsubscribeFromRepo).toHaveBeenCalledWith(DB, login, VALID_ID);
-    expect(revalidateTag).toHaveBeenCalledWith("repos");
+  runSuccessTest({
+    description: "returns 200 and revalidates the repos tag on a successful unsubscribe",
+    outcome: "unsubscribed",
+    expectedStatus: 200,
+    expectedRevalidateTags: ["repos"],
+    beforeCall: () => {
+      unsubscribeFromRepo.mockResolvedValue(true);
+    },
   });
 });

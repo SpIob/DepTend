@@ -47,10 +47,6 @@
       "import": "./dist/notifications/subscriptions.js",
       "types": "./dist/notifications/subscriptions.d.ts"
     },
-    "./notifications/github-issues.js": {
-      "import": "./dist/notifications/github-issues.js",
-      "types": "./dist/notifications/github-issues.d.ts"
-    },
     "./ingestor/interface.js": {
       "import": "./dist/ingestor/interface.js",
       "types": "./dist/ingestor/interface.d.ts"

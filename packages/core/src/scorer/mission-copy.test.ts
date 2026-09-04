@@ -4,76 +4,8 @@
 
 import { describe, expect, it } from "vitest";
 import { generateMissionCopy } from "./mission-copy.js";
-import { computeMissionScore, type MissionScoringContext } from "./mission-scorer.js";
-import type { Advisory, Dependency, Repo } from "../db/schema.js";
-
-function makeDependency(overrides: Partial<Dependency> = {}): Dependency {
-  return {
-    id: "dep-1",
-    repoId: "repo-1",
-    ecosystem: "npm",
-    packageName: "left-pad",
-    versionSpec: "^1.2.3",
-    resolvedVersion: null,
-    depType: "production",
-    latestVersion: "1.4.0",
-    isDeprecated: false,
-    deprecationNote: null,
-    createdAt: new Date("2026-06-01"),
-    updatedAt: new Date("2026-06-01"),
-    ...overrides,
-  };
-}
-
-function makeAdvisory(overrides: Partial<Advisory> = {}): Advisory {
-  return {
-    id: "adv-1",
-    osvId: "GHSA-xxxx-xxxx-xxxx",
-    source: "osv",
-    ecosystem: "npm",
-    packageName: "left-pad",
-    severity: "high",
-    cvssScore: 7.5,
-    epssScore: null,
-    summary: "A padding function allows prototype pollution.",
-    details: null,
-    affectedVersions: [],
-    fixedVersion: "1.2.4",
-    publishedAt: new Date("2026-06-01"),
-    modifiedAt: null,
-    rawData: {},
-    createdAt: new Date("2026-06-01"),
-    updatedAt: new Date("2026-06-01"),
-    ...overrides,
-  };
-}
-
-function makeRepo(overrides: Partial<Repo> = {}): Repo {
-  return {
-    id: "repo-1",
-    githubUrl: "https://github.com/example/example",
-    owner: "example",
-    name: "example",
-    defaultBranch: "main",
-    description: null,
-    stars: 1000,
-    openIssuesCount: 100,
-    topics: [],
-    homepageUrl: null,
-    ingestionStatus: "complete",
-    lastIngestedAt: new Date("2026-07-01"),
-    ingestionError: null,
-    submittedBy: null,
-    orgId: null,
-    createdAt: new Date("2026-06-01"),
-    updatedAt: new Date("2026-07-01"),
-    ...overrides,
-  };
-}
-
-function makeContext(overrides: Partial<MissionScoringContext> = {}): MissionScoringContext {
-  return { dependency: makeDependency(), advisory: makeAdvisory(), repo: makeRepo(), ...overrides };
-}
+import { computeMissionScore } from "./mission-scorer.js";
+import { makeDependency, makeAdvisory, makeContext } from "./test-fixtures.js";
 
 describe("generateMissionCopy", () => {
   it("includes the package name and severity in the title when a fix exists", () => {

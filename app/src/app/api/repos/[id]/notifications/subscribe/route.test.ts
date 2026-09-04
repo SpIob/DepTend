@@ -14,9 +14,11 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { POST } from "./route";
 import { checkMissionActionLimit } from "@/lib/rate-limit";
+import { createRouteTestHarness, DB, VALID_ID } from "@/lib/test-helpers/route-test-setup";
+import { POST } from "./route";
 
+// ---- Top-level mocks (required by vitest) ----
 const getServerSession = vi.hoisted(() => vi.fn());
 vi.mock("next-auth", () => ({ getServerSession }));
 vi.mock("@/lib/auth", () => ({ authOptions: {} }));
@@ -33,43 +35,34 @@ vi.mock("@deptend/core/notifications/subscriptions.js", async (importOriginal) =
   subscribeToRepo,
 }));
 
-const isValidUuid = vi.hoisted(() => vi.fn());
-vi.mock("@deptend/core/db/validation.js", async (importOriginal) => {
-  // Keep the real isValidUuid for the route's own UUID check; the route
-  // also reaches it indirectly through the API path, and mocking it
-  // would defeat the test's "real validator" convention.
-  const actual = await importOriginal<typeof import("@deptend/core/db/validation.js")>();
-  return { ...actual, isValidUuid };
-});
-
-const DB = { __readonlyDbSentinel: true } as const;
-const VALID_ID = "123e4567-e89b-12d3-a456-426614174000";
-
-function signedIn(login = `user-${crypto.randomUUID()}`): string {
-  getServerSession.mockResolvedValue({ user: { login } });
-  getDb.mockReturnValue(DB);
-  // Wire the real isValidUuid through; the test fixture controls
-  // behavior by what it sends, not by mocking the validator.
-  isValidUuid.mockImplementation((value: string) =>
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value),
-  );
-  return login;
-}
-
-function postJson(body: unknown): Promise<Response> {
-  return POST(
-    new Request(`http://localhost/api/repos/${VALID_ID}/notifications/subscribe`, {
+// ---- Test harness ----
+const { signedIn, post, mocks, runSharedTests } = createRouteTestHarness({
+  handler: POST,
+  rateLimiter: checkMissionActionLimit,
+  baseUrl: "http://localhost/api/repos",
+  buildRequest: (id, body) => {
+    const url = `http://localhost/api/repos/${id}/notifications/subscribe`;
+    const headers: Record<string, string> = {
+      origin: "http://localhost",
+      host: "localhost",
+    };
+    if (body !== undefined) {
+      headers["content-type"] = "application/json";
+    }
+    return new Request(url, {
       method: "POST",
-      headers: {
-        "content-type": "application/json",
-        origin: "http://localhost",
-        host: "localhost",
-      },
-      body: typeof body === "string" ? body : JSON.stringify(body),
-    }),
-    { params: Promise.resolve({ id: VALID_ID }) },
-  );
-}
+      headers,
+      ...(body !== undefined
+        ? { body: typeof body === "string" ? body : JSON.stringify(body) }
+        : {}),
+    });
+  },
+  makeCoreCallArgs: (login, id) => [DB, { userLogin: login, repoId: id }],
+  coreFn: subscribeToRepo,
+  revalidateTag,
+  getServerSession,
+  getDb,
+});
 
 function makeSubscription(eventTypes: string[]): Record<string, unknown> {
   return {
@@ -82,67 +75,14 @@ function makeSubscription(eventTypes: string[]): Record<string, unknown> {
   };
 }
 
-beforeEach(() => {
-  vi.resetAllMocks();
-});
-
 describe("POST /api/repos/[id]/notifications/subscribe", () => {
-  it("returns 403 for a cross-origin POST before any other gate", async () => {
-    signedIn();
-    const response = await POST(
-      new Request(`http://localhost/api/repos/${VALID_ID}/notifications/subscribe`, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          origin: "https://evil.example",
-          host: "localhost",
-        },
-        body: JSON.stringify({ eventTypes: ["new_mission"] }),
-      }),
-      { params: Promise.resolve({ id: VALID_ID }) },
-    );
-    expect(response.status).toBe(403);
-    expect(subscribeToRepo).not.toHaveBeenCalled();
-  });
+  beforeEach(mocks.beforeEach);
+  runSharedTests();
 
-  it("returns 401 with no session", async () => {
-    getServerSession.mockResolvedValue(null);
-    const response = await postJson({ eventTypes: ["new_mission"] });
-    expect(response.status).toBe(401);
-    expect(subscribeToRepo).not.toHaveBeenCalled();
-  });
-
-  it("returns 429 once the shared mission-action budget is exhausted", async () => {
-    const login = signedIn();
-    for (let i = 0; i < 20; i++) {
-      checkMissionActionLimit(login);
-    }
-    const response = await postJson({ eventTypes: ["new_mission"] });
-    expect(response.status).toBe(429);
-    expect(subscribeToRepo).not.toHaveBeenCalled();
-  });
-
-  it("returns 400 for a malformed repo id before touching the DB", async () => {
-    signedIn();
-    const response = await POST(
-      new Request("http://localhost/api/repos/not-a-uuid/notifications/subscribe", {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          origin: "http://localhost",
-          host: "localhost",
-        },
-        body: JSON.stringify({ eventTypes: ["new_mission"] }),
-      }),
-      { params: Promise.resolve({ id: "not-a-uuid" }) },
-    );
-    expect(response.status).toBe(400);
-    expect(subscribeToRepo).not.toHaveBeenCalled();
-  });
-
+  // M3 eventTypes validation tests
   it("M3: returns 400 for a non-array eventTypes", async () => {
     signedIn();
-    const response = await postJson({ eventTypes: "new_mission" });
+    const response = await post(VALID_ID, { eventTypes: "new_mission" });
     expect(response.status).toBe(400);
     const data = (await response.json()) as { error?: string };
     expect(data.error).toContain("eventTypes");
@@ -151,14 +91,14 @@ describe("POST /api/repos/[id]/notifications/subscribe", () => {
 
   it("M3: returns 400 for an empty eventTypes array", async () => {
     signedIn();
-    const response = await postJson({ eventTypes: [] });
+    const response = await post(VALID_ID, { eventTypes: [] });
     expect(response.status).toBe(400);
     expect(subscribeToRepo).not.toHaveBeenCalled();
   });
 
   it("M3: returns 400 for an eventTypes array over the 4-item cap", async () => {
     signedIn();
-    const response = await postJson({
+    const response = await post(VALID_ID, {
       eventTypes: ["new_mission", "claimed", "resolved", "reopened", "extra"],
     });
     expect(response.status).toBe(400);
@@ -167,7 +107,7 @@ describe("POST /api/repos/[id]/notifications/subscribe", () => {
 
   it("M3: returns 400 for an eventTypes entry that isn't in the allow-list", async () => {
     signedIn();
-    const response = await postJson({ eventTypes: ["new_mission", "xss-payload"] });
+    const response = await post(VALID_ID, { eventTypes: ["new_mission", "xss-payload"] });
     expect(response.status).toBe(400);
     const data = (await response.json()) as { error?: string };
     expect(data.error).toContain("drawn from");
@@ -176,7 +116,7 @@ describe("POST /api/repos/[id]/notifications/subscribe", () => {
 
   it("M3: returns 400 for an eventTypes array with non-string entries", async () => {
     signedIn();
-    const response = await postJson({ eventTypes: ["new_mission", 42] });
+    const response = await post(VALID_ID, { eventTypes: ["new_mission", 42] });
     expect(response.status).toBe(400);
     expect(subscribeToRepo).not.toHaveBeenCalled();
   });
@@ -187,12 +127,13 @@ describe("POST /api/repos/[id]/notifications/subscribe", () => {
       outcome: "subscribed",
       subscription: makeSubscription(["new_mission", "claimed", "resolved"]),
     });
-    const response = await postJson("");
+    const response = await post(VALID_ID);
     expect(response.status).toBe(201);
     expect(subscribeToRepo).toHaveBeenCalledWith(DB, {
       userLogin: login,
       repoId: VALID_ID,
     });
+    expect(revalidateTag).toHaveBeenCalledWith("repos");
   });
 
   it("forwards a valid eventTypes array to core and revalidates the repos tag", async () => {
@@ -201,7 +142,7 @@ describe("POST /api/repos/[id]/notifications/subscribe", () => {
       outcome: "subscribed",
       subscription: makeSubscription(["new_mission", "resolved"]),
     });
-    const response = await postJson({ eventTypes: ["new_mission", "resolved"] });
+    const response = await post(VALID_ID, { eventTypes: ["new_mission", "resolved"] });
     expect(response.status).toBe(201);
     expect(subscribeToRepo).toHaveBeenCalledWith(DB, {
       userLogin: login,
@@ -217,7 +158,7 @@ describe("POST /api/repos/[id]/notifications/subscribe", () => {
       outcome: "updated",
       subscription: makeSubscription(["new_mission", "resolved"]),
     });
-    const response = await postJson({ eventTypes: ["new_mission", "resolved"] });
+    const response = await post(VALID_ID, { eventTypes: ["new_mission", "resolved"] });
     expect(response.status).toBe(200);
     const data = (await response.json()) as { message: string };
     expect(data.message).toBe("Subscription updated.");
@@ -237,7 +178,7 @@ describe("POST /api/repos/[id]/notifications/subscribe", () => {
     Object.defineProperty(fullError, "cause", { value: "user-supplied-pii=abc123" });
     subscribeToRepo.mockRejectedValue(fullError);
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    const response = await postJson({ eventTypes: ["new_mission"] });
+    const response = await post(VALID_ID, { eventTypes: ["new_mission"] });
     expect(response.status).toBe(500);
     const data = (await response.json()) as { error?: string };
     expect(data.error).toBe("Failed to subscribe to notifications.");

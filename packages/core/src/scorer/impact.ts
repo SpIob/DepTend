@@ -17,6 +17,7 @@
 import type { DepType, Severity } from "../db/schema.js";
 import type { ImpactInputs } from "../db/json-types.js";
 import type { ImpactScorer, ImpactScoreResult } from "./interface.js";
+import { clamp } from "./transforms.js";
 
 // ---------------------------------------------------------------------------
 // Weights (scoring_version 1.0.0 — see ADR 0006)
@@ -78,10 +79,6 @@ const UNCONFIRMED_TRANSITIVE_DISCOUNT = 0.9;
  * than one with the same CVSS but low exploitability.
  */
 const EPSS_BOOST_FACTOR = 0.5;
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(Math.max(value, min), max);
-}
 
 // ---------------------------------------------------------------------------
 // DefaultImpactScorer

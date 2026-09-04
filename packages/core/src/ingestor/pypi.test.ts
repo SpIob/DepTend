@@ -11,33 +11,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PyPIIngestor } from "./pypi.js";
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-const BASE = "https://raw.githubusercontent.com/owner/repo/main";
-
-/** Build a minimal fetch mock that returns different responses per URL */
-function mockFetch(
-  responses: Record<string, { status: number; body?: string }>,
-): (input: string | URL, init?: RequestInit) => Response {
-  return vi.fn((input: string | URL, init?: RequestInit): Response => {
-    const url = input.toString();
-    const match = responses[url];
-
-    if (!match) {
-      return new Response(null, { status: 404 });
-    }
-
-    // HEAD requests have no body
-    if (init?.method === "HEAD") {
-      return new Response(null, { status: match.status });
-    }
-
-    return new Response(match.body ?? "", { status: match.status });
-  });
-}
+import { BASE, lockUrl, mockFetch } from "./test-helpers.js";
 
 function pyprojectUrl(base = BASE): string {
   return `${base}/pyproject.toml`;
@@ -45,10 +19,6 @@ function pyprojectUrl(base = BASE): string {
 
 function requirementsUrl(base = BASE): string {
   return `${base}/requirements.txt`;
-}
-
-function lockUrl(name: string, base = BASE): string {
-  return `${base}/${name}`;
 }
 
 /** All three Python lock files reporting absent — the common case */
@@ -59,10 +29,6 @@ function noLockFiles(base = BASE): Record<string, { status: number }> {
     [lockUrl("pdm.lock", base)]: { status: 404 },
   };
 }
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
 
 describe("PyPIIngestor", () => {
   let ingestor: PyPIIngestor;

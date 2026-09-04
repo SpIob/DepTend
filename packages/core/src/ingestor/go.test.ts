@@ -11,47 +11,13 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GoIngestor } from "./go.js";
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-const BASE = "https://raw.githubusercontent.com/owner/repo/main";
-
-/** Build a minimal fetch mock that returns different responses per URL */
-function mockFetch(
-  responses: Record<string, { status: number; body?: string }>,
-): (input: string | URL, init?: RequestInit) => Response {
-  return vi.fn((input: string | URL, init?: RequestInit): Response => {
-    const url = input.toString();
-    const match = responses[url];
-
-    if (!match) {
-      return new Response(null, { status: 404 });
-    }
-
-    // HEAD requests have no body
-    if (init?.method === "HEAD") {
-      return new Response(null, { status: match.status });
-    }
-
-    return new Response(match.body ?? "", { status: match.status });
-  });
-}
+import { BASE, lockUrl, mockFetch } from "./test-helpers.js";
 
 function goModUrl(base = BASE): string {
   return `${base}/go.mod`;
 }
 
-function lockUrl(name: string, base = BASE): string {
-  return `${base}/${name}`;
-}
-
 const SIMPLE_GO_MOD = `module example.com/x\n\ngo 1.22\n\nrequire (\n\tgithub.com/foo/bar v1.0.0\n)\n`;
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
 
 describe("GoIngestor", () => {
   let ingestor: GoIngestor;

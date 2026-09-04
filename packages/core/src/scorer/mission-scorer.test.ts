@@ -20,84 +20,8 @@ import {
   SCORING_VERSION,
   type MissionScoringContext,
 } from "./mission-scorer.js";
-import type { Advisory, Dependency, Repo } from "../db/schema.js";
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function makeDependency(overrides: Partial<Dependency> = {}): Dependency {
-  return {
-    id: "dep-1",
-    repoId: "repo-1",
-    ecosystem: "npm",
-    packageName: "left-pad",
-    versionSpec: "^1.2.3",
-    resolvedVersion: null,
-    depType: "production",
-    latestVersion: "1.4.0",
-    isDeprecated: false,
-    deprecationNote: null,
-    createdAt: new Date("2026-06-01T00:00:00Z"),
-    updatedAt: new Date("2026-06-01T00:00:00Z"),
-    ...overrides,
-  };
-}
-
-function makeAdvisory(overrides: Partial<Advisory> = {}): Advisory {
-  return {
-    id: "adv-1",
-    osvId: "GHSA-xxxx-xxxx-xxxx",
-    source: "osv",
-    ecosystem: "npm",
-    packageName: "left-pad",
-    severity: "high",
-    cvssScore: 7.5,
-    epssScore: null,
-    summary: "Example advisory",
-    details: null,
-    affectedVersions: [],
-    fixedVersion: "1.2.4",
-    publishedAt: new Date("2026-06-01T00:00:00Z"),
-    modifiedAt: null,
-    rawData: {},
-    createdAt: new Date("2026-06-01T00:00:00Z"),
-    updatedAt: new Date("2026-06-01T00:00:00Z"),
-    ...overrides,
-  };
-}
-
-function makeRepo(overrides: Partial<Repo> = {}): Repo {
-  return {
-    id: "repo-1",
-    githubUrl: "https://github.com/example/example",
-    owner: "example",
-    name: "example",
-    defaultBranch: "main",
-    description: null,
-    stars: 1000,
-    openIssuesCount: 100,
-    topics: [],
-    homepageUrl: null,
-    ingestionStatus: "complete",
-    lastIngestedAt: new Date("2026-07-01T00:00:00Z"),
-    ingestionError: null,
-    submittedBy: null,
-    orgId: null,
-    createdAt: new Date("2026-06-01T00:00:00Z"),
-    updatedAt: new Date("2026-07-01T00:00:00Z"),
-    ...overrides,
-  };
-}
-
-function makeContext(overrides: Partial<MissionScoringContext> = {}): MissionScoringContext {
-  return {
-    dependency: makeDependency(),
-    advisory: makeAdvisory(),
-    repo: makeRepo(),
-    ...overrides,
-  };
-}
+import { makeDependency, makeAdvisory, makeRepo, makeContext } from "./test-fixtures.js";
+import type { Dependency } from "../db/schema.js";
 
 // ---------------------------------------------------------------------------
 // buildImpactInputs

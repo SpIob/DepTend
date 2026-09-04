@@ -8,13 +8,8 @@
  */
 
 import { describe, expect, it } from "vitest";
-import {
-  claimMission,
-  dismissMission,
-  isValidMissionId,
-  undismissMission,
-  unclaimMission,
-} from "./missions.js";
+import { claimMission, dismissMission, undismissMission, unclaimMission } from "./missions.js";
+import { isValidUuid } from "./validation.js";
 
 // ---------------------------------------------------------------------------
 // Mock DB
@@ -77,16 +72,16 @@ function makeMockDb(options: MockDbOptions): {
 }
 
 // ---------------------------------------------------------------------------
-// isValidMissionId
+// isValidUuid (used by mission routes as isValidMissionId alias)
 // ---------------------------------------------------------------------------
 
-describe("isValidMissionId", () => {
+describe("isValidUuid", () => {
   it.each([
     "550e8400-e29b-41d4-a716-446655440000",
     "00000000-0000-0000-0000-000000000000",
     "550E8400-E29B-41D4-A716-446655440000",
   ])("accepts %s", (id) => {
-    expect(isValidMissionId(id)).toBe(true);
+    expect(isValidUuid(id)).toBe(true);
   });
 
   it.each([
@@ -97,7 +92,7 @@ describe("isValidMissionId", () => {
     ["550e8400e29b41d4a716446655440000", "missing hyphens"],
     ["'; DROP TABLE missions; --", "SQL injection attempt"],
   ])("rejects %s (%s)", (id) => {
-    expect(isValidMissionId(id)).toBe(false);
+    expect(isValidUuid(id)).toBe(false);
   });
 });
 

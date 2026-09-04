@@ -8,7 +8,7 @@ import type { MissionWithScore } from "@deptend/core";
 import { SeverityMark, severityBarClass } from "./severity-mark";
 import { EcosystemBadge } from "./ecosystem-badge";
 import { Tag } from "./tag";
-import { EFFORT_LABELS } from "@/lib/mission-filter-options";
+import { EFFORT_LABELS, MISSION_TYPE_LABELS } from "@/lib/mission-filter-options";
 import { extractErrorMessage } from "@/lib/fetch-error";
 import { signInWithGitHub } from "@/lib/sign-in";
 
@@ -29,13 +29,6 @@ const CONFIDENCE_CLASS: Record<ScoreConfidence, string> = {
   high: "text-ink-muted",
   medium: "text-severity-medium",
   low: "text-ink-muted",
-};
-
-const MISSION_TYPE_LABELS: Record<MissionType, string> = {
-  vulnerability_fix: "Vulnerability Fix",
-  dep_update: "Dependency Update",
-  maintenance: "Maintenance",
-  license_issue: "License Issue",
 };
 
 const MISSION_TYPE_CLASS: Record<MissionType, string> = {

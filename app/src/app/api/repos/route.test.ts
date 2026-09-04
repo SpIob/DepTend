@@ -14,8 +14,8 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { POST } from "./route";
 import { checkRepoSubmissionLimit } from "@/lib/rate-limit";
+import { POST } from "./route";
 
 const getServerSession = vi.hoisted(() => vi.fn());
 vi.mock("next-auth", () => ({ getServerSession }));
@@ -52,14 +52,11 @@ function signedIn(login = `user-${crypto.randomUUID()}`): string {
 function postJson(body: unknown): Request {
   return new Request("http://localhost/api/repos", {
     method: "POST",
-    // Same-origin Origin+Host pair on every request — exercises the route's
-    // origin gate's positive path; its negative path has its own case below.
     headers: { "content-type": "application/json", origin: "http://localhost", host: "localhost" },
     body: typeof body === "string" ? body : JSON.stringify(body),
   });
 }
 
-/** A Repo-shaped row — the full $inferSelect shape routes pass through opaquely. */
 function makeRepo(): Record<string, unknown> {
   return {
     id: "223e4567-e89b-12d3-a456-426614174000",
@@ -81,18 +78,13 @@ function makeRepo(): Record<string, unknown> {
   };
 }
 
-/** Canonical GitHubRepoMeta-shaped payload — the route reads owner/name off it post-pre-check. */
 function makeMeta(): Record<string, unknown> {
   return { full_name: "octocat/Hello-World", owner: { login: "octocat" }, name: "Hello-World" };
 }
 
 beforeEach(() => {
   vi.resetAllMocks();
-  // Default: no existing repo row for either duplicate check. Individual
-  // tests override this to exercise the short-circuit paths.
   getRepoByOwnerAndName.mockResolvedValue(null);
-  // Deterministic regardless of the developer's/CI's shell env: no token
-  // (pre-check runs unauthenticated → core receives null), cap pinned at 150.
   vi.stubEnv("GITHUB_TOKEN", undefined);
   vi.stubEnv("NEXT_PUBLIC_MAX_REPOS", "150");
 });
@@ -168,8 +160,6 @@ describe("POST /api/repos", () => {
     const response = await POST(postJson({ githubUrl: "https://github.com/octocat/Hello-World" }));
 
     expect(response.status).toBe(200);
-    // The whole point of this check: no GitHub API budget spent re-verifying
-    // a repo we already index.
     expect(checkSubmittableRepo).not.toHaveBeenCalled();
     expect(submitRepo).not.toHaveBeenCalled();
     expect(getRepoByOwnerAndName).toHaveBeenCalledWith(DB, "octocat", "Hello-World");
@@ -181,8 +171,6 @@ describe("POST /api/repos", () => {
   it("catches a case-variant duplicate via canonical metadata after the pre-check", async () => {
     signedIn();
     const repo = makeRepo();
-    // First lookup (raw parsed casing) misses; the post-pre-check lookup
-    // against canonical owner/name finds the row.
     getRepoByOwnerAndName.mockResolvedValueOnce(null).mockResolvedValueOnce(repo);
     checkSubmittableRepo.mockResolvedValue({
       ok: true,
@@ -244,10 +232,6 @@ describe("POST /api/repos", () => {
 
   it("submits with canonical URL parts, the caller's login, and the configured cap on success", async () => {
     signedIn("submitter-login");
-    // GitHub resolves owner/repo names case-insensitively; the pre-check's
-    // metadata is canonical. A user-submitted "OctoCat" casing must NOT be
-    // what lands in the DB — scripts/ingest.js writes back
-    // ghMeta.full_name, and a casing mismatch would fork the row into two.
     checkSubmittableRepo.mockResolvedValue({
       ok: true,
       ecosystem: "npm",
@@ -269,17 +253,12 @@ describe("POST /api/repos", () => {
       submittedBy: "submitter-login",
       maxRepos: 150,
     });
-    // The pre-check itself still receives the raw parsed parts — it is the
-    // thing resolving them to canonical form.
     expect(checkSubmittableRepo).toHaveBeenCalledWith("OctoCat", "Hello-World", null);
     expect(triggerIngestion).toHaveBeenCalledWith(repo.id);
 
     const data = (await response.json()) as { message?: string; repo?: unknown };
     expect(data.message).toContain("ingestion has been triggered");
-    // Compare in wire form — NextResponse.json serializes Date fields to
-    // ISO strings, so the raw fixture (with Date instances) isn't equal.
     expect(data.repo).toEqual(JSON.parse(JSON.stringify(repo)));
-    // Creation invalidates the directory/count caches (ADR 0033).
     expect(revalidateTag).toHaveBeenCalledWith("repos");
     expect(revalidateTag).not.toHaveBeenCalledWith("missions");
   });
@@ -315,8 +294,6 @@ describe("POST /api/repos", () => {
     expect(response.status).toBe(201);
     const data = (await response.json()) as { message?: string };
     expect(data.message).toContain("next scheduled run");
-    // The dispatch failure must leave evidence — an expired
-    // GH_DISPATCH_TOKEN otherwise looks like nothing broke.
     expect(warn).toHaveBeenCalledTimes(1);
     expect(warn.mock.calls[0]?.[0]).toContain(repo.id);
     expect(warn.mock.calls[0]?.[0]).toContain("GitHub API returned 404");

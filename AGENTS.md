@@ -75,23 +75,23 @@ browse the mission board; a logged-in GitHub user can submit a repo or claim a m
 - In-memory (`Map`-based) rate limiting is in place on previously-unthrottled mutating endpoints.
 - `CHANGELOG.md` exists at repo root; phase/date-based headers, not semver
   (`package.json.version` deliberately stays `0.0.1`).
-- ADRs currently run through **0047** (`populate-organizations` —
-  move `packages/core`'s six runtime dependencies out of root hoisting and
-  into `packages/core/package.json`'s own `dependencies` block; root's block
-  stays as the single source of truth for `scripts/ingest.js`; removes the
-  unused `drizzle-orm` and `@neondatabase/serverless` from `app/package.json`;
-  Accepted; verified empirically by removing root's `dependencies` and
-  confirming core's per-package install + build now succeeds without root's
-  hoisted supply). 0043 (`bulkWriteMissions` — collapse the scorer's per-row
-  2N mission write loop into a constant 3 round-trips; Accepted pending
-  the post-deploy confirmation per the standing rule; live-verified against
-  dev Neon in the same commit as the implementation per AGENTS.md §6's
+- ADRs currently run through **0052** (`server-timing` — `Server-Timing`
+  header on every non-asset request via middleware; Accepted). 0047
+  (`populate-organizations` — move `packages/core`'s six runtime dependencies
+  out of root hoisting and into `packages/core/package.json`'s own
+  `dependencies` block; root's block stays as the single source of truth for
+  `scripts/ingest.js`; removes the unused `drizzle-orm` and
+  `@neondatabase/serverless` from `app/package.json`; Accepted; verified
+  empirically by removing root's `dependencies` and confirming core's
+  per-package install + build now succeeds without root's hoisted supply).
+  0043 (`bulkWriteMissions` — collapse the scorer's per-row 2N mission write
+  loop into a constant 3 round-trips; Accepted; live-verified against dev
+  Neon in the same commit as the implementation per AGENTS.md §6's
   meta-lesson). The 0042 component deprecation stands as written; 0041
   (`detectEcosystem` parallel probing with `AbortController` plumbing;
-  Proposed — flip to Accepted after the post-deploy confirmation in the
-  same deploy window) reduces per-repo cron wall time by up to 4–6 HTTP
-  round-trips per non-npm-first repo and the same for the user-facing
-  submission manifest pre-check. The nonce-based CSP is still ENFORCED
+  Accepted) reduces per-repo cron wall time by up to 4–6 HTTP round-trips
+  per non-npm-first repo and the same for the user-facing submission
+  manifest pre-check. The nonce-based CSP is still ENFORCED
   via `app/src/middleware.ts`, not next.config.ts. Its `CSP_ENFORCED`
   constant is the single rollback point if a future inline script ever
   breaks under enforcement. Check `docs/adr/` for real statuses before

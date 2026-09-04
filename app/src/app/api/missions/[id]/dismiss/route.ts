@@ -3,7 +3,8 @@ import { revalidateTag } from "next/cache";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { getDb } from "@/lib/db";
-import { dismissMission, isValidMissionId } from "@deptend/core/db/missions.js";
+import { dismissMission } from "@deptend/core/db/missions.js";
+import { isValidUuid } from "@deptend/core/db/validation.js";
 import { checkMissionActionLimit } from "@/lib/rate-limit";
 import { isSameOrigin } from "@/lib/request-origin";
 import { parseOptionalJsonBody } from "@/lib/body-parse";
@@ -48,7 +49,7 @@ export async function POST(
   }
 
   const { id } = await params;
-  if (!isValidMissionId(id)) {
+  if (!isValidUuid(id)) {
     return NextResponse.json({ error: "Invalid mission id." }, { status: 400 });
   }
 

@@ -18,6 +18,7 @@
 
 import type { EcosystemValueInputs } from "../db/json-types.js";
 import type { EcosystemValueScorer, EcosystemValueScoreResult } from "./interface.js";
+import { clamp } from "./transforms.js";
 
 // ---------------------------------------------------------------------------
 // Ceilings and weights (scoring_version 1.0.0 — see ADR 0006)
@@ -29,10 +30,6 @@ const DOWNSTREAM_CEILING = 10_000;
 
 const WEIGHTS_WITH_DOWNSTREAM = { stars: 0.5, downstream: 0.35, engagement: 0.15 };
 const WEIGHTS_WITHOUT_DOWNSTREAM = { stars: 0.75, engagement: 0.25 };
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(Math.max(value, min), max);
-}
 
 /** Log-scale a non-negative count against a soft ceiling, onto a 0–10 range. */
 function logComponent(count: number, ceiling: number): number {

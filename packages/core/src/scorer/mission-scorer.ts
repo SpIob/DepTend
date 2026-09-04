@@ -48,6 +48,7 @@ import type { EffortSignals } from "../ingestor/changelog-signals.js";
 import { DefaultImpactScorer } from "./impact.js";
 import { DefaultEffortScorer } from "./effort.js";
 import { DefaultEcosystemValueScorer } from "./ecosystem-value.js";
+import { clamp } from "./transforms.js";
 
 export const SCORING_VERSION = "1.1.0";
 
@@ -99,10 +100,6 @@ export interface MissionScoreComputation {
   confidence_notes: string[];
   confidence_flags: ConfidenceFlags;
   scoring_version: string;
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(Math.max(value, min), max);
 }
 
 // ---------------------------------------------------------------------------
