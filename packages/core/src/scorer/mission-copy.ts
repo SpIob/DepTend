@@ -6,20 +6,8 @@
  * LLM call at runtime, which would be a new paid dependency and a source of
  * non-determinism this project's transparency-first constraint doesn't want.
  *
- * Wording pass (2026-07-30, pre-launch): this file was an intentional first
- * draft since Phase 2 (ADR 0007 §5), shipped user-facing since Phase 3
- * without ever getting the design pass that was flagged as owed. This is
- * that pass. The underlying data shown is unchanged — same fields, same
- * test-visible substrings — only the prose and two small additions:
- * (1) the ecosystem is now named explicitly, since npm/PyPI/Go all coexist
- * on the board since ADR 0024 and nothing in the copy previously said which
- * one a mission was about; (2) action_hint now leads with effort_label
- * alongside the semver/PEP440 bump, so "how big a deal is this" reads in
- * one line without opening the score disclosure. Still not a settled
- * decision the way ADR 0006/0007 are — wording remains free to edit.
- *
- * Extended to support multiple mission types (dep_update, maintenance, license_issue)
- * in addition to vulnerability_fix.
+ * Data-driven template approach: each mission type defines its own template
+ * functions, reducing code duplication across the 4 mission types.
  *
  * ADR: docs/adr/0008-mission-db-writer.md
  */
@@ -33,13 +21,6 @@ export interface MissionCopy {
   action_hint: string | null;
 }
 
-// Display casing per ecosystem. Deliberately a local, independent copy of
-// the same map that already exists in osv.ts (OSV_ECOSYSTEM_NAMES) and
-// app/src/lib/mission-filter-options.ts (ECOSYSTEM_LABELS) rather than
-// a shared import — this module has no other dependency on app-side UI
-// code, and osv.ts's version means something different (OSV's own wire
-// casing, not a display label). A Record<Ecosystem, string> means a fourth
-// ecosystem without an entry here is a compile error, not a silent gap.
 const ECOSYSTEM_LABELS: Record<Ecosystem, string> = {
   npm: "npm",
   pypi: "PyPI",
@@ -50,152 +31,124 @@ function capitalize(value: string): string {
   return value.length === 0 ? value : value.charAt(0).toUpperCase() + value.slice(1);
 }
 
-// Only "unknown" among the 5 severity enum values starts with a vowel sound.
-// Hardcoded rather than a general vowel-detection heuristic — not worth the
-// generality for a closed, 5-value enum.
 function articleFor(severity: string): string {
   return severity === "unknown" ? "an" : "a";
 }
 
-function buildVulnerabilityFixTitle(ctx: MissionScoringContext): string {
-  const { dependency, advisory } = ctx;
-
-  if (advisory.fixedVersion !== null) {
-    return `Update ${dependency.packageName} to fix ${articleFor(advisory.severity)} ${advisory.severity} vulnerability`;
-  }
-  return `${capitalize(advisory.severity)} vulnerability in ${dependency.packageName} has no fix yet`;
+function bumpDescriptor(bump: string): string {
+  return bump === "unknown" ? "bump size unknown" : `${bump} version bump`;
 }
 
-function buildVulnerabilityFixDescription(ctx: MissionScoringContext): string {
-  const { dependency, advisory } = ctx;
+function ecosystemLine(ctx: MissionScoringContext): string {
+  const { dependency } = ctx;
+  const label = ECOSYSTEM_LABELS[dependency.ecosystem];
+  return `${dependency.packageName} is declared as "${dependency.versionSpec}" and used as a ${dependency.depType} ${label} dependency of this repo.`;
+}
 
+function severityLine(ctx: MissionScoringContext): string {
+  const { advisory } = ctx;
   const cvssPart = advisory.cvssScore !== null ? ` (CVSS ${advisory.cvssScore.toFixed(1)})` : "";
-  const ecosystemLabel = ECOSYSTEM_LABELS[dependency.ecosystem];
-
-  return [
-    advisory.summary,
-    "",
-    `${dependency.packageName} is declared as "${dependency.versionSpec}" and used as a ` +
-      `${dependency.depType} ${ecosystemLabel} dependency of this repo. Severity: ` +
-      `${advisory.severity}${cvssPart}.`,
-    `Reported via ${advisory.osvId} (${advisory.source.toUpperCase()}).`,
-  ].join("\n");
+  return `Severity: ${advisory.severity}${cvssPart}.`;
 }
 
-function buildVulnerabilityFixActionHint(
-  ctx: MissionScoringContext,
-  score: MissionScoreComputation,
-): string | null {
-  const { dependency, advisory } = ctx;
-
-  if (advisory.fixedVersion === null) {
-    return (
-      `No fixed version has been published yet for ${advisory.osvId} — track the ` +
-      `advisory and revisit once one lands.`
-    );
-  }
-
-  const bump = score.effort_inputs.semver_bump;
-  const bumpDescriptor = bump === "unknown" ? "bump size unknown" : `${bump} version bump`;
-
-  return (
-    `Upgrade ${dependency.packageName} to ${advisory.fixedVersion} or later — ` +
-    `${score.effort_label} effort (${bumpDescriptor}).`
-  );
+function osvLine(ctx: MissionScoringContext): string {
+  const { advisory } = ctx;
+  return `Reported via ${advisory.osvId} (${advisory.source.toUpperCase()}).`;
 }
 
-function buildDepUpdateTitle(ctx: MissionScoringContext, targetVersion: string): string {
-  const { dependency } = ctx;
-  return `Update ${dependency.packageName} to ${targetVersion} (no known vulnerabilities)`;
+interface MissionCopyTemplate {
+  title: (ctx: MissionScoringContext, params: MissionCopyParams) => string;
+  description: (ctx: MissionScoringContext, params: MissionCopyParams) => string;
+  action_hint: (
+    ctx: MissionScoringContext,
+    score: MissionScoreComputation,
+    params: MissionCopyParams,
+  ) => string | null;
 }
 
-function buildDepUpdateDescription(ctx: MissionScoringContext, targetVersion: string): string {
-  const { dependency } = ctx;
-  const ecosystemLabel = ECOSYSTEM_LABELS[dependency.ecosystem];
-
-  return [
-    `${dependency.packageName} is declared as "${dependency.versionSpec}" and used as a ` +
-      `${dependency.depType} ${ecosystemLabel} dependency of this repo.`,
-    `Latest version is ${targetVersion}. No known vulnerabilities in current version.`,
-    `Consider updating to stay current with bug fixes and improvements.`,
-  ].join("\n");
+interface MissionCopyParams {
+  targetVersion: string | undefined;
+  maintenanceReason: "deprecated" | "archived" | "unmaintained" | undefined;
 }
 
-function buildDepUpdateActionHint(
-  ctx: MissionScoringContext,
-  score: MissionScoreComputation,
-  targetVersion: string,
-): string | null {
-  const { dependency } = ctx;
-  const bump = score.effort_inputs.semver_bump;
-  const bumpDescriptor = bump === "unknown" ? "bump size unknown" : `${bump} version bump`;
-
-  return (
-    `Upgrade ${dependency.packageName} to ${targetVersion} or later — ` +
-    `${score.effort_label} effort (${bumpDescriptor}).`
-  );
+function reasonText(reason: string): string {
+  return reason === "archived"
+    ? "This package's upstream repository has been archived and is no longer maintained."
+    : reason === "deprecated"
+      ? "This package has been deprecated by its maintainers."
+      : "This package appears to be unmaintained.";
 }
 
-function buildMaintenanceTitle(ctx: MissionScoringContext, reason: string): string {
-  const { dependency } = ctx;
-  return `${capitalize(reason)} package: ${dependency.packageName} needs attention`;
-}
-
-function buildMaintenanceDescription(ctx: MissionScoringContext, reason: string): string {
-  const { dependency } = ctx;
-  const ecosystemLabel = ECOSYSTEM_LABELS[dependency.ecosystem];
-
-  const reasonText =
-    reason === "archived"
-      ? "This package's upstream repository has been archived and is no longer maintained."
-      : reason === "deprecated"
-        ? "This package has been deprecated by its maintainers."
-        : "This package appears to be unmaintained.";
-
-  return [
-    `${dependency.packageName} is declared as "${dependency.versionSpec}" and used as a ` +
-      `${dependency.depType} ${ecosystemLabel} dependency of this repo.`,
-    reasonText,
-    `Consider migrating to an actively maintained alternative.`,
-  ].join("\n");
-}
-
-function buildMaintenanceActionHint(
-  ctx: MissionScoringContext,
-  _score: MissionScoreComputation,
-  targetVersion: string | undefined,
-): string | null {
-  const { dependency } = ctx;
-
-  if (targetVersion !== undefined) {
-    return `Review ${dependency.packageName} and consider updating to ${targetVersion} or finding an alternative.`;
-  }
-  return `Review ${dependency.packageName} and consider finding an actively maintained alternative.`;
-}
-
-function buildLicenseIssueTitle(ctx: MissionScoringContext): string {
-  const { dependency } = ctx;
-  return `License issue with ${dependency.packageName}`;
-}
-
-function buildLicenseIssueDescription(ctx: MissionScoringContext): string {
-  const { dependency } = ctx;
-  const ecosystemLabel = ECOSYSTEM_LABELS[dependency.ecosystem];
-
-  return [
-    `${dependency.packageName} is declared as "${dependency.versionSpec}" and used as a ` +
-      `${dependency.depType} ${ecosystemLabel} dependency of this repo.`,
-    `A potential license compatibility issue has been detected.`,
-    `Review the package's license terms for compliance with your project's policies.`,
-  ].join("\n");
-}
-
-function buildLicenseIssueActionHint(
-  _ctx: MissionScoringContext,
-  _score: MissionScoreComputation,
-): string | null {
-  return `Review the license terms and determine if action is needed.`;
-}
+const TEMPLATES: Record<MissionType, MissionCopyTemplate> = {
+  vulnerability_fix: {
+    title: (ctx) => {
+      const { dependency, advisory } = ctx;
+      if (advisory.fixedVersion !== null) {
+        return `Update ${dependency.packageName} to fix ${articleFor(advisory.severity)} ${advisory.severity} vulnerability`;
+      }
+      return `${capitalize(advisory.severity)} vulnerability in ${dependency.packageName} has no fix yet`;
+    },
+    description: (ctx) =>
+      [ctx.advisory.summary, "", `${ecosystemLine(ctx)} ${severityLine(ctx)}`, osvLine(ctx)].join(
+        "\n",
+      ),
+    action_hint: (ctx, score) => {
+      const { dependency, advisory } = ctx;
+      if (advisory.fixedVersion === null) {
+        return `No fixed version has been published yet for ${advisory.osvId} — track the advisory and revisit once one lands.`;
+      }
+      return `Upgrade ${dependency.packageName} to ${advisory.fixedVersion} or later — ${score.effort_label} effort (${bumpDescriptor(score.effort_inputs.semver_bump)}).`;
+    },
+  },
+  dep_update: {
+    title: (ctx, params) => {
+      const { dependency } = ctx;
+      return `Update ${dependency.packageName} to ${params.targetVersion ?? "latest"} (no known vulnerabilities)`;
+    },
+    description: (ctx, params) =>
+      [
+        ecosystemLine(ctx),
+        `Latest version is ${params.targetVersion ?? "latest"}. No known vulnerabilities in current version.`,
+        "Consider updating to stay current with bug fixes and improvements.",
+      ].join("\n"),
+    action_hint: (ctx, score, params) => {
+      const { dependency } = ctx;
+      return `Upgrade ${dependency.packageName} to ${params.targetVersion ?? "latest"} or later — ${score.effort_label} effort (${bumpDescriptor(score.effort_inputs.semver_bump)}).`;
+    },
+  },
+  maintenance: {
+    title: (ctx, params) => {
+      const { dependency } = ctx;
+      return `${capitalize(params.maintenanceReason ?? "unmaintained")} package: ${dependency.packageName} needs attention`;
+    },
+    description: (ctx, params) =>
+      [
+        ecosystemLine(ctx),
+        reasonText(params.maintenanceReason ?? "unmaintained"),
+        "Consider migrating to an actively maintained alternative.",
+      ].join("\n"),
+    action_hint: (ctx, _score, params) => {
+      const { dependency } = ctx;
+      if (params.targetVersion !== undefined) {
+        return `Review ${dependency.packageName} and consider updating to ${params.targetVersion} or finding an alternative.`;
+      }
+      return `Review ${dependency.packageName} and consider finding an actively maintained alternative.`;
+    },
+  },
+  license_issue: {
+    title: (ctx) => {
+      const { dependency } = ctx;
+      return `License issue with ${dependency.packageName}`;
+    },
+    description: (ctx) =>
+      [
+        ecosystemLine(ctx),
+        "A potential license compatibility issue has been detected.",
+        "Review the package's license terms for compliance with your project's policies.",
+      ].join("\n"),
+    action_hint: () => "Review the license terms and determine if action is needed.",
+  },
+};
 
 export interface MissionCopyInput {
   type: MissionType;
@@ -226,36 +179,17 @@ export function generateMissionCopy(
   // New signature: MissionCopyInput
   const input = arg1 as MissionCopyInput;
   const { type, ctx, score, targetVersion, maintenanceReason } = input;
+  const template = TEMPLATES[type as keyof typeof TEMPLATES];
 
-  switch (type) {
-    case "vulnerability_fix":
-      return {
-        title: buildVulnerabilityFixTitle(ctx),
-        description: buildVulnerabilityFixDescription(ctx),
-        action_hint: buildVulnerabilityFixActionHint(ctx, score),
-      };
-    case "dep_update":
-      return {
-        title: buildDepUpdateTitle(ctx, targetVersion ?? "latest"),
-        description: buildDepUpdateDescription(ctx, targetVersion ?? "latest"),
-        action_hint: buildDepUpdateActionHint(ctx, score, targetVersion ?? "latest"),
-      };
-    case "maintenance":
-      return {
-        title: buildMaintenanceTitle(ctx, maintenanceReason ?? "unmaintained"),
-        description: buildMaintenanceDescription(ctx, maintenanceReason ?? "unmaintained"),
-        action_hint: buildMaintenanceActionHint(ctx, score, targetVersion),
-      };
-    case "license_issue":
-      return {
-        title: buildLicenseIssueTitle(ctx),
-        description: buildLicenseIssueDescription(ctx),
-        action_hint: buildLicenseIssueActionHint(ctx, score),
-      };
-    default: {
-      // Exhaustiveness check - TypeScript will error if a new MissionType is added
-      const _exhaustive: never = type;
-      throw new Error(`Unhandled mission type: ${String(_exhaustive)}`);
-    }
+  if (!template) {
+    // This should never happen if TEMPLATES covers all MissionType values
+    throw new Error(`Unhandled mission type: ${String(type)}`);
   }
+
+  const params: MissionCopyParams = { targetVersion, maintenanceReason };
+  return {
+    title: template.title(ctx, params),
+    description: template.description(ctx, params),
+    action_hint: template.action_hint(ctx, score, params),
+  };
 }

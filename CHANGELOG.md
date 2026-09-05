@@ -10,6 +10,161 @@ All notable changes to DepTend, condensed to one entry per phase.
 
 ---
 
+**2026-09-06 — Scorer complexity reduction: split mission-scorer, deduplicate floor extraction, data-driven mission copy**
+
+Reduced `packages/core/src/scorer/` complexity by splitting the 605-line `mission-scorer.ts` into four focused modules, deduplicating version-floor logic used by `mission-type-detector.ts`, and refactoring `mission-copy.ts` to a data-driven template approach. No behavior changes — all 176 scorer tests pass, snapshots lock all 4 mission types.
+
+### Changed
+
+- **`mission-scorer.ts` split into four modules** (605 → 133 lines orchestration + 3 new focused files):
+  - `bump-inference.ts` (253 lines) — semver/PEP440 floor extraction (`extractVersionFloor`) and bump inference (`inferSemverBump`, `inferPep440Bump`, `inferBumpForEcosystem`). Reused by `writer.ts` (ADR 0029) and `mission-type-detector.ts`.
+  - `input-mappers.ts` (66 lines) — pure `buildImpactInputs`, `buildEffortInputs`, `buildEcosystemValueInputs`.
+  - `confidence.ts` (82 lines) — `deriveConfidenceFlags`, `deriveConfidence`, `buildConfidenceNotes`.
+  - `mission-scorer.ts` (133 lines) — only `computeMissionScore()` orchestration + types.
+
+- **`mission-type-detector.ts` deduplication** — removed local `extractVersionFloorForType` (45 lines of duplicated semver/PEP440 floor logic); now imports shared `extractVersionFloor` from `bump-inference.ts`.
+
+- **`mission-copy.ts` data-driven templates** (261 → 195 lines) — replaced 4× `build*Title/Description/ActionHint` function sets with a single `TEMPLATES` record keyed by `MissionType`. Shared helpers (`ecosystemLine`, `severityLine`, `osvLine`, `bumpDescriptor`, `reasonText`) eliminate repetitive string construction. Adding a 5th mission type now requires ~10 lines instead of 4 new functions.
+
+### Tests
+
+- All 176 scorer tests pass (7 new snapshot tests added locking output for all 4 mission types: `vulnerability_fix` with/without fix, `dep_update`, `maintenance` ×3 reasons, `license_issue`)
+- Typecheck, format clean
+- No runtime behavior changes — snapshots confirm exact output parity
+
+---
+
+**2026-09-06 — Notification subscriptions: simpler core, faster directory queries**
+
+Simplified `packages/core/src/notifications/subscriptions.ts` (93 → 94 lines, +1 export, −1 export, removed dead default) and switched directory/board read paths from `getUserSubscriptions()` (full rows) to `getSubscribedRepoIds()` (just repo IDs in a Set, mirroring `getBookmarkedRepoIds`). The `unsubscribeFromRepo` return type now matches the `bookmarkRepo`/`unbookmarkRepo` pattern (`"unsubscribed" | "not_subscribed"` instead of `boolean`).
+
+### Changed
+
+- **Removed duplicate JS default** in `subscribeToRepo` (line 35) — the DB column already has `ARRAY['new_mission', 'claimed', 'resolved']` as its server-side default; the route validates `eventTypes` before calling core, so the JS default was only hit on empty body and was redundant.
+- **`unsubscribeFromRepo` returns discriminated outcome** (`"unsubscribed" | "not_subscribed"`) so the route can return 404 for "never subscribed" without an extra SELECT — same pattern as `unbookmarkRepo` returning `"not_bookmarked"`.
+- **Added `getSubscribedRepoIds(db, userLogin): Promise<Set<string>>`** — selects only `repo_id` (index-only scan via `idx_notification_subscriptions_user_login`), returns a `Set` for O(1) membership checks. Replaces `getUserSubscriptions` which returned full `NotificationSubscription[]` rows.
+- **Deleted `getUserSubscriptions`** — only caller was `queries.ts` (for `isSubscribed` flag); directory queries now use the more efficient `getSubscribedRepoIds`.
+
+### Updated call sites
+
+- `packages/core/src/db/queries.ts` — `getRepoDirectoryBase` uses `getSubscribedRepoIds`
+- `packages/core/src/db/directory-queries.ts` — `getRepoDirectoryBase` uses `getSubscribedRepoIds`
+- `app/src/app/api/repos/[id]/notifications/unsubscribe/route.ts` — handles new outcome type
+
+### Tests
+
+- All 198 app route tests pass (subscribe + unsubscribe)
+- All 15 `directory-queries.test.ts` tests pass (updated mock fixture to pass repo IDs directly)
+- Typecheck, lint, format clean
+
+---
+
+**2026-09-05 — Production audit fixes: per-repo `aria-label` on bookmark/notification toggles, `/api/*` 404 JSON envelope, `/missions?page=N` no longer flashes an empty board**
+
+The 2026-09-05 end-to-end production audit (against
+`deptend.vercel.app`) found three independent defects — one in a11y,
+one in the API surface, one in the mission-board page rendering.
+All three are fixed in ADR 0054; nothing else changes.
+
+### Fixed
+
+- **Bookmark and notification toggles shared one `aria-label` across every card on a multi-repo page** (ADR 0054,
+  `app/src/components/bookmark-toggle.tsx`, `notification-toggle.tsx`).
+  On `/` and `/org/[org]`, every card's toggle button announced the
+  same "Sign in with GitHub to bookmark this repo" to a screen
+  reader, with no way to tell them apart. Each toggle now takes a
+  required `repoFullName` prop and announces "Sign in with GitHub to
+  bookmark `<owner>/<name>`" (and the equivalent signed-in /
+  notification-subscription states). `NotificationToggle` got the
+  same treatment plus an `aria-label` on its previously-label-less
+  signed-in state.
+
+- **Unmatched `/api/*` paths returned HTTP 200 with the HTML 404
+  page** (ADR 0054, `app/src/app/api/[...slug]/route.ts`).
+  `POST /api/repos/precheck` (any body) used to return 200 with
+  `content-type: text/html` and the top-level 404 page's body, so
+  any client doing `await res.json()` threw a `SyntaxError` while
+  the matching `Response.ok` check returned `true` and masked the
+  error. The new catch-all is the API-side analog of
+  `app/src/app/[...slug]/page.tsx` (ADR 0048): every method returns
+  404 with a JSON envelope `{"error":"Not found."}`. Real routes
+  match first; the catch-all is a peer, not a replacement.
+
+- **Out-of-range `?page=` on `/missions` flashed an empty board for
+  ~1 second** (ADR 0054, `app/src/lib/mission-board-query.ts`,
+  `app/src/app/missions/page.tsx`). `?page=99` against a 4-page
+  board used to render the page header + an empty mission list,
+  then redirect to `?page=4` via `<meta http-equiv="refresh">` —
+  the streaming RSC `redirect()` cannot commit a real HTTP 307 once
+  the stream is half-sent, so the user saw the empty state for the
+  full meta-refresh delay. New `clampPageNumber(page, pageCount)`
+  helper clamps the page number to the valid range and the page
+  renders the correct content on the first byte; the URL bar keeps
+  `?page=99` until the user clicks a pagination link, which then
+  carries them to the canonical page. The 5 clamp cases are
+  unit-tested in `mission-board-query.test.ts`.
+
+### Verification
+
+- `pnpm typecheck`, `pnpm test` (190 app / 774 core / 40 cli / 8
+  scripts), `pnpm lint --max-warnings 0`, `pnpm format:check`, and
+  a full `pnpm build` (with the new `/api/[...slug]` route
+  appearing in the build output) all pass.
+- Live verification of the API 404, the page clamp, and the distinct
+  `aria-label`s happens on the next deploy window per the standing
+  `AGENTS.md §10` rule.
+
+---
+
+**2026-09-05 — Directory per-severity counts now include advisory-less missions; invalid mission-board URLs canonicalize; CLAIMED tag no longer truncates titles**
+
+The 2026-09-05 production-site QA pass found five bugs across the
+home-page directory, the mission board URL parsing, and the mission
+card layout. The most impactful (silent undercounting of the
+`SpIob/FlowState` and `psf/requests` repo cards' mission totals) is
+fixed in ADR 0053; the smaller ones are folded into the same pass.
+
+### Fixed
+
+- **Directory silently dropped dep_update / maintenance /
+  license_issue missions from per-severity counts** (ADR 0053,
+  `packages/core/src/db/queries.ts:755-805`) — the directory's
+  per-severity tally was `INNER JOIN advisories` grouped by
+  `advisories.severity`, which excluded every mission with
+  `advisory_id = NULL` (all `dep_update`, `maintenance`, and
+  `license_issue` rows). `SpIob/FlowState` showed 51 (1 critical +
+  17 high + 29 medium + 4 low) on the home card while the per-repo
+  page's Impact facet correctly showed 75; `psf/requests` showed 48
+  vs 51. Rewrote to `LEFT JOIN` + `COALESCE(advisories.severity,
+'unknown')` to mirror the board query's `BOARD_SEVERITY_EXPR`.
+  Live-verified against dev Neon: directory totals now match the
+  per-repo Impact facet for all six indexed repos.
+- **`?sort=easiest` (and other stale aliases) silently disagreed
+  with the dropdown** (`app/src/lib/mission-board-query.ts`,
+  `app/src/app/missions/page.tsx`, `app/src/app/repo/[owner]/[name]/page.tsx`)
+  — `parseSortParam` falls back to `"priority"` on unknown values
+  but the URL still carried the bogus `?sort=easiest`, so any
+  subsequent chip click re-emitted `easiest` as if it were
+  legitimate. Added `isCanonicalMissionBoardQuery()` and a
+  page-level redirect to the canonical URL on mismatch, mirroring
+  the existing `page > pageCount` canonicalization pattern.
+  Pinned by `app/src/lib/mission-board-query.test.ts` (new file,
+  16 cases).
+- **CLAIMED tag squeezed the mission-card title to ~50% width**
+  (`app/src/components/mission-card.tsx:539-566`) — on a typical
+  repo mission the title truncated to `Update @tauri…` even at
+  desktop widths. Wrapped the CLAIMED tag and the score in one
+  right-side flex column so the title's `sm:flex-1` row gets the
+  full available width minus one fixed-width cluster instead of
+  competing with both siblings for flex space.
+- **`Bagong-Enerhiya` (and any other `skipped` repo) appeared
+  twice on the home page** — once as a card showing "No manifest
+  found" and again in the "1 skipped" disclosure (`app/src/app/page.tsx:60-72`).
+  The directory now renders only `complete` repos in the grid;
+  skipped ones live in the disclosure, exactly once.
+
+---
+
 **2026-09-05 — CLI B1, B3, B4, B6-B10 fixes from the 2026-09-05 audit**
 
 The 2026-09-05 CLI audit

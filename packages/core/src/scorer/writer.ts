@@ -63,10 +63,10 @@ import {
 } from "../db/schema.js";
 import {
   computeMissionScore,
-  extractVersionFloor,
   type MissionScoreComputation,
   type MissionScoringContext,
 } from "./mission-scorer.js";
+import { extractVersionFloor } from "./bump-inference.js";
 import { generateMissionCopy, type MissionCopyInput } from "./mission-copy.js";
 import { classifyAllMissions } from "./mission-type-detector.js";
 // Scorer -> ingestor, same direction (and same reasoning) as

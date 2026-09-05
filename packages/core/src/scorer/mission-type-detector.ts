@@ -11,10 +11,10 @@
  * - license_issue: license incompatibility (requires license detection)
  */
 
-import type { Dependency, Advisory, MissionType } from "../db/schema.js";
+import type { Dependency, Advisory, MissionType, Ecosystem } from "../db/schema.js";
 import semver from "semver";
 import { compare as pep440Compare, validRange as pep440ValidRange } from "@renovatebot/pep440";
-import { extractPep440Floor } from "./mission-scorer.js";
+import { extractVersionFloor, extractPep440Floor } from "./bump-inference.js";
 
 export type { MissionType };
 
@@ -85,7 +85,7 @@ export function classifyMissionType(
     }
   } else if (dependency.latestVersion && !dependency.resolvedVersion) {
     // No resolved version - use version spec floor as proxy
-    const floor = extractVersionFloorForType(dependency.ecosystem, dependency.versionSpec);
+    const floor = extractVersionFloor(dependency.ecosystem, dependency.versionSpec);
     if (floor && isVersionBehind(floor, dependency.latestVersion, dependency.ecosystem)) {
       return {
         type: "dep_update",
@@ -113,23 +113,6 @@ function isVersionBehind(current: string, target: string, ecosystem: string): bo
     // If comparison fails, assume not behind
   }
   return false;
-}
-
-function extractVersionFloorForType(ecosystem: string, versionSpec: string): string | null {
-  try {
-    if (ecosystem === "npm" || ecosystem === "go") {
-      const normalizedRange = semver.validRange(versionSpec);
-      if (!normalizedRange || normalizedRange === "*") return null;
-      const currentProxy = semver.minVersion(versionSpec);
-      return currentProxy === null ? null : currentProxy.version;
-    } else if (ecosystem === "pypi") {
-      if (!pep440ValidRange(versionSpec)) return null;
-      return extractPep440Floor(versionSpec);
-    }
-  } catch {
-    // Ignore
-  }
-  return null;
 }
 
 /**

@@ -5,7 +5,7 @@
 import { describe, expect, it } from "vitest";
 import { generateMissionCopy } from "./mission-copy.js";
 import { computeMissionScore } from "./mission-scorer.js";
-import { makeDependency, makeAdvisory, makeContext } from "./test-fixtures.js";
+import { makeDependency, makeAdvisory, makeContext, makeRepo } from "./test-fixtures.js";
 
 describe("generateMissionCopy", () => {
   it("includes the package name and severity in the title when a fix exists", () => {
@@ -93,5 +93,71 @@ describe("generateMissionCopy", () => {
     const copy = generateMissionCopy(ctx, score);
     expect(copy.action_hint).toContain(score.effort_label);
     expect(copy.action_hint).toContain(score.effort_inputs.semver_bump);
+  });
+});
+
+describe("generateMissionCopy — snapshot for all mission types", () => {
+  it("vulnerability_fix (with fix)", () => {
+    const ctx = makeContext();
+    const score = computeMissionScore(ctx);
+    const copy = generateMissionCopy({ type: "vulnerability_fix", ctx, score });
+    expect(copy).toMatchSnapshot();
+  });
+
+  it("vulnerability_fix (no fix)", () => {
+    const ctx = makeContext({ advisory: makeAdvisory({ fixedVersion: null }) });
+    const score = computeMissionScore(ctx);
+    const copy = generateMissionCopy({ type: "vulnerability_fix", ctx, score });
+    expect(copy).toMatchSnapshot();
+  });
+
+  it("dep_update", () => {
+    const ctx = makeContext();
+    const score = computeMissionScore(ctx);
+    const copy = generateMissionCopy({ type: "dep_update", ctx, score, targetVersion: "2.0.0" });
+    expect(copy).toMatchSnapshot();
+  });
+
+  it("maintenance (archived)", () => {
+    const ctx = makeContext();
+    const score = computeMissionScore(ctx);
+    const copy = generateMissionCopy({
+      type: "maintenance",
+      ctx,
+      score,
+      maintenanceReason: "archived",
+    });
+    expect(copy).toMatchSnapshot();
+  });
+
+  it("maintenance (deprecated)", () => {
+    const ctx = makeContext();
+    const score = computeMissionScore(ctx);
+    const copy = generateMissionCopy({
+      type: "maintenance",
+      ctx,
+      score,
+      maintenanceReason: "deprecated",
+    });
+    expect(copy).toMatchSnapshot();
+  });
+
+  it("maintenance (unmaintained)", () => {
+    const ctx = makeContext();
+    const score = computeMissionScore(ctx);
+    const copy = generateMissionCopy({
+      type: "maintenance",
+      ctx,
+      score,
+      maintenanceReason: "unmaintained",
+    });
+    expect(copy).toMatchSnapshot();
+  });
+
+  it("license_issue", () => {
+    const ctx = makeContext();
+    const score = computeMissionScore(ctx);
+    const copy = generateMissionCopy({ type: "license_issue", ctx, score });
+    expect(copy).toMatchSnapshot();
   });
 });

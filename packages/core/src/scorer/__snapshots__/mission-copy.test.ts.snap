@@ -1,0 +1,73 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`generateMissionCopy — snapshot for all mission types > dep_update 1`] = `
+{
+  "action_hint": "Upgrade left-pad to 2.0.0 or later — trivial effort (patch version bump).",
+  "description": "left-pad is declared as "^1.2.3" and used as a production npm dependency of this repo.
+Latest version is 2.0.0. No known vulnerabilities in current version.
+Consider updating to stay current with bug fixes and improvements.",
+  "title": "Update left-pad to 2.0.0 (no known vulnerabilities)",
+}
+`;
+
+exports[`generateMissionCopy — snapshot for all mission types > license_issue 1`] = `
+{
+  "action_hint": "Review the license terms and determine if action is needed.",
+  "description": "left-pad is declared as "^1.2.3" and used as a production npm dependency of this repo.
+A potential license compatibility issue has been detected.
+Review the package's license terms for compliance with your project's policies.",
+  "title": "License issue with left-pad",
+}
+`;
+
+exports[`generateMissionCopy — snapshot for all mission types > maintenance (archived) 1`] = `
+{
+  "action_hint": "Review left-pad and consider finding an actively maintained alternative.",
+  "description": "left-pad is declared as "^1.2.3" and used as a production npm dependency of this repo.
+This package's upstream repository has been archived and is no longer maintained.
+Consider migrating to an actively maintained alternative.",
+  "title": "Archived package: left-pad needs attention",
+}
+`;
+
+exports[`generateMissionCopy — snapshot for all mission types > maintenance (deprecated) 1`] = `
+{
+  "action_hint": "Review left-pad and consider finding an actively maintained alternative.",
+  "description": "left-pad is declared as "^1.2.3" and used as a production npm dependency of this repo.
+This package has been deprecated by its maintainers.
+Consider migrating to an actively maintained alternative.",
+  "title": "Deprecated package: left-pad needs attention",
+}
+`;
+
+exports[`generateMissionCopy — snapshot for all mission types > maintenance (unmaintained) 1`] = `
+{
+  "action_hint": "Review left-pad and consider finding an actively maintained alternative.",
+  "description": "left-pad is declared as "^1.2.3" and used as a production npm dependency of this repo.
+This package appears to be unmaintained.
+Consider migrating to an actively maintained alternative.",
+  "title": "Unmaintained package: left-pad needs attention",
+}
+`;
+
+exports[`generateMissionCopy — snapshot for all mission types > vulnerability_fix (no fix) 1`] = `
+{
+  "action_hint": "No fixed version has been published yet for GHSA-xxxx-xxxx-xxxx — track the advisory and revisit once one lands.",
+  "description": "A padding function allows prototype pollution.
+
+left-pad is declared as "^1.2.3" and used as a production npm dependency of this repo. Severity: high (CVSS 7.5).
+Reported via GHSA-xxxx-xxxx-xxxx (OSV).",
+  "title": "High vulnerability in left-pad has no fix yet",
+}
+`;
+
+exports[`generateMissionCopy — snapshot for all mission types > vulnerability_fix (with fix) 1`] = `
+{
+  "action_hint": "Upgrade left-pad to 1.2.4 or later — trivial effort (patch version bump).",
+  "description": "A padding function allows prototype pollution.
+
+left-pad is declared as "^1.2.3" and used as a production npm dependency of this repo. Severity: high (CVSS 7.5).
+Reported via GHSA-xxxx-xxxx-xxxx (OSV).",
+  "title": "Update left-pad to fix a high vulnerability",
+}
+`;
