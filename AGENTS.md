@@ -52,8 +52,10 @@ browse the mission board; a logged-in GitHub user can submit a repo or claim a m
   in a later, undocumented-in-phase-notes pass; confirm `detectEcosystem`'s current probe order
   directly in `packages/core/src/ingestor/detect.ts`).
 - Repo cap: `NEXT_PUBLIC_MAX_REPOS=150` (raised from 3→10→150 across Phases 5 and pre-launch
-  prep). Set in Vercel env, `.env.local`, `app/src/app/api/repos/route.ts`'s fallback, and
-  `app/src/app/page.tsx`'s fallback, **all four**, if you ever change it again.
+  prep). The env var lives in Vercel env and `.env.local`; the hardcoded `"150"` fallback
+  lives in `app/src/app/api/repos/route.ts:138` and `app/src/app/page.tsx:21-22`. Update both
+  code fallbacks together if the value changes. `scripts/ingest.js` deliberately bypasses the
+  cap for the `--repo-url` operator-only path (ADR 0037).
 - The `/org/[org]` route (`app/src/app/org/[org]/page.tsx`) renders the per-org directory.
   Until 2026-08-29 it was a permanent loading skeleton in production: the `organizations` table
   was empty because the ingestion pipeline only pulled dependency data, not GitHub-side org
@@ -183,18 +185,18 @@ reintroduce `db.select()...` inline in an `/app` file.
 
 ## 5. Environment Variables
 
-| Variable                            | Used by             | Notes                                                                                                                                                                                                    |
-| ----------------------------------- | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `DATABASE_URL`                      | App, Actions        | Pooled Neon connection (PgBouncer)                                                                                                                                                                       |
-| `DATABASE_URL_UNPOOLED`             | `psql`, Drizzle Kit | Direct connection — required for DDL; PgBouncer doesn't support all of it                                                                                                                                |
-| `GH_CLIENT_ID` / `GH_CLIENT_SECRET` | App, Actions        | Two OAuth apps (dev `localhost:3000` + prod). Named `GH_*` not `GITHUB_*` — **GitHub blocks the `GITHUB_` prefix on user-defined Actions secrets**                                                       |
-| `NEXTAUTH_SECRET`                   | App                 | Random 32-byte secret                                                                                                                                                                                    |
-| `NEXTAUTH_URL`                      | App                 | Note: next-auth v4 on Vercel actually builds the OAuth `redirect_uri` from the request's `Host` header, **not** this var — see §12                                                                       |
-| `NEXT_PUBLIC_MAX_REPOS`             | App                 | Currently `150` — update all four locations listed in §2 together                                                                                                                                        |
-| `GH_DISPATCH_TOKEN`                 | App, Actions        | Fine-grained PAT, `actions:write` — powers on-demand `workflow_dispatch` ingestion                                                                                                                       |
-| `GH_REPO`                           | App                 | `"owner/name"` for this repo's own dispatch calls                                                                                                                                                        |
-| `GITHUB_TOKEN`                      | Actions             | Auto-injected by Actions (5,000 req/hr authenticated vs. 60 unauthenticated). **Flagged as currently absent in production** — verify and set before relying on production ingestion rate limits          |
-| `LIBRARIES_IO_API_KEY`              | Actions             | Free-tier libraries.io key (account signup, no credit card) — powers the `downstream_dependents` prefetch (ADR 0032). Absent ⇒ missions keep the flag set; present ⇒ 60 req/min budget paced client-side |
+| Variable                            | Used by             | Notes                                                                                                                                                                                                                                                                                                             |
+| ----------------------------------- | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`                      | App, Actions        | Pooled Neon connection (PgBouncer)                                                                                                                                                                                                                                                                                |
+| `DATABASE_URL_UNPOOLED`             | `psql`, Drizzle Kit | Direct connection — required for DDL; PgBouncer doesn't support all of it                                                                                                                                                                                                                                         |
+| `GH_CLIENT_ID` / `GH_CLIENT_SECRET` | App, Actions        | Two OAuth apps (dev `localhost:3000` + prod). Named `GH_*` not `GITHUB_*` — **GitHub blocks the `GITHUB_` prefix on user-defined Actions secrets**                                                                                                                                                                |
+| `NEXTAUTH_SECRET`                   | App                 | Random 32-byte secret                                                                                                                                                                                                                                                                                             |
+| `NEXTAUTH_URL`                      | App                 | Note: next-auth v4 on Vercel actually builds the OAuth `redirect_uri` from the request's `Host` header, **not** this var — see §12                                                                                                                                                                                |
+| `NEXT_PUBLIC_MAX_REPOS`             | App                 | Currently `150` — set in Vercel env and `.env.local`; hardcoded `"150"` fallbacks in `app/src/app/api/repos/route.ts:138` and `app/src/app/page.tsx:21-22` (update both code fallbacks if the value changes; `scripts/ingest.js` deliberately bypasses the cap for the `--repo-url` operator-only path, ADR 0037) |
+| `GH_DISPATCH_TOKEN`                 | App, Actions        | Fine-grained PAT, `actions:write` — powers on-demand `workflow_dispatch` ingestion                                                                                                                                                                                                                                |
+| `GH_REPO`                           | App                 | `"owner/name"` for this repo's own dispatch calls                                                                                                                                                                                                                                                                 |
+| `GITHUB_TOKEN`                      | Actions             | Auto-injected by Actions (5,000 req/hr authenticated vs. 60 unauthenticated). **Flagged as currently absent in production** — verify and set before relying on production ingestion rate limits                                                                                                                   |
+| `LIBRARIES_IO_API_KEY`              | Actions             | Free-tier libraries.io key (account signup, no credit card) — powers the `downstream_dependents` prefetch (ADR 0032). Absent ⇒ missions keep the flag set; present ⇒ 60 req/min budget paced client-side                                                                                                          |
 
 ---
 
@@ -364,21 +366,29 @@ explicitly rather than silently treating mock coverage as equivalent.
 - **No `repos.ecosystem` column**; see §8. This is intentional, not a missing feature.
 - **`missions` has no unique constraint**; see §8. Don't propose a migration to "fix" this
   without flagging it as a decision point first.
-- **Mission `confidence` is computed from real signals as of ADR 0029 + ADR 0032**; `breaking_change_signals`
-  come from GitHub Releases data, and `downstream_dependents` comes from libraries.io (one paced
-  call per analyzed repo per run; free-tier key required; absent key ⇒ flag stays set). A mission
-  with all resolvable inputs reaches `"medium"` today; `"high"` additionally requires lock-file
-  parsing to land (`resolved_version` is still always null). Note: pre-ADR-0032 docs (this file and
-  CHANGELOG included) overclaimed that ADR 0029 alone enabled `"medium"`; it didn't, because both
-  structural flags were always set until 0032.
-- **Lock file parsing remains fully deferred** project-wide (`package.json`/manifest-only
-  analysis). Don't start implementing lock-file resolution without an explicit go-ahead.
+- **Mission `confidence` is computed from real signals as of ADR 0029 + ADR 0032 + ADR 0038**;
+  `breaking_change_signals` come from GitHub Releases data, `downstream_dependents` from
+  libraries.io (one paced call per analyzed repo per run; free-tier key required; absent key
+  ⇒ flag stays set), and `resolved_version` from lock-file parsing (ADR 0038; six ecosystem
+  parsers, one shared `mergeManifestWithLock`; absent or unparseable lock file ⇒ `no_lock_file`
+  flag stays set). A mission with all four flags cleared reaches `"high"`; one flag set ⇒
+  `"medium"`; two or more ⇒ `"low"`. Pre-ADR-0032 docs (this file and CHANGELOG included)
+  overclaimed that ADR 0029 alone enabled `"medium"`; it didn't, because both structural flags
+  were always set until 0032.
+- **Lock file parsing is shipped** (ADR 0038, Accepted 2026-09-05). Per-ecosystem parsers
+  exist for `package-lock.json`, `yarn.lock`, `poetry.lock`, `Pipfile.lock`, `pdm.lock`, and
+  `go.sum`; pnpm (`pnpm-lock.yaml`) is not yet parsed. A `dependencies.resolved_version` that's
+  `null` after an ingest means "no lock file in the repo, or the parser couldn't read it" —
+  not "lock-file parsing is deferred." The `no_lock_file` confidence flag fires in that case
+  per the rule above. Do not "start implementing lock-file resolution" — it's already done;
+  the pnpm gap and any future format additions are the only real follow-up.
 - **The npm-side `inferSemverBump()` reports `"major"` for upper-bound-only ranges** (via an
   implied `0.0.0` floor), while the PyPI-side `inferPep440Bump()` correctly returns `"unknown"`
   for the equivalent case. This inconsistency was found and deliberately left as-is; it's a
   known, documented gap, not an oversight to silently harmonize.
 - **Repo cap is just an env var** (`NEXT_PUBLIC_MAX_REPOS`); raise it freely when justified by
-  real usage/storage data, but update all four locations noted in §2 together, and don't treat
+  real usage/storage data, but update both code fallbacks (`app/src/app/api/repos/route.ts:138`
+  and `app/src/app/page.tsx:21-22`) together with the env var when you do, and don't treat
   the number itself as sacred.
 
 ---

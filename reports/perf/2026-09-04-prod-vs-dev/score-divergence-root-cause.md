@@ -1,4 +1,4 @@
-# /missions score divergence (9.0 vs 9.6) — root cause
+# /missions score divergence (9.0 vs 9.6): root cause
 
 **Date:** 2026-09-04
 **Symptom (from `2026-09-04-prod-vs-dev/summary.md`):** the rank-1 mission
@@ -96,7 +96,7 @@ line 39) is exactly what we see here:
 > hurdles (ADR 0021, ADR 0022) already showed `drizzle-kit migrate` has
 > real quirks in this project even against one branch.
 
-The drift on display here is **not** a schema drift — migrations are in sync
+The drift on display here is **not** a schema drift. Migrations are in sync
 (both branches have 145/146 advisories, both have all the same tables). It's
 **data drift** caused by ingestion runs on different schedules hitting each
 branch. Specifically:
@@ -131,7 +131,7 @@ pre-ADR-0032 / pre-CRSS-V3-extraction era.
    --triggered-by manual`, per ADR 0023's addendum) re-runs the writer
    for one repo at a time. To bring the whole dev branch up to the prod
    state would mean re-ingesting every repo with `LIBRARIES_IO_API_KEY`
-   set in the local shell environment — the libraries.io prefetch is
+   set in the local shell environment. The libraries.io prefetch is
    what populates `downstream_dependents`, and that key is currently
    absent from `.env.local`.
 
@@ -142,7 +142,7 @@ pre-ADR-0032 / pre-CRSS-V3-extraction era.
    "low confidence" text on every dev card should disappear from cards
    that hit all four flag-clearing conditions. AGENTS.md §11's claim
    that "every card" should show low confidence becomes "every card
-   that's been ingested with `LIBRARIES_IO_API_KEY` present" — a
+   that's been ingested with `LIBRARIES_IO_API_KEY` present", a
    per-ingest-run claim, not a per-mission claim. Whether to test
    that against the dev branch is a separate decision; per §0 rule 3
    (new dependency, schema migration, etc. is a decision point), this
@@ -158,7 +158,7 @@ pre-ADR-0032 / pre-CRSS-V3-extraction era.
 
 ## Follow-up actions (decision points, per AGENTS.md §0 rule 3)
 
-- **D1 — Re-ingest dev branch to verify the testable claim above.**
+- **D1: Re-ingest dev branch to verify the testable claim above.**
   Time and date for this is your call; it requires
   `LIBRARIES_IO_API_KEY` in the local shell and at least one repo's
   worth of GitHub API budget.

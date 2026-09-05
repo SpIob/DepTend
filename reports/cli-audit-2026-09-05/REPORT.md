@@ -1,4 +1,4 @@
-# DepTend CLI audit — 2026-09-05
+# DepTend CLI audit: 2026-09-05
 
 Real-network end-to-end testing of `@deptend/cli` against four public repos covering all three supported ecosystems (npm, PyPI, Go). Captures observed behavior, surfaces bugs the existing mocked test suite misses, and proposes a ranked improvement list. **Proposals only; no code changes in this pass.**
 
@@ -19,17 +19,17 @@ Tested invocations live at `/tmp/*.json` for the matrix rows that wrote a file. 
 
 **What is broken or rough** (live-verified):
 
-- **B1 — `--output` with no value silently no-ops.** Exit 0, no file written, no warning, the human summary is printed instead. Documented candidate §8.8 confirmed-real. (CLI `index.ts:76-77` + `output.ts:21`.)
-- **B2 — A non-existent local repo path returns exit 0 with three warnings and an empty mission list**, indistinguishable from a real-but-clean repo. The user has no signal that the path was wrong. (CLI `analyze.ts` returns the last probe's payload per `detectEcosystem`'s all-fail path; the warnings are emitted but the exit code never reflects the user-facing error.)
-- **B3 — Duplicate `--output` flags are last-write-wins with no warning.** `--output a.json --output b.json` writes only `b.json` silently. (CLI `index.ts:71-85` `parseArgs` has no dedup.)
-- **B4 — `advisory.url` is hard-coded to `osv.dev` even when `source: "ghsa"`.** For GitHub-sourced advisories the canonical URL is `github.com/advisories/{id}`. (CLI `analyze.ts:199`.)
-- **B5 — `confidence_notes` says "No lock file was parsed" even when `lock_file_present: true`.** The note is set unconditionally per mission, not gated on the per-repo lock-file flag. Surfaced in the live DepTend run. (Scoring layer; not in the CLI itself but the CLI surfaces it.)
-- **B6 — `composite_score` is on a roughly 0-10 scale, but real critical/CRITICAL missions on `lodash/lodash` cap at 9.0/10.** Not a bug — the score formula is documented — but the `/10` suffix in the human summary (`output.ts:56`) implies a 0-10 scale that the scoring actually doesn't fill. Cosmetic.
-- **B7 — 82 missions from a 4-dependency PyPI repo, 360 lines of output.** No progress indication, no pagination, no filtering. The user has no way to narrow without dropping into the JSON. Major UX cliff.
-- **B8 — Identical titles for the same package across multiple advisories.** `"Update semver to fix a high vulnerability"` appears 2× (different fixed versions) and `"Update smol-toml to fix a medium vulnerability"` 2×, and `"Update golang.org/x/crypto to fix a critical vulnerability"` 8×. The dashboard fixed this in 2026-08-30 (CHANGELOG / ADR 0051 — append short OSV prefix to title). The CLI does not have that fix. (CLI `analyze.ts:170` uses `copy.title` from `mission-copy.ts:60-67` which generates the title from package + severity + fixedVersion, never the OSV id.)
-- **B9 — `effort_label: "trivial"` is rendered identically to `"low"` in the human summary.** No visual distinction. Surfaces on `lodash/lodash`. (CLI `output.ts:57` prints `effort: ${mission.effort_label}` — `low` and `trivial` look the same width.)
-- **B10 — `Upgrade X to 7.5.2 or later` when the declared range is `^7.8.5`.** The fixed version (7.5.2) is a _downgrade_ of the declared range, and "or later" is a meaningless suffix. The CLI phrasing mirrors what the dashboard does, but it's a UX bug — the action_hint reads as a recommendation to downgrade. Mission-copy layer; CLI surfaces it.
-- **B11 — `parseArgs` and `output.ts` have no unit tests.** The mocked suite covers `analyze` and `build-rows` only. (CLI `cli/src/output.ts:1-73` and `cli/src/index.ts:61-95`.)
+- **B1: `--output` with no value silently no-ops.** Exit 0, no file written, no warning, the human summary is printed instead. Documented candidate §8.8 confirmed-real. (CLI `index.ts:76-77` + `output.ts:21`.)
+- **B2: A non-existent local repo path returns exit 0 with three warnings and an empty mission list**, indistinguishable from a real-but-clean repo. The user has no signal that the path was wrong. (CLI `analyze.ts` returns the last probe's payload per `detectEcosystem`'s all-fail path; the warnings are emitted but the exit code never reflects the user-facing error.)
+- **B3: Duplicate `--output` flags are last-write-wins with no warning.** `--output a.json --output b.json` writes only `b.json` silently. (CLI `index.ts:71-85` `parseArgs` has no dedup.)
+- **B4: `advisory.url` is hard-coded to `osv.dev` even when `source: "ghsa"`.** For GitHub-sourced advisories the canonical URL is `github.com/advisories/{id}`. (CLI `analyze.ts:199`.)
+- **B5: `confidence_notes` says "No lock file was parsed" even when `lock_file_present: true`.** The note is set unconditionally per mission, not gated on the per-repo lock-file flag. Surfaced in the live DepTend run. (Scoring layer; not in the CLI itself but the CLI surfaces it.)
+- **B6: `composite_score` is on a roughly 0-10 scale, but real critical/CRITICAL missions on `lodash/lodash` cap at 9.0/10.** Not a bug. The score formula is documented. But the `/10` suffix in the human summary (`output.ts:56`) implies a 0-10 scale that the scoring actually doesn't fill. Cosmetic.
+- **B7: 82 missions from a 4-dependency PyPI repo, 360 lines of output.** No progress indication, no pagination, no filtering. The user has no way to narrow without dropping into the JSON. Major UX cliff.
+- **B8: Identical titles for the same package across multiple advisories.** `"Update semver to fix a high vulnerability"` appears 2× (different fixed versions) and `"Update smol-toml to fix a medium vulnerability"` 2×, and `"Update golang.org/x/crypto to fix a critical vulnerability"` 8×. The dashboard fixed this in 2026-08-30 (CHANGELOG / ADR 0051 — append short OSV prefix to title). The CLI does not have that fix. (CLI `analyze.ts:170` uses `copy.title` from `mission-copy.ts:60-67` which generates the title from package + severity + fixedVersion, never the OSV id.)
+- **B9: `effort_label: "trivial"` is rendered identically to `"low"` in the human summary.** No visual distinction. Surfaces on `lodash/lodash`. (CLI `output.ts:57` prints `effort: ${mission.effort_label}`. `low` and `trivial` look the same width.)
+- **B10: `Upgrade X to 7.5.2 or later` when the declared range is `^7.8.5`.** The fixed version (7.5.2) is a _downgrade_ of the declared range, and "or later" is a meaningless suffix. The CLI phrasing mirrors what the dashboard does, but it's a UX bug. The action_hint reads as a recommendation to downgrade. Mission-copy layer; CLI surfaces it.
+- **B11: `parseArgs` and `output.ts` have no unit tests.** The mocked suite covers `analyze` and `build-rows` only. (CLI `cli/src/output.ts:1-73` and `cli/src/index.ts:61-95`.)
 
 **What is not a bug** (live-verified, contradicts a Phase 0 hypothesis):
 

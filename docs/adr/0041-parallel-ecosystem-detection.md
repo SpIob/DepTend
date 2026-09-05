@@ -1,7 +1,8 @@
 # ADR 0041; Parallel ecosystem detection
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-08-29
+**Verified:** `packages/core/src/ingestor/detect.ts:1-239` (parallel probing with `AbortController`; priority-tie-break on caller-list index; orchestrator-initiated aborts silently dropped; all-fail path preserves combined-warnings contract); `packages/core/src/ingestor/detect.test.ts:1-308` (parallel-vs-sequential, tie-break, abort behavior); `interface.ts:69` (`signal?: AbortSignal` plumbed through every ingestor); call sites `npm.ts:51`, `pypi.ts:55`, `go.ts:49`, `local-npm.ts:38`, `local-pypi.ts:36`, `local-go.ts:33`.
 
 ---
 

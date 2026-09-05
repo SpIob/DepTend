@@ -1,7 +1,8 @@
 # ADR 0038; Lock File Parsing: Resolved Versions and Transitive Dependencies
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-08-28
+**Verified:** `packages/core/src/ingestor/lock-parse.ts:1-115` (shared types + `mergeManifestWithLock`); ecosystem parsers `npm-lock-parse.ts`, `yarn-lock-parse.ts`, `poetry-lock-parse.ts`, `pipfile-lock-parse.ts`, `pdm-lock-parse.ts`, `go-sum-parse.ts` (each with colocated `.test.ts`); `writer.ts:376,393` (resolved_version populated from lock file); `mission-scorer.ts:421,468` (consumes `resolvedVersion`); end-to-end live verification on dev Neon — `reports/perf/2026-09-04-prod-vs-dev/d1-dev-reingest-verification.md` (all 6 status=complete dev repos re-ingested; `advisories.cvss_score` 0 → 132 populated; 128/310 dev missions reached `confidence: "medium"`).
 
 ---
 

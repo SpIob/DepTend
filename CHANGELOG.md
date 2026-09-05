@@ -10,6 +10,95 @@ All notable changes to DepTend, condensed to one entry per phase.
 
 ---
 
+**2026-09-05 — Fix stale "lock-file parsing is not implemented" wording**
+
+Three references in `packages/core/src/scorer/mission-scorer.ts` (lines
+134–139, 255, 524–528) and one in `cli/src/output.test.ts` (line 51) said
+lock-file parsing was still deferred. ADR 0038 is `Accepted` and the
+parsers are live. Updated the comments and the user-facing
+`confidence_notes` text to point at ADR 0038 and name pnpm as the
+remaining gap, not a "deferred" claim. The note text change is the
+user-visible part; comments are dev-only.
+
+### Changed
+
+- `mission-scorer.ts` — `inferSemverBump` and `inferPep440Bump` doc comments
+  reworded to describe the lock-file path as conditional, not "always
+  null until it lands."
+- `mission-scorer.ts` — `buildConfidenceNotes` for the `no_lock_file` branch
+  reworded the user-facing sentence and the explanatory comment that cited
+  "AGENTS.md §11" (which was itself already corrected in the 2026-09-05 doc
+  audit). New text: "ADR 0038 covers most formats; pnpm and unparseable
+  files are the remaining gaps."
+- `cli/src/output.test.ts` — fixture note string updated to match the new
+  wording.
+- `cli/src/analyze.test.ts` — explanatory comment reworded to drop the
+  "no lock-file parsing exists yet" phrasing; the substantive assertions
+  are unchanged.
+
+---
+
+**2026-09-05 — Documentation audit + 5 stale-ADR flips (no behavior changes)**
+
+A targeted read-only pass that found five ADRs whose `Status: Proposed`
+headers disagreed with the implementation in source and the verification
+evidence already in the repo. Per AGENTS.md §10, an ADR flips to Accepted
+when live verification has been performed; for each, the evidence was
+already on file (a colocated test, a live-Neon block gated on
+`DATABASE_URL`, an end-to-end re-ingest report). No code change ships in
+this pass; the diff is doc-only.
+
+### Fixed
+
+- **ADR 0033** (`read-path caching`): `reviveDates` placement regression
+  was already shipped and the `2026-08-30` perf series
+  (`reports/perf/2026-08-30/compare.md`) confirmed `/` and `/missions`
+  render with dates. Header now reads `Accepted` with verification
+  citations.
+- **ADR 0035** (`missions.dependency_id` index): migration
+  `0006_add_missions_dependency_id_index.sql` applied; index declared in
+  `schema.ts:286`; data-model changelog already records the ship at 0.1.7.
+  Header now reads `Accepted`.
+- **ADR 0038** (`lock-file parsing`): six per-ecosystem parsers ship
+  (`npm-lock-parse.ts`, `yarn-lock-parse.ts`, `poetry-lock-parse.ts`,
+  `pipfile-lock-parse.ts`, `pdm-lock-parse.ts`, `go-sum-parse.ts`) with
+  colocated tests; `writer.ts:376,393` populates `resolved_version`;
+  `mission-scorer.ts:421,468` consumes it. End-to-end live verification:
+  `reports/perf/2026-09-04-prod-vs-dev/d1-dev-reingest-verification.md`
+  (all 6 status=complete dev repos re-ingested with
+  `LIBRARIES_IO_API_KEY`; 128/310 dev missions reached
+  `confidence: "medium"`). Header now reads `Accepted`.
+- **ADR 0041** (`parallel ecosystem detection`): `detect.ts:1-239` runs
+  probes concurrently with `AbortController` plumbing; `detect.test.ts:1-308`
+  covers tie-break, abort, and all-fail behavior. Header now reads
+  `Accepted`.
+- **ADR 0043** (`bulk mission writes`): `scorer/writer.ts:47` and the
+  `bulkWriteMissions` / `bulkUpsertMissionScores` private methods; live-DB
+  verification block at `writer.test.ts:952-984` (gated on `DATABASE_URL`).
+  Header now reads `Accepted`.
+
+### Doc-only
+
+- **AGENTS.md §11** rewritten: lock-file parsing is no longer described as
+  "fully deferred project-wide" (it shipped under ADR 0038); the
+  `confidence` settled decision now lists ADR 0038 alongside 0029 and 0032
+  and removes the "high requires lock-file parsing to land" caveat. The
+  MAX_REPOS "all four" line is corrected to "both code fallbacks" (the
+  two hardcoded `"150"` literals in `app/src/app/api/repos/route.ts:138`
+  and `app/src/app/page.tsx:21-22`; the env-var sources are
+  `Vercel env` and `.env.local`, and `scripts/ingest.js` deliberately
+  bypasses the cap for `--repo-url` per ADR 0037, so it is not a third
+  hardcoded fallback).
+- **Reports em-dash sweep, partial**: 4 specific instances in
+  `reports/cli-audit-2026-09-05/REPORT.md` and
+  `reports/perf/2026-09-04-prod-vs-dev/{score-divergence-root-cause,
+d1-dev-reingest-verification}.md` replaced per the AI-writing audit
+  pass. The full corpus (~50 files, ~400 em dashes) is out of scope for a
+  docs-only PR; flag a follow-up if the cleanup should be extended
+  repo-wide.
+
+---
+
 **2026-09-05 — UI complexity reduction (no behavior changes)**
 
 Mechanical refactor of `/app`'s UI and mutating API routes. The user-facing

@@ -1,7 +1,8 @@
 # ADR 0035; Index `missions.dependency_id` + bulk mission-existence check
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-08-25
+**Verified:** migration `0006_add_missions_dependency_id_index.sql` applied; `packages/core/src/db/schema.ts:286` (`index("idx_missions_dependency_id").on(table.dependencyId)`); `docs/data-model/README.md:320` (0.1.7 changelog row); serves `MissionWriter`'s bulk existing-mission check.
 
 ---
 

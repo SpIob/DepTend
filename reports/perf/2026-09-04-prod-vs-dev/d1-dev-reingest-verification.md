@@ -1,4 +1,4 @@
-# D1 — Re-ingest dev branch to test the testable claim
+# D1: Re-ingest dev branch to test the testable claim
 
 **Date:** 2026-09-04
 **Goal (from `score-divergence-root-cause.md`):** verify that re-running the
@@ -26,7 +26,7 @@ same absence of "low confidence" on every re-ingested mission.**
    not found`. Worked around with a small `node:module` loader hook
    (`scripts/_loader-yarn-lockfile-fix.mjs` + `scripts/patch-yarn-lockfile.mjs`)
    that re-exposes the named exports via `createRequire`. Not committed
-   to source — local-only, lives in `scripts/` next to the script it
+   to source. Local-only, lives in `scripts/` next to the script it
    enables. This is **the same family of issue as the known pnpm/Node
    ESM-CJS interop surprises already documented in AGENTS.md §12**, and
    the parallel "code complexity reduction" session is the right place
@@ -38,7 +38,7 @@ same absence of "low confidence" on every re-ingested mission.**
    against the dev branch's pooled endpoint (`ep-curly-meadow`).
 4. Ran on one repo (`psf/requests`) first to confirm the shape, then the
    remaining 5 status=complete repos. Skipped the 3 `skipped` repos
-   (`Bagong-Enerhiya`, `Torque2D`, `sherlock`) — they have no manifest
+   (`Bagong-Enerhiya`, `Torque2D`, `sherlock`). They have no manifest
    and the resolver would re-skip them anyway.
 5. Verified the DB state by direct query against both endpoints, then
    restarted the dev app and waited 65 s for `unstable_cache` (60 s TTL)
@@ -57,7 +57,7 @@ same absence of "low confidence" on every re-ingested mission.**
 
 All 6 ran exit 0. Wall time: ~3 min total. The warnings logged are all
 OSV's "no CVSS score or severity level found for advisory PYSEC-…"
-variants, which are data truth — those advisories really don't carry a
+variants, which are data truth. Those advisories really don't carry a
 CVSS in OSV. No code errors, no GitHub rate-limit errors, no libraries.io
 rate-limit errors. The free-tier `LIBRARIES_IO_API_KEY` was accepted
 silently (no startup warning).
@@ -159,13 +159,13 @@ of "low confidence" text all match.
 
 ## Status of pre-existing items
 
-- **D2 — `scripts/backfill-orgs.mjs` env-var bug** (reads `DATABASE_URL`
+- **D2: `scripts/backfill-orgs.mjs` env-var bug** (reads `DATABASE_URL`
   instead of `DATABASE_URL_UNPOOLED`): **still open**, untouched by D1.
   Same priority as before; the 2026-08-30 backfill log in
   `reports/perf/2026-08-30/round-5-fixed/backfill-log.md` documents it.
 - **D3 — `LIBRARIES_IO_API_KEY` in prod Actions**: **still open**,
   untouched by D1. The 65 prod advisories that still have `cvss_score`
-  null are explained by this — the next prod cron after the key is
+  null are explained by this. The next prod cron after the key is
   configured should re-extract them.
 
 ## Side artifact: local-only ESM loader hook
@@ -174,15 +174,15 @@ Two files were added under `scripts/` to make `node scripts/ingest.js`
 work on this developer's machine. They are explicitly **not part of
 the runtime path**:
 
-- `scripts/_loader-yarn-lockfile-fix.mjs` — the `--import=` entry point
-- `scripts/patch-yarn-lockfile.mjs` — the loader hook body
+- `scripts/_loader-yarn-lockfile-fix.mjs`: the `--import=` entry point
+- `scripts/patch-yarn-lockfile.mjs`: the loader hook body
 
 Both are written in the simplest way that solved the immediate problem.
 The right permanent fix is a small source change in
 `packages/core/src/ingestor/yarn-lock-parse.ts` (e.g. switch to
 `import("@yarnpkg/lockfile")` or rename to `.mts`), and that's a
 deliberate decision for the parallel "code complexity reduction" session
-to own — flagging it here so they can pick it up cleanly if they want.
+to own. Flagging it here so they can pick it up cleanly if they want.
 If the parallel session is also planning to touch the ingestor, leaving
 the workaround files in place for a one-off D1 verification is fine;
 they can be deleted in the same commit as the real fix.

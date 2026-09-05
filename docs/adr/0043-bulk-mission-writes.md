@@ -1,7 +1,8 @@
 # ADR 0043; Bulk mission writes inside the scorer transaction
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-08-29
+**Verified:** `packages/core/src/scorer/writer.ts:47` (ADR 0043 reference in file header; `bulkWriteMissions` and `bulkUpsertMissionScores` private methods; `Map<id, Dependency>` replaces O(N²) `allDeps.find()`; `sql.param` used in `UPDATE … FROM (VALUES …)` per AGENTS.md §12 lesson); `packages/core/src/scorer/writer.test.ts:952-984` (`describe.skipIf(LIVE_DATABASE_URL === "")` live-DB verification block, gated on DATABASE_URL from `.env.local`, exercises bulk path against `psf/requests` fixture in dev).
 
 ---
 

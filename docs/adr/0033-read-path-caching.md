@@ -1,7 +1,8 @@
 # ADR 0033; Read-path caching for shared dashboard queries
 
-**Status:** Proposed (correction applied 2026-08-23; flips to Accepted once the fix below is verified on the deployed site)
+**Status:** Accepted (correction applied 2026-08-23; live verification 2026-08-30)
 **Date:** 2026-08-23
+**Verified:** `reports/perf/2026-08-30/compare.md` §6; `app/src/lib/queries/cached-read.ts:44-55` (reviveDates applied to `cached()`'s RESULT, not the wrapped callback); `app/src/lib/queries/missions.ts:7-101`; `app/src/lib/queries/missions.test.ts` (placement regression tests).
 
 ---
 
