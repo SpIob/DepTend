@@ -507,8 +507,6 @@ export const notificationSubscriptions = pgTable(
 // ---------------------------------------------------------------------------
 // Enum value types
 // ---------------------------------------------------------------------------
-// Enum value types
-// ---------------------------------------------------------------------------
 // Derived from the pgEnum objects above so enum unions never need a
 // hand-duplicated equivalent elsewhere (ADR 0011).
 

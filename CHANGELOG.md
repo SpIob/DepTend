@@ -10,6 +10,62 @@ All notable changes to DepTend, condensed to one entry per phase.
 
 ---
 
+**2026-09-05 — Remove dead code and unused exported types from `@deptend/core`**
+
+Pure deletions and inlinings across the core package. No schema, no
+behavior, no contract change for any external caller — the public
+function signatures are byte-identical (return types inlined as
+structural shapes, intermediate type aliases removed).
+
+### Removed
+
+- `packages/core/src/db/organization-members.ts` (109 LOC) — five
+  `*Member` helpers; zero importers. The `organization_members` table
+  and its `$inferSelect`/`$inferInsert` types stay.
+- `getRepoDirectoryBaseByOrg` and `getReposWithMissionSummary` in
+  `queries.ts` (26 LOC) — both documented as backwards-compatible
+  shims around `getRepoDirectoryBase`; neither had a current caller
+  in `app/`, `cli/`, or `scripts/`. The `/app` cached wrapper of the
+  same name in `app/src/lib/queries/missions.ts` is a separate
+  function and stays.
+- `getRepoDirectoryBaseByOrg` test block in `queries.test.ts`.
+- `db/organization-members.js` subpath export in
+  `packages/core/package.json`.
+- `getSubscription`, `getRepoSubscriptions`, and
+  `updateSubscriptionIssueNumber` from
+  `packages/core/src/notifications/subscriptions.ts` — zero external
+  consumers. `getUserSubscriptions` stays (used internally by
+  `queries.ts`).
+
+### Inlined
+
+- `AnyNeonTx` (1 line, `db-types.ts`) — used only by the file-local
+  `DbOrTx` definition; the `NeonTransaction<any, any>` reference is
+  now inline. `AnyNeonDb` stays (used by both writers).
+- Outcome-type unions in `db/missions.ts`, `db/bookmarks.ts`,
+  `db/repos.ts`, and `notifications/subscriptions.ts` — all
+  function-return-type aliases that no route imported. Functions
+  now return inline string-literal unions (same shape, same
+  exhaustiveness). The four `Subscribe*` / `WithdrawRepoOutcome`
+  unions in `subscriptions.ts` and `repos.ts` were kept as inline
+  literal unions on the relevant function/helper signatures.
+- `ParsedGithubUrl`, `SubmitRepoParams`, `SubmitRepoResult` in
+  `db/repos.ts` — structural shapes used only by `parseGithubUrl` /
+  `submitRepo`. Now inline in their function signatures; the test
+  file picks them up via `Parameters<typeof submitRepo>[1]`.
+
+### Misc
+
+- `schema.ts:510-511` duplicate `// Enum value types` header banner
+  (the comment block on lines 507–509 was the proper banner; the
+  stray line was a leftover edit artifact).
+- `validation.ts` JSDoc: dropped the sentence claiming
+  `missions.ts` re-exports `isValidMissionId` as an alias — the
+  alias was removed in the 2026-09-04 pass and the comment never
+  caught up. Same fix in `missions.test.ts:75`.
+
+---
+
 **2026-09-05 — Fix stale "lock-file parsing is not implemented" wording**
 
 Three references in `packages/core/src/scorer/mission-scorer.ts` (lines

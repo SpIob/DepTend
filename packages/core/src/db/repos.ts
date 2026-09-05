@@ -11,13 +11,6 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { repos, type IngestionStatus, type Repo } from "./schema.js";
 import type { ReadonlyDb } from "./queries.js";
 
-export interface ParsedGithubUrl {
-  /** Normalized form: https://github.com/{owner}/{name}, no trailing slash or .git */
-  githubUrl: string;
-  owner: string;
-  name: string;
-}
-
 const GITHUB_URL_PATTERN =
   /^(?:https?:\/\/)?(?:www\.)?github\.com\/([a-zA-Z0-9](?:[a-zA-Z0-9-]{0,37}[a-zA-Z0-9])?)\/([a-zA-Z0-9._-]+?)(?:\.git)?\/?$/;
 
@@ -28,7 +21,9 @@ const GITHUB_URL_PATTERN =
  * non-GitHub hosts, which is intentional (only public repos may be
  * ingested — see project plan §6.4 data & privacy).
  */
-export function parseGithubUrl(input: string): ParsedGithubUrl | null {
+export function parseGithubUrl(
+  input: string,
+): { githubUrl: string; owner: string; name: string } | null {
   const match = GITHUB_URL_PATTERN.exec(input.trim());
   if (match === null) {
     return null;
@@ -59,22 +54,6 @@ export async function getRepoByOwnerAndName(
   return repo ?? null;
 }
 
-export type SubmitRepoOutcome = "created" | "already_exists" | "cap_reached";
-
-export interface SubmitRepoResult {
-  outcome: SubmitRepoOutcome;
-  repo: Repo | null;
-}
-
-export interface SubmitRepoParams {
-  githubUrl: string;
-  owner: string;
-  name: string;
-  /** GitHub login of the submitter — stamped onto repos.submitted_by. */
-  submittedBy: string;
-  maxRepos: number;
-}
-
 /**
  * Inserts a new repo row (status: pending) if there's room under the MVP
  * cap and it isn't already submitted.
@@ -93,8 +72,15 @@ export interface SubmitRepoParams {
  */
 export async function submitRepo(
   db: ReadonlyDb,
-  params: SubmitRepoParams,
-): Promise<SubmitRepoResult> {
+  params: {
+    githubUrl: string;
+    owner: string;
+    name: string;
+    /** GitHub login of the submitter — stamped onto repos.submitted_by. */
+    submittedBy: string;
+    maxRepos: number;
+  },
+): Promise<{ outcome: "created" | "already_exists" | "cap_reached"; repo: Repo | null }> {
   const existing = await db
     .select()
     .from(repos)
@@ -135,14 +121,6 @@ export async function submitRepo(
 
   return { outcome: "created", repo: inserted };
 }
-
-export type WithdrawRepoOutcome =
-  | "withdrawn"
-  | "not_found"
-  | "not_your_submission"
-  | "ingestion_in_progress"
-  | "ingestion_failed_will_retry"
-  | "already_indexed";
 
 // The set of ingestion statuses a submitter is still allowed to walk their
 // own row back from. Lives here as the single source of truth shared with
@@ -187,7 +165,14 @@ export async function withdrawOwnRepo(
   db: ReadonlyDb,
   repoId: string,
   requestingUser: string,
-): Promise<WithdrawRepoOutcome> {
+): Promise<
+  | "withdrawn"
+  | "not_found"
+  | "not_your_submission"
+  | "ingestion_in_progress"
+  | "ingestion_failed_will_retry"
+  | "already_indexed"
+> {
   const [deleted] = await db
     .delete(repos)
     .where(
@@ -227,7 +212,15 @@ export async function withdrawOwnRepo(
  * rather than left for a default branch, so this stays exhaustive and a
  * future ingestion_status value can't silently fall through unnoticed.
  */
-function statusToOutcome(status: IngestionStatus): WithdrawRepoOutcome {
+function statusToOutcome(
+  status: IngestionStatus,
+):
+  | "withdrawn"
+  | "not_found"
+  | "not_your_submission"
+  | "ingestion_in_progress"
+  | "ingestion_failed_will_retry"
+  | "already_indexed" {
   switch (status) {
     case "running":
       return "ingestion_in_progress";

@@ -6,19 +6,6 @@ import { and, eq, getTableColumns, sql } from "drizzle-orm";
 import { notificationSubscriptions, type NotificationSubscription } from "../db/schema.js";
 import type { ReadonlyDb } from "../db/queries.js";
 
-export interface SubscriptionOptions {
-  userLogin: string;
-  repoId: string;
-  eventTypes?: string[];
-}
-
-export type SubscribeRepoOutcome = "subscribed" | "updated";
-
-export interface SubscribeRepoResult {
-  outcome: SubscribeRepoOutcome;
-  subscription: NotificationSubscription;
-}
-
 /**
  * Subscribe a user to notifications for a repo. If a subscription already
  * exists for the (user, repo) pair, the existing row's event_types is
@@ -36,8 +23,15 @@ export interface SubscribeRepoResult {
  */
 export async function subscribeToRepo(
   db: ReadonlyDb,
-  options: SubscriptionOptions,
-): Promise<SubscribeRepoResult> {
+  options: {
+    userLogin: string;
+    repoId: string;
+    eventTypes?: string[];
+  },
+): Promise<{
+  outcome: "subscribed" | "updated";
+  subscription: NotificationSubscription;
+}> {
   const { userLogin, repoId, eventTypes = ["new_mission", "claimed", "resolved"] } = options;
 
   const rows = await db
@@ -62,7 +56,7 @@ export async function subscribeToRepo(
   if (!entry) throw new Error(`subscribeToRepo: no row returned`);
 
   const { xmax, ...row } = entry;
-  const outcome: SubscribeRepoOutcome = xmax === 0 ? "subscribed" : "updated";
+  const outcome: "subscribed" | "updated" = xmax === 0 ? "subscribed" : "updated";
   return { outcome, subscription: row };
 }
 
@@ -86,27 +80,6 @@ export async function unsubscribeFromRepo(
 }
 
 /**
- * Get a user's subscription for a specific repo
- */
-export async function getSubscription(
-  db: ReadonlyDb,
-  userLogin: string,
-  repoId: string,
-): Promise<NotificationSubscription | null> {
-  const rows = await db
-    .select()
-    .from(notificationSubscriptions)
-    .where(
-      and(
-        eq(notificationSubscriptions.userLogin, userLogin),
-        eq(notificationSubscriptions.repoId, repoId),
-      ),
-    )
-    .limit(1);
-  return rows[0] ?? null;
-}
-
-/**
  * Get all subscriptions for a user
  */
 export async function getUserSubscriptions(
@@ -117,37 +90,4 @@ export async function getUserSubscriptions(
     .select()
     .from(notificationSubscriptions)
     .where(eq(notificationSubscriptions.userLogin, userLogin));
-}
-
-/**
- * Get all subscriptions for a repo
- */
-export async function getRepoSubscriptions(
-  db: ReadonlyDb,
-  repoId: string,
-): Promise<NotificationSubscription[]> {
-  return db
-    .select()
-    .from(notificationSubscriptions)
-    .where(eq(notificationSubscriptions.repoId, repoId));
-}
-
-/**
- * Update the GitHub issue number for a subscription
- */
-export async function updateSubscriptionIssueNumber(
-  db: ReadonlyDb,
-  userLogin: string,
-  repoId: string,
-  issueNumber: number,
-): Promise<void> {
-  await db
-    .update(notificationSubscriptions)
-    .set({ githubIssueNumber: issueNumber })
-    .where(
-      and(
-        eq(notificationSubscriptions.userLogin, userLogin),
-        eq(notificationSubscriptions.repoId, repoId),
-      ),
-    );
 }

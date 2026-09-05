@@ -72,7 +72,7 @@ function makeMockDb(options: MockDbOptions): {
 }
 
 // ---------------------------------------------------------------------------
-// isValidUuid (used by mission routes as isValidMissionId alias)
+// isValidUuid — shared UUID-shape validator used by every mutating route
 // ---------------------------------------------------------------------------
 
 describe("isValidUuid", () => {

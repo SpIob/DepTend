@@ -15,13 +15,7 @@
  */
 
 import { describe, expect, it, vi } from "vitest";
-import {
-  getRepoByOwnerAndName,
-  parseGithubUrl,
-  submitRepo,
-  withdrawOwnRepo,
-  type SubmitRepoParams,
-} from "./repos.js";
+import { getRepoByOwnerAndName, parseGithubUrl, submitRepo, withdrawOwnRepo } from "./repos.js";
 import type { Repo } from "./schema.js";
 
 type WithdrawRepoDb = Parameters<typeof withdrawOwnRepo>[0];
@@ -116,7 +110,7 @@ function makeRepoRow(overrides: Partial<Repo> = {}): Repo {
   };
 }
 
-const BASE_PARAMS: SubmitRepoParams = {
+const BASE_PARAMS: Parameters<typeof submitRepo>[1] = {
   githubUrl: "https://github.com/example/example",
   owner: "example",
   name: "example",

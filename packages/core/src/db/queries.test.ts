@@ -753,15 +753,6 @@ describe("getRepoDirectoryBase", () => {
   });
 });
 
-describe("getRepoDirectoryBaseByOrg", () => {
-  it("delegates to getRepoDirectoryBase with the orgLogin option", async () => {
-    const { db } = makeDb(() => []);
-    const { getRepoDirectoryBaseByOrg } = await import("./queries.js");
-    const result = await getRepoDirectoryBaseByOrg(db, "spiob");
-    expect(result).toEqual([]);
-  });
-});
-
 // ---------------------------------------------------------------------------
 // Live-Postgres check (opt-in)
 //

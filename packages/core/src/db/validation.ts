@@ -4,8 +4,8 @@
  *
  * Originally lived as isValidMissionId() inside db/missions.ts. Extracted
  * here per ADR 0027 once db/bookmarks.ts needed the identical check for
- * repo IDs — missions.ts now re-exports isValidMissionId as an alias so
- * existing callers (the claim/unclaim API routes) are unaffected.
+ * repo IDs. The mission-route callers import isValidUuid from this module
+ * directly (no alias re-export).
  *
  * Without this check, a malformed ID reaches Postgres as a raw "invalid
  * input syntax for type uuid" error instead of a clean 400 at the API

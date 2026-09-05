@@ -21,8 +21,6 @@ import { and, eq } from "drizzle-orm";
 import { missions } from "./schema.js";
 import type { ReadonlyDb } from "./queries.js";
 
-export type ClaimMissionOutcome = "claimed" | "already_claimed" | "not_found";
-
 /**
  * Claims an open mission on behalf of claimedBy (a GitHub login). Only
  * succeeds if the mission is currently "open" — already-claimed, resolved,
@@ -32,7 +30,7 @@ export async function claimMission(
   db: ReadonlyDb,
   missionId: string,
   claimedBy: string,
-): Promise<ClaimMissionOutcome> {
+): Promise<"claimed" | "already_claimed" | "not_found"> {
   const [updated] = await db
     .update(missions)
     .set({ status: "claimed", claimedBy, claimedAt: new Date() })
@@ -52,8 +50,6 @@ export async function claimMission(
   return existing === undefined ? "not_found" : "already_claimed";
 }
 
-export type UnclaimMissionOutcome = "unclaimed" | "not_claimed_by_you" | "not_found";
-
 /**
  * Releases a mission claimed by requestingUser back to "open". Only
  * succeeds if the mission is currently "claimed" by that exact user —
@@ -66,7 +62,7 @@ export async function unclaimMission(
   db: ReadonlyDb,
   missionId: string,
   requestingUser: string,
-): Promise<UnclaimMissionOutcome> {
+): Promise<"unclaimed" | "not_claimed_by_you" | "not_found"> {
   const [updated] = await db
     .update(missions)
     .set({ status: "open", claimedBy: null, claimedAt: null })
@@ -92,8 +88,6 @@ export async function unclaimMission(
   return existing === undefined ? "not_found" : "not_claimed_by_you";
 }
 
-export type DismissMissionOutcome = "dismissed" | "not_open" | "not_found";
-
 /**
  * Dismisses an open mission ("won't fix / not applicable") with an
  * optional human-readable reason. Only open missions can be dismissed:
@@ -113,7 +107,7 @@ export async function dismissMission(
   db: ReadonlyDb,
   missionId: string,
   reason?: string | null,
-): Promise<DismissMissionOutcome> {
+): Promise<"dismissed" | "not_open" | "not_found"> {
   const [updated] = await db
     .update(missions)
     .set({
@@ -137,8 +131,6 @@ export async function dismissMission(
   return existing === undefined ? "not_found" : "not_open";
 }
 
-export type UndismissMissionOutcome = "restored" | "not_dismissed" | "not_found";
-
 /**
  * Puts a dismissed mission back to "open", clearing the dismissal stamp.
  * Lossless by construction: only open missions can be dismissed, so a
@@ -150,7 +142,7 @@ export type UndismissMissionOutcome = "restored" | "not_dismissed" | "not_found"
 export async function undismissMission(
   db: ReadonlyDb,
   missionId: string,
-): Promise<UndismissMissionOutcome> {
+): Promise<"restored" | "not_dismissed" | "not_found"> {
   const [updated] = await db
     .update(missions)
     .set({

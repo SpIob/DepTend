@@ -22,14 +22,12 @@ import { and, eq } from "drizzle-orm";
 import { repoBookmarks, repos } from "./schema.js";
 import type { ReadonlyDb } from "./queries.js";
 
-export type BookmarkRepoOutcome = "bookmarked" | "already_bookmarked" | "not_found";
-
 /** Bookmarks repoId on behalf of userLogin (a GitHub login). Idempotent. */
 export async function bookmarkRepo(
   db: ReadonlyDb,
   repoId: string,
   userLogin: string,
-): Promise<BookmarkRepoOutcome> {
+): Promise<"bookmarked" | "already_bookmarked" | "not_found"> {
   const [repo] = await db.select({ id: repos.id }).from(repos).where(eq(repos.id, repoId)).limit(1);
 
   if (repo === undefined) {
@@ -45,14 +43,12 @@ export async function bookmarkRepo(
   return inserted === undefined ? "already_bookmarked" : "bookmarked";
 }
 
-export type UnbookmarkRepoOutcome = "unbookmarked" | "not_bookmarked";
-
 /** Releases userLogin's bookmark on repoId, if any. */
 export async function unbookmarkRepo(
   db: ReadonlyDb,
   repoId: string,
   userLogin: string,
-): Promise<UnbookmarkRepoOutcome> {
+): Promise<"unbookmarked" | "not_bookmarked"> {
   const [deleted] = await db
     .delete(repoBookmarks)
     .where(and(eq(repoBookmarks.repoId, repoId), eq(repoBookmarks.userLogin, userLogin)))

@@ -834,29 +834,3 @@ export async function getRepoDirectoryBase(
     };
   });
 }
-
-/**
- * Thin wrapper for the per-org directory path — the function above already
- * does the work; this exists so the old caller signature
- * (db, orgLogin) keeps working without a breaking change.
- */
-export async function getRepoDirectoryBaseByOrg(
-  db: ReadonlyDb,
-  orgLogin: string,
-): Promise<RepoWithMissionSummary[]> {
-  return getRepoDirectoryBase(db, { orgLogin });
-}
-
-/**
- * Backwards-compatible alias for the board-wide read (ADR 0027) plus the
- * viewer's bookmark + subscription flags. The implementation now lives in
- * getRepoDirectoryBase above; this thin wrapper preserves the historical
- * (db, userLogin) signature so existing tests and the /app wrapper don't
- * need to change at the same time.
- */
-export async function getReposWithMissionSummary(
-  db: ReadonlyDb,
-  userLogin?: string,
-): Promise<RepoWithMissionSummary[]> {
-  return getRepoDirectoryBase(db, userLogin === undefined ? {} : { userLogin });
-}
