@@ -95,6 +95,46 @@ function EmptyFilterState(): React.JSX.Element {
   );
 }
 
+function FilterRow<Option extends string>({
+  label,
+  options,
+  labels,
+  active,
+  countFor,
+  onToggle,
+  disabled,
+}: {
+  label: string;
+  options: readonly Option[];
+  labels: Record<Option, string>;
+  active: ReadonlySet<Option>;
+  countFor: (option: Option) => number | undefined;
+  /** Receives the toggled-value Set; the caller is responsible for
+   *  turning it into a navigation (via buildHref + navigate). */
+  onToggle: (next: Set<Option>) => void;
+  disabled: boolean;
+}): React.JSX.Element {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="text-ink-muted w-20 shrink-0 font-mono text-xs uppercase tracking-wide">
+        {label}
+      </span>
+      {options.map((option) => (
+        <FilterChip
+          key={option}
+          onToggle={() => {
+            onToggle(toggledSet(active, option));
+          }}
+          label={labels[option]}
+          count={countFor(option)}
+          active={active.has(option)}
+          disabled={disabled}
+        />
+      ))}
+    </div>
+  );
+}
+
 interface MissionGroup {
   repoKey: string;
   missions: MissionWithScore[];
@@ -310,74 +350,50 @@ export function PaginatedMissionBoard({
       <div className="bg-bg border-border sticky top-0 z-10 flex flex-col gap-3 border-b py-3">
         <MissionSearchInput value={search} onChange={setSearch} />
         <div className="flex flex-col gap-2.5">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-ink-muted w-20 shrink-0 font-mono text-xs uppercase tracking-wide">
-              Impact
-            </span>
-            {SEVERITY_OPTIONS.map((severity) => (
-              <FilterChip
-                key={severity}
-                onToggle={() => {
-                  navigate(buildHref({ severity: toggledSet(initialQuery.severity, severity) }));
-                }}
-                label={SEVERITY_LABELS[severity]}
-                count={facets.severity[severity]}
-                active={initialQuery.severity.has(severity)}
-                disabled={isPending}
-              />
-            ))}
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-ink-muted w-20 shrink-0 font-mono text-xs uppercase tracking-wide">
-              Ecosystem
-            </span>
-            {ECOSYSTEM_OPTIONS.map((ecosystem) => (
-              <FilterChip
-                key={ecosystem}
-                onToggle={() => {
-                  navigate(buildHref({ ecosystem: toggledSet(initialQuery.ecosystem, ecosystem) }));
-                }}
-                label={ECOSYSTEM_LABELS[ecosystem]}
-                count={facets.ecosystem[ecosystem]}
-                active={initialQuery.ecosystem.has(ecosystem)}
-                disabled={isPending}
-              />
-            ))}
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-ink-muted w-20 shrink-0 font-mono text-xs uppercase tracking-wide">
-              Effort
-            </span>
-            {EFFORT_OPTIONS.map((effort) => (
-              <FilterChip
-                key={effort}
-                onToggle={() => {
-                  navigate(buildHref({ effort: toggledSet(initialQuery.effort, effort) }));
-                }}
-                label={EFFORT_LABELS[effort]}
-                count={facets.effort[effort]}
-                active={initialQuery.effort.has(effort)}
-                disabled={isPending}
-              />
-            ))}
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-ink-muted w-20 shrink-0 font-mono text-xs uppercase tracking-wide">
-              Type
-            </span>
-            {MISSION_TYPE_OPTIONS.map((type) => (
-              <FilterChip
-                key={type}
-                onToggle={() => {
-                  navigate(buildHref({ missionType: toggledSet(initialQuery.missionType, type) }));
-                }}
-                label={MISSION_TYPE_LABELS[type]}
-                count={facets.missionType[type]}
-                active={initialQuery.missionType.has(type)}
-                disabled={isPending}
-              />
-            ))}
-          </div>
+          <FilterRow
+            label="Impact"
+            options={SEVERITY_OPTIONS}
+            labels={SEVERITY_LABELS}
+            active={initialQuery.severity}
+            countFor={(severity) => facets.severity[severity]}
+            onToggle={(next) => {
+              navigate(buildHref({ severity: next }));
+            }}
+            disabled={isPending}
+          />
+          <FilterRow
+            label="Ecosystem"
+            options={ECOSYSTEM_OPTIONS}
+            labels={ECOSYSTEM_LABELS}
+            active={initialQuery.ecosystem}
+            countFor={(ecosystem) => facets.ecosystem[ecosystem]}
+            onToggle={(next) => {
+              navigate(buildHref({ ecosystem: next }));
+            }}
+            disabled={isPending}
+          />
+          <FilterRow
+            label="Effort"
+            options={EFFORT_OPTIONS}
+            labels={EFFORT_LABELS}
+            active={initialQuery.effort}
+            countFor={(effort) => facets.effort[effort]}
+            onToggle={(next) => {
+              navigate(buildHref({ effort: next }));
+            }}
+            disabled={isPending}
+          />
+          <FilterRow
+            label="Type"
+            options={MISSION_TYPE_OPTIONS}
+            labels={MISSION_TYPE_LABELS}
+            active={initialQuery.missionType}
+            countFor={(type) => facets.missionType[type]}
+            onToggle={(next) => {
+              navigate(buildHref({ missionType: next }));
+            }}
+            disabled={isPending}
+          />
           {isFiltered && (
             <button
               type="button"

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useSession } from "next-auth/react";
 import { signInWithGitHub } from "@/lib/sign-in";
+import { extractErrorMessage } from "@/lib/fetch-error";
 
 type SubmitState =
   | { kind: "idle" }
@@ -10,18 +11,15 @@ type SubmitState =
   | { kind: "success"; message: string }
   | { kind: "error"; message: string };
 
-function extractMessage(data: unknown): string | null {
+/** Pulls the success-path `message` string. The route's success body is
+ *  `{ message, repo }` (see app/src/app/api/repos/route.ts); the error
+ *  body is `{ error }` and goes through extractErrorMessage instead. */
+function successMessage(data: unknown): string | null {
   if (typeof data !== "object" || data === null) {
     return null;
   }
   const record = data as Record<string, unknown>;
-  if (typeof record.message === "string") {
-    return record.message;
-  }
-  if (typeof record.error === "string") {
-    return record.error;
-  }
-  return null;
+  return typeof record.message === "string" ? record.message : null;
 }
 
 export function SubmitRepoForm({
@@ -48,13 +46,16 @@ export function SubmitRepoForm({
         body: JSON.stringify({ githubUrl: url }),
       });
       const data: unknown = await response.json();
-      const message = extractMessage(data) ?? "Something went wrong.";
 
       if (response.ok) {
+        const message = successMessage(data) ?? "Submitted.";
         setState({ kind: "success", message });
         setUrl("");
       } else {
-        setState({ kind: "error", message });
+        setState({
+          kind: "error",
+          message: extractErrorMessage(data) ?? "Something went wrong.",
+        });
       }
     } catch {
       setState({ kind: "error", message: "Network error — try again." });

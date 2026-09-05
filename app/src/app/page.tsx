@@ -6,6 +6,7 @@ import { AuthStatus } from "@/components/auth-status";
 import { SubmitRepoForm } from "@/components/submit-repo-form";
 import { RepoCard } from "@/components/repo-card";
 import { BrandMark } from "@/components/brand-mark";
+import { PageHeader } from "@/components/page-header";
 import type { RepoWithMissionSummary } from "@deptend/core";
 
 // This page reads live data from Neon on every request — repo/mission
@@ -68,12 +69,10 @@ export default async function RepoDirectoryPage(): Promise<React.JSX.Element> {
 
   return (
     <main id="main" className="mx-auto flex max-w-6xl flex-col gap-8 px-4 py-8 sm:px-6 sm:py-12">
-      <header className="border-border flex flex-col gap-5 border-b pb-6">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-2">
-            <BrandMark />
-          </div>
-          <div className="text-ink-muted flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-xs">
+      <PageHeader
+        left={<BrandMark />}
+        right={
+          <>
             <span>
               {indexedCount} {indexedCount === 1 ? "repo" : "repos"} indexed
             </span>
@@ -90,15 +89,16 @@ export default async function RepoDirectoryPage(): Promise<React.JSX.Element> {
               |
             </span>
             <AuthStatus />
-          </div>
-        </div>
+          </>
+        }
+      >
         <p className="text-ink-muted max-w-2xl text-sm leading-relaxed">
           Every indexed repo, with its highest-priority missions summarized. Open a repo for the
           full ranked list — every score shows its work, expand any mission for the inputs and
           weights behind it.
         </p>
         <SubmitRepoForm repoCount={totalRepoCount} maxRepos={MAX_REPOS} />
-      </header>
+      </PageHeader>
 
       {sorted.length === 0 ? (
         <EmptyState />

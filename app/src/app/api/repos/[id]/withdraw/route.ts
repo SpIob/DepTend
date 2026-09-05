@@ -1,44 +1,26 @@
 import { NextResponse } from "next/server";
 import { revalidateTag } from "next/cache";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { withdrawOwnRepo } from "@deptend/core/db/repos.js";
-import { isValidUuid } from "@deptend/core/db/validation.js";
 import { checkMissionActionLimit } from "@/lib/rate-limit";
-import { isSameOrigin } from "@/lib/request-origin";
+import { gateRequest } from "@/lib/route-gate";
 
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ): Promise<Response> {
-  if (!isSameOrigin(request)) {
-    return NextResponse.json({ error: "Cross-origin request rejected." }, { status: 403 });
+  const gated = await gateRequest({
+    request,
+    params,
+    rateLimiter: checkMissionActionLimit,
+    authMessage: "Sign in with GitHub to withdraw a repo submission.",
+    rateLimitMessage: "Too many actions. Try again shortly.",
+    invalidIdMessage: "Invalid repo id.",
+  });
+  if (!gated.ok) {
+    return gated.response;
   }
-
-  const session = await getServerSession(authOptions);
-  const login = session?.user?.login;
-  if (login === undefined) {
-    return NextResponse.json(
-      { error: "Sign in with GitHub to withdraw a repo submission." },
-      { status: 401 },
-    );
-  }
-
-  // Same shared pool as claim/unclaim/bookmark/unbookmark (ADR 0027) — a
-  // rare, self-correcting action, not worth its own dedicated bucket.
-  const rateLimit = checkMissionActionLimit(login);
-  if (!rateLimit.allowed) {
-    return NextResponse.json(
-      { error: "Too many actions. Try again shortly." },
-      { status: 429, headers: { "Retry-After": String(rateLimit.retryAfterSeconds) } },
-    );
-  }
-
-  const { id } = await params;
-  if (!isValidUuid(id)) {
-    return NextResponse.json({ error: "Invalid repo id." }, { status: 400 });
-  }
+  const { id, login } = gated;
 
   const outcome = await withdrawOwnRepo(getDb(), id, login);
 

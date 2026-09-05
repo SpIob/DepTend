@@ -12,6 +12,7 @@ import { buildMissionBoardHref, parseMissionBoardQuery } from "@/lib/mission-boa
 import { firstSearchParamValue } from "@/lib/search-params";
 import { AuthStatus } from "@/components/auth-status";
 import { BrandMark } from "@/components/brand-mark";
+import { PageHeader } from "@/components/page-header";
 
 // Live data on every request, same reasoning as the repo directory (page.tsx).
 export const dynamic = "force-dynamic";
@@ -94,16 +95,18 @@ export default async function AllMissionsPage({
 
   return (
     <main id="main" className="mx-auto flex max-w-3xl flex-col gap-8 px-4 py-8 sm:px-6 sm:py-12">
-      <header className="border-border flex flex-col gap-5 border-b pb-6">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex min-w-0 items-center gap-3">
+      <PageHeader
+        left={
+          <>
             <BrandMark href="/" />
             <span className="text-border" aria-hidden="true">
               /
             </span>
             <h1 className="text-ink-muted font-mono text-sm">all missions</h1>
-          </div>
-          <div className="text-ink-muted flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-xs">
+          </>
+        }
+        right={
+          <>
             <span>
               {indexedRepoCount} {indexedRepoCount === 1 ? "repo" : "repos"} indexed
             </span>
@@ -119,8 +122,9 @@ export default async function AllMissionsPage({
               |
             </span>
             <AuthStatus />
-          </div>
-        </div>
+          </>
+        }
+      >
         <p className="text-ink-muted max-w-xl text-sm leading-relaxed">
           Every open mission across every indexed repo, one list. Looking for one repo?{" "}
           <Link
@@ -131,7 +135,7 @@ export default async function AllMissionsPage({
           </Link>{" "}
           instead.
         </p>
-      </header>
+      </PageHeader>
 
       {board.total === 0 && !hasFilters ? (
         <EmptyState />

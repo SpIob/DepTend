@@ -10,7 +10,61 @@ All notable changes to DepTend, condensed to one entry per phase.
 
 ---
 
-**2026-08-30 — Server-Timing header + `/org/[org]` actually rendering**
+**2026-09-05 — UI complexity reduction (no behavior changes)**
+
+Mechanical refactor of `/app`'s UI and mutating API routes. The user-facing
+behavior is unchanged; the verification gate (§6) is the only signal that
+this happened. Per the no-ADR convention for refactors that don't
+introduce new decisions.
+
+### Changed
+
+- **Mutating route preamble extracted to `app/src/lib/route-gate.ts`.**
+  The 9 `[id]`-keyed mutating routes (4 mission + 5 repo) each opened
+  with the same 25-line origin / session / rate-limit / UUID gate. Now
+  they all call `gateRequest({...})` and continue from the returned
+  `{ id, login }` pair. The four checks are the same as the test
+  harness's `runSharedTests()` so the production contract and the test
+  contract are derived from the same code path.
+- **`<PageHeader>` component extracted.** The four public pages
+  (`/`, `/missions`, `/repo/[owner]/[name]`, `/org/[org]`) each rendered
+  the same `border-border flex flex-col gap-5 border-b pb-6` shell
+  around a brand on the left and indexed-count + AuthStatus on the
+  right. Now they pass `left` / `right` / `children` to a single
+  component. Precedent: `BrandMark` was extracted the same way.
+- **`MissionActions` mode switch.** The four `if (status === ...)`
+  branches are now a single exhaustive `switch (mode)` on a 6-state
+  discriminated union (`open-claimable`, `open-signed-out`,
+  `claimed-by-me`, `claimed-by-other`, `dismissed-by-me`,
+  `dismissed-signed-out`). Matches the §7 "exhaustive switches, no
+  silent defaults" rule that already governs `WithdrawRepoOutcome` and
+  `statusToOutcome()`.
+- **`MissionScoreDetails` sub-component.** The 110-line "Why this
+  score?" disclosure in `mission-card.tsx` is now its own sub-component
+  in the same file. The three "Impact / Ecosystem value / Effort"
+  input columns share a `<ScoreInputsList>` helper. The 15-line inline
+  confidence-notes className ternary is replaced by named constants.
+- **`FilterRow` helper in `paginated-mission-board.tsx`.** The four
+  filter rows (Severity / Ecosystem / Effort / MissionType) that were
+  near-identical 17-line blocks are now 4 lines of JSX each. The
+  per-axis `toggledSet` + `navigate(buildHref({...}))` closure lives at
+  the call site; the row owns the label + chip array.
+- **`submit-repo-form.tsx` uses the shared `extractErrorMessage`** for
+  the error path and a small `successMessage` helper for the success
+  path. The previous local `extractMessage` conflated the two
+  response shapes (`{ error }` for errors, `{ message }` for success).
+
+### Verified
+
+- `pnpm typecheck` (all workspaces, including `tsconfig.eslint.json`
+  passes for `packages/core` and `cli`)
+- `pnpm test` (162 tests pass, including all 9 mutating route suites
+  and the `route-test-setup.ts` shared gates)
+- `pnpm build` (clean `app/.next` + `packages/core/dist`)
+- `pnpm lint --max-warnings 0`
+- `pnpm format:check`
+
+---
 
 Two production observability / data-shape fixes from the 5-round perf
 test series on 2026-08-30. See `reports/perf/2026-08-30/compare.md` for

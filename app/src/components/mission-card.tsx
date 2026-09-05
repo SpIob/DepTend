@@ -83,6 +83,39 @@ type ClaimRequestState =
   { kind: "idle" } | { kind: "pending" } | { kind: "error"; message: string };
 
 /**
+ * The six states a mission can be in for the action UI. Computed from
+ * `status` + `claimedBy` + the current viewer's `login` so the render
+ * below is a pure switch on `mode` — the "exhaustive switches, no
+ * silent defaults" pattern the AGENTS.md §7 rule calls out as the
+ * codebase convention.
+ */
+type MissionActionMode =
+  | "open-claimable"
+  | "open-signed-out"
+  | "claimed-by-me"
+  | "claimed-by-other"
+  | "dismissed-by-me"
+  | "dismissed-signed-out";
+
+function computeMode(
+  status: MissionStatus,
+  claimedBy: string | null,
+  login: string | undefined,
+): MissionActionMode {
+  if (status === "dismissed") {
+    return login === undefined ? "dismissed-signed-out" : "dismissed-by-me";
+  }
+  if (status === "claimed") {
+    if (claimedBy === login) {
+      return "claimed-by-me";
+    }
+    return "claimed-by-other";
+  }
+  // status === "open"
+  return login === undefined ? "open-signed-out" : "open-claimable";
+}
+
+/**
  * Claim/unclaim/dismiss/undismiss UI for one mission — a self-contained
  * fetch + request-state component, same pattern as SubmitRepoForm. Only
  * rendered content changes based on mission.status and the signed-in user's
@@ -112,6 +145,8 @@ function MissionActions({
   const [request, setRequest] = useState<ClaimRequestState>({ kind: "idle" });
   const login = session?.user?.login;
 
+  const mode: MissionActionMode = computeMode(status, claimedBy, login);
+
   async function callAction(
     action: "claim" | "unclaim" | "dismiss" | "undismiss",
     patch: MissionClaimPatch,
@@ -140,12 +175,96 @@ function MissionActions({
 
   const pending = request.kind === "pending";
   const errorMessage = request.kind === "error" ? request.message : null;
+  const errorAlert = (
+    <div role="alert">
+      {errorMessage !== null && <p className="text-status-error text-xs">{errorMessage}</p>}
+    </div>
+  );
 
-  if (status === "dismissed") {
-    return (
-      <div className="flex flex-col gap-1">
-        <p className="text-ink-muted font-mono text-xs">Dismissed</p>
-        {login !== undefined && (
+  switch (mode) {
+    case "open-claimable":
+      return (
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={pending}
+              onClick={() =>
+                void callAction("claim", {
+                  status: "claimed",
+                  // `mode === "open-claimable"` guarantees login is defined; the
+                  // `?? null` is the only way to satisfy the `string | null`
+                  // signature of MissionClaimPatch.claimedBy without losing
+                  // the discriminated-narrowing on `mode` itself.
+                  claimedBy: login ?? null,
+                  claimedAt: new Date(),
+                })
+              }
+              className="bg-accent w-fit rounded-md px-2.5 py-1 font-mono text-xs font-medium text-white hover:opacity-90 disabled:opacity-50"
+            >
+              {pending ? "Claiming…" : "Claim this mission"}
+            </button>
+            <button
+              type="button"
+              disabled={pending}
+              onClick={() =>
+                void callAction("dismiss", {
+                  status: "dismissed",
+                  claimedBy: null,
+                  claimedAt: null,
+                })
+              }
+              className="border-border text-ink-muted hover:text-ink hover:border-ink-muted w-fit rounded-md border px-2.5 py-1 font-mono text-xs disabled:opacity-50"
+            >
+              {pending ? "Working…" : "Dismiss"}
+            </button>
+          </div>
+          {errorAlert}
+        </div>
+      );
+
+    case "open-signed-out":
+      return (
+        <p className="text-ink-muted text-xs">
+          <button
+            type="button"
+            onClick={() => void signInWithGitHub()}
+            className="text-accent hover:text-ink underline decoration-dotted underline-offset-2"
+          >
+            Sign in with GitHub
+          </button>{" "}
+          to claim this mission.
+        </p>
+      );
+
+    case "claimed-by-me":
+      return (
+        <div className="flex flex-col gap-1">
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() =>
+              void callAction("unclaim", { status: "open", claimedBy: null, claimedAt: null })
+            }
+            className="border-border text-ink-muted hover:text-ink hover:border-ink-muted w-fit rounded-md border px-2.5 py-1 font-mono text-xs disabled:opacity-50"
+          >
+            {pending ? "Releasing…" : "Unclaim"}
+          </button>
+          {errorAlert}
+        </div>
+      );
+
+    case "claimed-by-other":
+      return (
+        <p className="text-ink-muted font-mono text-xs">
+          Claimed by <span className="text-ink font-medium">@{claimedBy}</span>
+        </p>
+      );
+
+    case "dismissed-by-me":
+      return (
+        <div className="flex flex-col gap-1">
+          <p className="text-ink-muted font-mono text-xs">Dismissed</p>
           <button
             type="button"
             disabled={pending}
@@ -156,87 +275,13 @@ function MissionActions({
           >
             {pending ? "Restoring…" : "Restore"}
           </button>
-        )}
-        <div role="alert">
-          {errorMessage !== null && <p className="text-status-error text-xs">{errorMessage}</p>}
+          {errorAlert}
         </div>
-      </div>
-    );
-  }
+      );
 
-  if (status === "claimed" && claimedBy === login) {
-    return (
-      <div className="flex flex-col gap-1">
-        <button
-          type="button"
-          disabled={pending}
-          onClick={() =>
-            void callAction("unclaim", { status: "open", claimedBy: null, claimedAt: null })
-          }
-          className="border-border text-ink-muted hover:text-ink hover:border-ink-muted w-fit rounded-md border px-2.5 py-1 font-mono text-xs disabled:opacity-50"
-        >
-          {pending ? "Releasing…" : "Unclaim"}
-        </button>
-        <div role="alert">
-          {errorMessage !== null && <p className="text-status-error text-xs">{errorMessage}</p>}
-        </div>
-      </div>
-    );
+    case "dismissed-signed-out":
+      return <p className="text-ink-muted font-mono text-xs">Dismissed</p>;
   }
-
-  if (status === "claimed") {
-    return (
-      <p className="text-ink-muted font-mono text-xs">
-        Claimed by <span className="text-ink font-medium">@{claimedBy}</span>
-      </p>
-    );
-  }
-
-  // status === "open" from here down.
-  if (login === undefined) {
-    return (
-      <p className="text-ink-muted text-xs">
-        <button
-          type="button"
-          onClick={() => void signInWithGitHub()}
-          className="text-accent hover:text-ink underline decoration-dotted underline-offset-2"
-        >
-          Sign in with GitHub
-        </button>{" "}
-        to claim this mission.
-      </p>
-    );
-  }
-
-  return (
-    <div className="flex flex-col gap-1">
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          disabled={pending}
-          onClick={() =>
-            void callAction("claim", { status: "claimed", claimedBy: login, claimedAt: new Date() })
-          }
-          className="bg-accent w-fit rounded-md px-2.5 py-1 font-mono text-xs font-medium text-white hover:opacity-90 disabled:opacity-50"
-        >
-          {pending ? "Claiming…" : "Claim this mission"}
-        </button>
-        <button
-          type="button"
-          disabled={pending}
-          onClick={() =>
-            void callAction("dismiss", { status: "dismissed", claimedBy: null, claimedAt: null })
-          }
-          className="border-border text-ink-muted hover:text-ink hover:border-ink-muted w-fit rounded-md border px-2.5 py-1 font-mono text-xs disabled:opacity-50"
-        >
-          {pending ? "Working…" : "Dismiss"}
-        </button>
-      </div>
-      <div role="alert">
-        {errorMessage !== null && <p className="text-status-error text-xs">{errorMessage}</p>}
-      </div>
-    </div>
-  );
 }
 
 /**
@@ -259,6 +304,154 @@ function FixedVersionTag({ version }: { version: string }): React.JSX.Element {
     <span className="border-border bg-bg text-ink shrink-0 rounded-sm border px-1.5 py-0.5 font-mono text-[11px]">
       Fix: {version}
     </span>
+  );
+}
+
+// Class strings for the "Why {confidence}" block. Kept literal so
+// Tailwind's JIT scanner picks them up — see tag.tsx for the same
+// rationale. The two-arm className conditional at the old call site
+// (lines 477–491) was 15 lines of inline ternary and read as policy
+// not as code; ADR 0050's intent (don't repurpose severity-red on
+// low-confidence text) is preserved in the constant names.
+const CONFIDENCE_NOTES_BLOCK =
+  "border-severity-high/40 bg-severity-high/10 rounded-sm border-l-2 px-3 py-2";
+const CONFIDENCE_NOTES_HEADING =
+  "text-ink-muted mb-1 font-mono text-xs font-semibold uppercase tracking-wide";
+const CONFIDENCE_NOTES_HEADING_DEFAULT =
+  "text-ink-muted mb-1 font-mono text-xs uppercase tracking-wide";
+
+function ScoreInputsList({
+  label,
+  items,
+}: {
+  label: string;
+  items: { key: string; value: string }[];
+}): React.JSX.Element {
+  return (
+    <div>
+      <p className="text-ink-muted mb-1 uppercase">{label}</p>
+      <ul className="text-ink flex flex-col gap-0.5">
+        {items.map((item) => (
+          <li key={item.key}>
+            {item.key}: {item.value}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function MissionScoreDetails({
+  score,
+  isLowConfidence,
+  advisory,
+  dependency,
+}: {
+  score: MissionWithScore["score"];
+  isLowConfidence: boolean;
+  advisory: MissionWithScore["advisory"];
+  dependency: MissionWithScore["dependency"];
+}): React.JSX.Element {
+  const cvss =
+    score.impactInputs.cvss_score !== null ? score.impactInputs.cvss_score.toFixed(1) : "unknown";
+  const advisoryAge =
+    score.impactInputs.days_since_advisory !== null
+      ? `${score.impactInputs.days_since_advisory.toString()}d`
+      : "unknown";
+
+  return (
+    <details className="group/score -mx-4 -mb-4 mt-1">
+      <summary className="text-ink-muted hover:text-ink hover:bg-bg border-border/60 flex items-center gap-1.5 border-t px-4 py-3 font-mono text-xs font-medium focus-visible:outline-offset-[-2px]">
+        <span className="transition-transform group-open/score:rotate-90">▸</span>
+        Why this score?
+      </summary>
+      <div className="bg-bg border-border/60 flex flex-col gap-4 border-t px-4 py-4 font-mono text-xs">
+        <div>
+          <p className="text-ink-muted mb-1 uppercase">Formula</p>
+          <p className="text-ink">
+            0.60 × impact ({score.impactScore.toFixed(1)}) + 0.40 × ecosystem value (
+            {score.ecosystemValueScore.toFixed(1)}) = {score.compositeScore.toFixed(1)}
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <ScoreInputsList
+            label="Impact inputs"
+            items={[
+              { key: "CVSS", value: cvss },
+              { key: "Severity", value: score.impactInputs.severity },
+              { key: "Dependency type", value: score.impactInputs.dep_type },
+              { key: "Advisory age", value: advisoryAge },
+            ]}
+          />
+          <ScoreInputsList
+            label="Ecosystem value inputs"
+            items={[
+              { key: "Repo stars", value: score.ecosystemValueInputs.repo_stars.toLocaleString() },
+              { key: "Open issues", value: String(score.ecosystemValueInputs.open_issues_count) },
+              {
+                key: "Downstream dependents",
+                value:
+                  score.ecosystemValueInputs.downstream_dependents !== null
+                    ? score.ecosystemValueInputs.downstream_dependents.toLocaleString()
+                    : "not tracked yet",
+              },
+            ]}
+          />
+          <ScoreInputsList
+            label="Effort inputs"
+            items={[
+              { key: "Semver bump", value: score.effortInputs.semver_bump },
+              {
+                key: "Migration guide",
+                value: score.effortInputs.has_migration_guide ? "available" : "not tracked yet",
+              },
+            ]}
+          />
+        </div>
+
+        {score.confidenceNotes !== null && score.confidenceNotes.length > 0 && (
+          // Low-confidence notes need a visible cue but must NOT
+          // re-use the severity-high red on the foreground text:
+          // the same hue is already taken by the card's severity
+          // bar, so a "Why low confidence" header in red reads
+          // like another severity signal. Keep the red on the
+          // left-border accent (where it can't be confused with
+          // a severity bar in the same row) and demote the text
+          // to muted+semibold. See ADR 0050.
+          <div className={isLowConfidence ? CONFIDENCE_NOTES_BLOCK : ""}>
+            <p
+              className={
+                isLowConfidence ? CONFIDENCE_NOTES_HEADING : CONFIDENCE_NOTES_HEADING_DEFAULT
+              }
+            >
+              Why {CONFIDENCE_TEXT[score.confidence].toLowerCase()}
+            </p>
+            <ul className="text-ink flex flex-col gap-0.5">
+              {score.confidenceNotes.map((note) => (
+                <li key={note}>· {note}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {advisory !== null && (
+          <div>
+            <p className="text-ink-muted mb-1 uppercase">Source</p>
+            <p className="text-ink">
+              {advisory.source.toUpperCase()} advisory{" "}
+              <a
+                href={osvUrl(advisory.osvId)}
+                className="text-accent underline decoration-dotted underline-offset-2"
+              >
+                {advisory.osvId}
+              </a>
+              {dependency !== null && <> for {dependency.packageName}</>}
+            </p>
+          </div>
+        )}
+      </div>
+    </details>
   );
 }
 
@@ -405,115 +598,12 @@ export function MissionCard({
             onStatusChange={onStatusChange}
           />
 
-          <details className="group/score -mx-4 -mb-4 mt-1">
-            <summary className="text-ink-muted hover:text-ink hover:bg-bg border-border/60 flex items-center gap-1.5 border-t px-4 py-3 font-mono text-xs font-medium focus-visible:outline-offset-[-2px]">
-              <span className="transition-transform group-open/score:rotate-90">▸</span>
-              Why this score?
-            </summary>
-            <div className="bg-bg border-border/60 flex flex-col gap-4 border-t px-4 py-4 font-mono text-xs">
-              <div>
-                <p className="text-ink-muted mb-1 uppercase">Formula</p>
-                <p className="text-ink">
-                  0.60 × impact ({score.impactScore.toFixed(1)}) + 0.40 × ecosystem value (
-                  {score.ecosystemValueScore.toFixed(1)}) = {score.compositeScore.toFixed(1)}
-                </p>
-              </div>
-
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                <div>
-                  <p className="text-ink-muted mb-1 uppercase">Impact inputs</p>
-                  <ul className="text-ink flex flex-col gap-0.5">
-                    <li>
-                      CVSS:{" "}
-                      {score.impactInputs.cvss_score !== null
-                        ? score.impactInputs.cvss_score.toFixed(1)
-                        : "unknown"}
-                    </li>
-                    <li>Severity: {score.impactInputs.severity}</li>
-                    <li>Dependency type: {score.impactInputs.dep_type}</li>
-                    <li>
-                      Advisory age:{" "}
-                      {score.impactInputs.days_since_advisory !== null
-                        ? `${score.impactInputs.days_since_advisory.toString()}d`
-                        : "unknown"}
-                    </li>
-                  </ul>
-                </div>
-
-                <div>
-                  <p className="text-ink-muted mb-1 uppercase">Ecosystem value inputs</p>
-                  <ul className="text-ink flex flex-col gap-0.5">
-                    <li>Repo stars: {score.ecosystemValueInputs.repo_stars.toLocaleString()}</li>
-                    <li>Open issues: {score.ecosystemValueInputs.open_issues_count}</li>
-                    <li>
-                      Downstream dependents:{" "}
-                      {score.ecosystemValueInputs.downstream_dependents ?? "not tracked yet"}
-                    </li>
-                  </ul>
-                </div>
-
-                <div>
-                  <p className="text-ink-muted mb-1 uppercase">Effort inputs</p>
-                  <ul className="text-ink flex flex-col gap-0.5">
-                    <li>Semver bump: {score.effortInputs.semver_bump}</li>
-                    <li>
-                      Migration guide:{" "}
-                      {score.effortInputs.has_migration_guide ? "available" : "not tracked yet"}
-                    </li>
-                  </ul>
-                </div>
-              </div>
-
-              {score.confidenceNotes !== null && score.confidenceNotes.length > 0 && (
-                // Low-confidence notes need a visible cue but must NOT
-                // re-use the severity-high red on the foreground text:
-                // the same hue is already taken by the card's severity
-                // bar, so a "Why low confidence" header in red reads
-                // like another severity signal. Keep the red on the
-                // left-border accent (where it can't be confused with
-                // a severity bar in the same row) and demote the text
-                // to muted+semibold. See ADR 0050.
-                <div
-                  className={
-                    isLowConfidence
-                      ? "border-severity-high/40 bg-severity-high/10 rounded-sm border-l-2 px-3 py-2"
-                      : ""
-                  }
-                >
-                  <p
-                    className={
-                      isLowConfidence
-                        ? "text-ink-muted mb-1 font-mono text-xs font-semibold uppercase tracking-wide"
-                        : "text-ink-muted mb-1 font-mono text-xs uppercase tracking-wide"
-                    }
-                  >
-                    Why {CONFIDENCE_TEXT[score.confidence].toLowerCase()}
-                  </p>
-                  <ul className="text-ink flex flex-col gap-0.5">
-                    {score.confidenceNotes.map((note) => (
-                      <li key={note}>· {note}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {advisory !== null && (
-                <div>
-                  <p className="text-ink-muted mb-1 uppercase">Source</p>
-                  <p className="text-ink">
-                    {advisory.source.toUpperCase()} advisory{" "}
-                    <a
-                      href={osvUrl(advisory.osvId)}
-                      className="text-accent underline decoration-dotted underline-offset-2"
-                    >
-                      {advisory.osvId}
-                    </a>
-                    {dependency !== null && <> for {dependency.packageName}</>}
-                  </p>
-                </div>
-              )}
-            </div>
-          </details>
+          <MissionScoreDetails
+            score={score}
+            isLowConfidence={isLowConfidence}
+            advisory={advisory}
+            dependency={dependency}
+          />
         </div>
       </details>
     </article>

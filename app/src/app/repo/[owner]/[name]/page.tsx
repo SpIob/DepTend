@@ -17,6 +17,7 @@ import { BookmarkToggle } from "@/components/bookmark-toggle";
 import { WithdrawButton } from "@/components/withdraw-button";
 import { EcosystemBadge } from "@/components/ecosystem-badge";
 import { BrandMark } from "@/components/brand-mark";
+import { PageHeader } from "@/components/page-header";
 import { firstSearchParamValue } from "@/lib/search-params";
 import { ingestionStatusNote } from "@/lib/ingestion-status";
 
@@ -103,9 +104,9 @@ export default async function RepoPage({
 
   return (
     <main id="main" className="mx-auto flex max-w-3xl flex-col gap-8 px-4 py-8 sm:px-6 sm:py-12">
-      <header className="border-border flex flex-col gap-5 border-b pb-6">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex min-w-0 items-center gap-3">
+      <PageHeader
+        left={
+          <>
             <BrandMark href="/" />
             <span className="text-border" aria-hidden="true">
               /
@@ -114,8 +115,10 @@ export default async function RepoPage({
               {repo.owner}/{repo.name}
             </h1>
             <BookmarkToggle repoId={repo.id} initialBookmarked={bookmarkedIds.has(repo.id)} />
-          </div>
-          <div className="text-ink-muted flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-xs">
+          </>
+        }
+        right={
+          <>
             <a
               href={`https://github.com/${repo.owner}/${repo.name}`}
               className="hover:text-ink underline decoration-dotted underline-offset-2"
@@ -126,8 +129,9 @@ export default async function RepoPage({
               |
             </span>
             <AuthStatus />
-          </div>
-        </div>
+          </>
+        }
+      >
         {ecosystems.length > 0 && (
           <div className="flex flex-wrap items-center gap-1.5">
             {ecosystems.map((ecosystem) => (
@@ -152,7 +156,7 @@ export default async function RepoPage({
         >
           ← All repos
         </Link>
-      </header>
+      </PageHeader>
 
       {statusNote !== null ? (
         <>

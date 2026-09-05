@@ -11,6 +11,7 @@ import {
 import { RepoCard } from "@/components/repo-card";
 import { AuthStatus } from "@/components/auth-status";
 import { BrandMark } from "@/components/brand-mark";
+import { PageHeader } from "@/components/page-header";
 
 export const dynamic = "force-dynamic";
 
@@ -46,9 +47,9 @@ export default async function OrgPage({
 
   return (
     <main id="main" className="mx-auto flex max-w-6xl flex-col gap-8 px-4 py-8 sm:px-6 sm:py-12">
-      <header className="border-border flex flex-col gap-5 border-b pb-6">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-2">
+      <PageHeader
+        left={
+          <>
             <BrandMark href="/" />
             <span className="text-border" aria-hidden="true">
               /
@@ -69,20 +70,23 @@ export default async function OrgPage({
                 className="border-border shrink-0 rounded-full border"
               />
             )}
-          </div>
-          <div className="text-ink-muted flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-xs">
+          </>
+        }
+        right={
+          <>
             {isMember && (
               <span className="bg-accent/10 text-accent border-accent/20 rounded-sm border px-2 py-0.5">
                 Member
               </span>
             )}
             <AuthStatus />
-          </div>
-        </div>
+          </>
+        }
+      >
         <p className="text-ink-muted max-w-2xl text-sm leading-relaxed">
           Repositories in this organization.
         </p>
-      </header>
+      </PageHeader>
 
       {repos.length === 0 ? (
         <div className="border-border bg-surface rounded-sm border border-dashed p-10 text-center">
