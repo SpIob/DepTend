@@ -33,6 +33,7 @@
  *   1  Invalid arguments, or the analysis failed.
  */
 
+import { fileURLToPath } from "node:url";
 import { parseGithubUrl } from "@deptend/core/db/repos.js";
 import { analyze } from "./analyze.js";
 import { writeOutput } from "./output.js";
@@ -58,7 +59,7 @@ Options:
 Environment variables:
   GITHUB_TOKEN     Optional. Raises the GitHub API rate limit to 5,000 req/hr.`;
 
-function parseArgs(argv: string[]): ParsedArgs | null {
+export function parseArgs(argv: string[]): ParsedArgs | null {
   if (argv.includes("--help") || argv.includes("-h")) {
     return null;
   }
@@ -66,23 +67,39 @@ function parseArgs(argv: string[]): ParsedArgs | null {
   let repoPath: string | undefined;
   let githubUrl: string | undefined;
   let outputPath: string | null = null;
-  let json = false;
+  const seen = new Set<string>();
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
 
     if (arg === "--github-url") {
-      githubUrl = argv[++i];
+      if (seen.has(arg)) throw new Error(`Duplicate flag: ${arg}\n\n${USAGE}`);
+      seen.add(arg);
+      const next = argv[++i];
+      if (next === undefined || next.startsWith("-")) {
+        throw new Error(`--github-url requires a URL argument.\n\n${USAGE}`);
+      }
+      githubUrl = next;
     } else if (arg === "--output") {
-      outputPath = argv[++i] ?? null;
+      if (seen.has(arg)) throw new Error(`Duplicate flag: ${arg}\n\n${USAGE}`);
+      seen.add(arg);
+      const next = argv[++i];
+      if (next === undefined || next.startsWith("-")) {
+        throw new Error(`--output requires a file path argument.\n\n${USAGE}`);
+      }
+      outputPath = next;
     } else if (arg === "--json") {
-      json = true;
+      if (seen.has(arg)) throw new Error(`Duplicate flag: ${arg}\n\n${USAGE}`);
+      seen.add(arg);
     } else if (arg !== undefined && !arg.startsWith("-")) {
       repoPath ??= arg;
     } else {
       throw new Error(`Unrecognized argument: ${String(arg)}\n\n${USAGE}`);
     }
   }
+
+  // Default --json to false, not undefined, so the field has a stable type.
+  const json = seen.has("--json");
 
   if (repoPath === undefined) {
     throw new Error(`Missing required <repo-path> argument.\n\n${USAGE}`);
@@ -111,6 +128,15 @@ async function main(): Promise<void> {
   }
 
   const githubToken = process.env.GITHUB_TOKEN ?? null;
+  if (githubToken === null) {
+    // ponytail: copy of scripts/ingest.js:115-122 — same warning text
+    // verbatim so the two paths produce the same diagnostic. Promote to
+    // a shared module only if a third caller appears.
+    console.warn(
+      "GITHUB_TOKEN is not set. GitHub API calls will be unauthenticated " +
+        "(60 req/hr limit). Set GITHUB_TOKEN to raise the limit to 5,000 req/hr.",
+    );
+  }
 
   const result = await analyze({
     repoPath: args.repoPath,
@@ -122,8 +148,19 @@ async function main(): Promise<void> {
   await writeOutput(result, { outputPath: args.outputPath, json: args.json });
 }
 
-main().catch((err: unknown) => {
-  const message = err instanceof Error ? err.message : String(err);
-  console.error(`Error: ${message}`);
-  process.exit(1);
-});
+/**
+ * Runs main() only when this file is the process entry point (i.e. when
+ * invoked via `node dist/index.js` / the `deptend` bin), not when imported
+ * for testing. Same gate pattern scripts/ingest.js uses for its
+ * exportable ingestRepo() (AGENTS.md §13).
+ */
+const isMainModule =
+  process.argv[1] !== undefined &&
+  fileURLToPath(import.meta.url) === fileURLToPath(`file://${process.argv[1]}`);
+if (isMainModule) {
+  main().catch((err: unknown) => {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`Error: ${message}`);
+    process.exit(1);
+  });
+}

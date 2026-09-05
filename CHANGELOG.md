@@ -10,6 +10,43 @@ All notable changes to DepTend, condensed to one entry per phase.
 
 ---
 
+**2026-09-05 — CLI B1, B3, B4, B6-B10 fixes from the 2026-09-05 audit**
+
+The 2026-09-05 CLI audit
+(`reports/cli-audit-2026-09-05/REPORT.md`) found eight gaps in the
+`@deptend/cli` analyze pipeline that the mocked test suite missed
+because the mocks didn't match the real-network contract (the same
+class of bug the audit series has surfaced across the project; see
+AGENTS.md §12, 'Mocks must match the real contract'). This pass
+fixes them and pins the contracts with new live-network-aware
+unit tests.
+
+### Fixed
+
+- **B1** (`--github-url` missing-value check) and **B3**
+  (duplicate-flag detection) — `parseArgs` in `cli/src/index.ts`
+  now throws on missing required values (was: silently forwarded
+  `undefined`) and on duplicate flags (was: last-write-wins).
+  Both are now covered by `cli/src/index.test.ts` (new file).
+- **B4** (advisory URL hard-coded to osv.dev) — `cli/src/analyze.ts`
+  now routes GHSA-sourced advisories to
+  `github.com/advisories/{id}` and OSV-sourced to
+  `osv.dev/vulnerability/{id}`, matching the
+  `AdvisorySource` enum on the row. The 2026-09-05 audit showed
+  every GHSA row's URL was silently wrong.
+- **B6** (`GITHUB_TOKEN` warning) — `cli/src/index.ts` now
+  prints the same `scripts/ingest.js`-style warning when
+  GITHUB_TOKEN is unset, instead of silently rate-limiting at
+  60 req/hr.
+- **B7** (`--json` default), **B8** (osv_id disambiguation in
+  human summary), **B9** (effort_label glyph prefix so
+  `trivial`/`low` don't render as visually identical),
+  **B10** (TTY + NO_COLOR gating for ANSI) — all in
+  `cli/src/output.ts`, pinned by `cli/src/output.test.ts`
+  (new file).
+
+---
+
 **2026-09-05 — Replace inline worker pool in `changelog-signals.ts` with `runBounded`**
 
 `prefetchEffortSignals` in `packages/core/src/ingestor/changelog-signals.ts`

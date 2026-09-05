@@ -47,7 +47,7 @@ import {
 } from "@deptend/core/scorer/mission-scorer.js";
 import { generateMissionCopy } from "@deptend/core/scorer/mission-copy.js";
 import { rankMissions, type RankableMission } from "@deptend/core/scorer/ranking.js";
-import type { Ecosystem } from "@deptend/core/db/schema.js";
+import type { AdvisorySource, Ecosystem } from "@deptend/core/db/schema.js";
 import type { ParsedDependency } from "@deptend/core/ingestor/interface.js";
 import type { PackageMetadata } from "@deptend/core/ingestor/registry.js";
 import {
@@ -196,7 +196,7 @@ export async function analyze(options: AnalyzeOptions): Promise<AnalyzeResult> {
           cvss_score: advisory.cvssScore,
           fixed_version: advisory.fixedVersion,
           summary: advisory.summary,
-          url: `https://osv.dev/vulnerability/${advisory.osvId}`,
+          url: advisoryUrl(advisory.source, advisory.osvId),
         },
         // RankableMission fields — not part of the output shape, stripped
         // before writing JSON (see index.ts). Not a shared `now` — see
@@ -254,6 +254,19 @@ async function prefetchEffortSignalsForCandidates(
   });
 
   return prefetchEffortSignals(requests, githubToken);
+}
+
+/**
+ * Canonical URL for an advisory, by source. GHSA-sourced advisories live at
+ * github.com/advisories/{id} (the GitHub Advisory Database); OSV-sourced
+ * advisories live at osv.dev/vulnerability/{id}. Before this lived, every
+ * row's URL was hard-coded to osv.dev regardless of source — silently
+ * wrong for GHSA (the report's B4).
+ */
+function advisoryUrl(source: AdvisorySource, osvId: string): string {
+  return source === "ghsa"
+    ? `https://github.com/advisories/${osvId}`
+    : `https://osv.dev/vulnerability/${osvId}`;
 }
 
 /** Drops the RankableMission-only fields (tie_break, score) before output. */
