@@ -3,8 +3,8 @@
  *
  * Maps a dependency update's semver bump size, migration guide availability,
  * and changelog breaking-change signals to a categorical effort label.
- * This is a categorical tie-breaker only (see scorer/interface.ts) — it
- * never feeds into the composite score as a number.
+ * This is a categorical tie-breaker only — it never feeds into the
+ * composite score as a number.
  *
  * Decision table (see ADR 0006 for full rationale):
  *
@@ -23,9 +23,13 @@
 
 import type { EffortLabel } from "../db/schema.js";
 import type { EffortInputs } from "../db/json-types.js";
-import type { EffortScorer, EffortScoreResult } from "./interface.js";
 
-export class DefaultEffortScorer implements EffortScorer {
+export interface EffortScoreResult {
+  label: EffortLabel;
+  inputs: EffortInputs;
+}
+
+export class DefaultEffortScorer {
   score(inputs: EffortInputs): EffortScoreResult {
     const hasBreakingSignals = inputs.breaking_change_signals.length > 0;
     let label: EffortLabel;

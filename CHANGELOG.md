@@ -10,6 +10,21 @@ All notable changes to DepTend, condensed to one entry per phase.
 
 ---
 
+**2026-09-05 — Remove single-implementation scorer interfaces**
+
+`packages/core/src/scorer/interface.ts` (46 LOC) defined three
+contracts (`ImpactScorer`, `EffortScorer`, `EcosystemValueScorer`),
+each with exactly one implementation in the same package. In eight
+phases no alternate implementation has been written, no test mocks
+the interface, and no consumer ever passes the interface type around.
+The result-shape interfaces (`ImpactScoreResult`, `EffortScoreResult`,
+`EcosystemValueScoreResult`) moved inline to the concrete
+`Default*Scorer` files; the three single-implementation contracts are
+gone. The composition site in `mission-scorer.ts` keeps a two-line
+code comment naming the rule for reintroduction.
+
+---
+
 **2026-09-05 — Inline `clamp` from `scorer/transforms.ts`**
 
 Ponytail rung 6. The helper was a one-line `Math.min(Math.max(...))`
