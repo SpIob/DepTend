@@ -16,8 +16,6 @@
 
 import type { DepType, Severity } from "../db/schema.js";
 import type { ImpactInputs } from "../db/json-types.js";
-import type { ImpactScorer, ImpactScoreResult } from "./interface.js";
-import { clamp } from "./transforms.js";
 
 // ---------------------------------------------------------------------------
 // Weights (scoring_version 1.0.0 — see ADR 0006)
@@ -62,12 +60,11 @@ function depTypeWeight(depType: DepType): number {
 }
 
 /**
- * Applied whenever is_transitive is true. Lock file parsing hasn't landed as
- * of scoring_version 1.0.0 (deferred — see Project Instructions), so
- * is_transitive can currently only ever be an inference, never a
- * lock-file-confirmed fact. This discount reflects that reduced certainty,
- * not a claim that transitive vulnerabilities matter less. Revisit this
- * scorer once confirmed transitivity is possible (ADR 0006).
+ * Applied whenever is_transitive is true. The discount reflects that
+ * transitivity may be inferred rather than lock-file-confirmed
+ * (ADR 0006), not a claim that transitive vulnerabilities matter less.
+ * Revisit this scorer if/when a confirmed-transitive signal becomes
+ * available.
  */
 const UNCONFIRMED_TRANSITIVE_DISCOUNT = 0.9;
 
@@ -84,7 +81,12 @@ const EPSS_BOOST_FACTOR = 0.5;
 // DefaultImpactScorer
 // ---------------------------------------------------------------------------
 
-export class DefaultImpactScorer implements ImpactScorer {
+export interface ImpactScoreResult {
+  score: number; // 0.0 – 10.0
+  inputs: ImpactInputs;
+}
+
+export class DefaultImpactScorer {
   score(inputs: ImpactInputs): ImpactScoreResult {
     const base = inputs.cvss_score ?? severityFallbackScore(inputs.severity);
 
@@ -99,6 +101,6 @@ export class DefaultImpactScorer implements ImpactScorer {
       score *= UNCONFIRMED_TRANSITIVE_DISCOUNT;
     }
 
-    return { score: clamp(score, 0, 10), inputs };
+    return { score: Math.min(Math.max(score, 0), 10), inputs };
   }
 }

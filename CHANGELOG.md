@@ -10,6 +10,16 @@ All notable changes to DepTend, condensed to one entry per phase.
 
 ---
 
+**2026-09-05 — Inline `clamp` from `scorer/transforms.ts`**
+
+Ponytail rung 6. The helper was a one-line `Math.min(Math.max(...))`
+used at four call sites across three scorer files. Deleted
+`packages/core/src/scorer/transforms.ts`; the call sites now inline
+the expression. No behavior change, no public-API change — `clamp`
+was only used inside the scorer.
+
+---
+
 **2026-09-05 — Remove dead code and unused exported types from `@deptend/core`**
 
 Pure deletions and inlinings across the core package. No schema, no

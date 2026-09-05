@@ -17,8 +17,6 @@
  */
 
 import type { EcosystemValueInputs } from "../db/json-types.js";
-import type { EcosystemValueScorer, EcosystemValueScoreResult } from "./interface.js";
-import { clamp } from "./transforms.js";
 
 // ---------------------------------------------------------------------------
 // Ceilings and weights (scoring_version 1.0.0 — see ADR 0006)
@@ -35,14 +33,19 @@ const WEIGHTS_WITHOUT_DOWNSTREAM = { stars: 0.75, engagement: 0.25 };
 function logComponent(count: number, ceiling: number): number {
   const nonNegative = Math.max(count, 0);
   const scaled = (Math.log10(nonNegative + 1) / Math.log10(ceiling)) * 10;
-  return clamp(scaled, 0, 10);
+  return Math.min(Math.max(scaled, 0), 10);
 }
 
 // ---------------------------------------------------------------------------
 // DefaultEcosystemValueScorer
 // ---------------------------------------------------------------------------
 
-export class DefaultEcosystemValueScorer implements EcosystemValueScorer {
+export interface EcosystemValueScoreResult {
+  score: number; // 0.0 – 10.0
+  inputs: EcosystemValueInputs;
+}
+
+export class DefaultEcosystemValueScorer {
   score(inputs: EcosystemValueInputs): EcosystemValueScoreResult {
     const starsComponent = logComponent(inputs.repo_stars, STARS_CEILING);
     const engagementComponent = logComponent(inputs.open_issues_count, ENGAGEMENT_CEILING);
@@ -61,6 +64,6 @@ export class DefaultEcosystemValueScorer implements EcosystemValueScorer {
         engagementComponent * WEIGHTS_WITHOUT_DOWNSTREAM.engagement;
     }
 
-    return { score: clamp(score, 0, 10), inputs };
+    return { score: Math.min(Math.max(score, 0), 10), inputs };
   }
 }
