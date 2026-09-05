@@ -45,10 +45,12 @@ import type {
 // Decision 2 — computeMissionScore() itself stays synchronous/pure; only
 // the type is imported here, no function from changelog-signals.ts.
 import type { EffortSignals } from "../ingestor/changelog-signals.js";
+// Scorer interfaces (ImpactScorer, EffortScorer, EcosystemValueScorer) were
+// deleted; the concrete Default*Scorer classes are the only implementation.
+// Reintroduce an interface only when a second implementation actually exists.
 import { DefaultImpactScorer } from "./impact.js";
 import { DefaultEffortScorer } from "./effort.js";
 import { DefaultEcosystemValueScorer } from "./ecosystem-value.js";
-import { clamp } from "./transforms.js";
 
 export const SCORING_VERSION = "1.1.0";
 
@@ -133,10 +135,10 @@ function extractSemverFloor(versionSpec: string): string | null {
 
 /**
  * Estimates the semver bump size from a declared range to a target version.
- * This is always an estimate, never a confirmed fact — resolved_version is
- * always null until lock file parsing lands (see ADR 0007, §3), so the
- * "current" side is the minimum version satisfying the declared range, not
- * the version actually installed.
+ * When the dependency's lock file was parsed (ADR 0038), the "current" side
+ * is the resolved version actually installed. Otherwise it falls back to the
+ * minimum version satisfying the declared range — an estimate, not a
+ * confirmed fact. The `no_lock_file` confidence flag distinguishes the two.
  *
  * If currentVersion is provided (e.g., from a lock file), it is used as the
  * "current" version instead of computing the floor from the version spec.
@@ -251,8 +253,11 @@ function releaseTriple(release: number[]): [number, number, number] {
 }
 
 /**
- * PEP 440 equivalent of inferSemverBump above — same estimate-not-fact
- * caveat applies (resolved_version is null until lock file parsing lands).
+ * PEP 440 equivalent of inferSemverBump above — same shape: when a lock
+ * file was parsed (ADR 0038), `currentVersion` is the resolved version
+ * actually installed; otherwise the floor of the declared range is used
+ * as an estimate and the `no_lock_file` confidence flag distinguishes
+ * the two.
  *
  * If currentVersion is provided (e.g., from a lock file), it is used as the
  * "current" version instead of computing the floor from the version spec.
@@ -518,8 +523,15 @@ export function buildConfidenceNotes(flags: ConfidenceFlags): string[] {
   const notes: string[] = [];
 
   if (flags.no_lock_file === true) {
+    // The audit (2026-09-05 §3 B5) surfaced a UX bug: the prior wording
+    // ("No lock file was parsed for this dependency") implied a repo-level
+    // absence even when `lock_file_present: true` at the analyze-result
+    // level. ADR 0038 parses lock files when available; this flag fires
+    // when no lock file exists in the repo or the parser couldn't read it
+    // (pnpm is the only common gap). In both cases the wording below is
+    // accurate: the resolved version is genuinely not known.
     notes.push(
-      "No lock file was parsed for this dependency, so the currently-installed version is estimated from its declared range rather than confirmed.",
+      "The currently-installed version is estimated from this dependency's declared range rather than confirmed from a lock file (ADR 0038 covers most formats; pnpm and unparseable files are the remaining gaps).",
     );
   }
   if (flags.cvss_score_missing === true) {
@@ -572,7 +584,10 @@ export function computeMissionScore(ctx: MissionScoringContext): MissionScoreCom
   const effortResult = effortScorer.score(effortInputs);
   const ecosystemValueResult = ecosystemValueScorer.score(ecosystemValueInputs);
 
-  const composite_score = clamp(impactResult.score * 0.6 + ecosystemValueResult.score * 0.4, 0, 10);
+  const composite_score = Math.min(
+    Math.max(impactResult.score * 0.6 + ecosystemValueResult.score * 0.4, 0),
+    10,
+  );
 
   return {
     impact_score: impactResult.score,

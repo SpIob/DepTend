@@ -656,13 +656,13 @@ describe("analyze", () => {
     expect(mission?.confidence_notes).not.toContain(
       "Changelog and migration-guide data wasn't available for this dependency's own upstream repository, so the effort estimate is based on the semver version bump alone.",
     );
-    // confidence itself stays "low" in this fixture — not because ADR
-    // 0029 didn't work, but because no_lock_file is *always* set on the
-    // CLI path (resolved_version is always null; no lock-file parsing
-    // exists yet, ADR 0007 §3) and downstream_dependents_unavailable is
-    // untouched by this ADR (ADR 0006, out of scope) — two independent,
-    // still-open gaps. The assertion above is what actually proves ADR
-    // 0029 worked: the specific note it targets is gone from the set,
-    // a real change from the always-present state that existed before it.
+    // confidence itself stays "low" in this fixture — the test fixture
+    // supplies no `resolved_version` for any dep, so `no_lock_file` is
+    // unconditionally set on the CLI path (ADR 0007 §3), and
+    // `downstream_dependents_unavailable` is also set (CLI has no
+    // libraries.io key by design) — two independent flags. The assertion
+    // above is what actually proves ADR 0029 worked: the specific note
+    // it targets is gone from the set, a real change from the always-
+    // present state that existed before it.
   });
 });
