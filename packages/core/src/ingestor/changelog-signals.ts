@@ -32,6 +32,7 @@ import { compare as pep440Compare, valid as pep440Valid } from "@renovatebot/pep
 import type { Ecosystem } from "../db/schema.js";
 import type { SourceRepoRef } from "./source-repo.js";
 import { DEFAULT_RETRY_DELAY_MS, fetchWithRetry } from "./fetch-retry.js";
+import { runBounded } from "./concurrency.js";
 
 const GITHUB_API_BASE = "https://api.github.com";
 const USER_AGENT = "deptend.dev/0.1.0 (https://github.com/deptend/deptend.dev)";
@@ -388,34 +389,27 @@ export async function prefetchEffortSignals(
   }
   const unique = Array.from(uniqueByKey.values());
 
-  const results = new Map<string, EffortSignals>();
-  let index = 0;
+  const results = await runBounded(unique, concurrency, async (request) => {
+    if (request.sourceRepo === null) {
+      return { ...UNAVAILABLE_SIGNALS };
+    }
+    return fetchReleaseSignals(
+      request.sourceRepo,
+      request.ecosystem,
+      request.currentFloor,
+      request.targetVersion,
+      token,
+      retryDelayMs,
+    );
+  });
 
-  async function worker(): Promise<void> {
-    while (index < unique.length) {
-      const current = index++;
-      const request = unique[current];
-      if (request === undefined) continue;
-
-      if (request.sourceRepo === null) {
-        results.set(request.key, { ...UNAVAILABLE_SIGNALS });
-        continue;
-      }
-
-      const signals = await fetchReleaseSignals(
-        request.sourceRepo,
-        request.ecosystem,
-        request.currentFloor,
-        request.targetVersion,
-        token,
-        retryDelayMs,
-      );
-      results.set(request.key, signals);
+  const byKey = new Map<string, EffortSignals>();
+  for (let i = 0; i < unique.length; i++) {
+    const request = unique[i];
+    const result = results[i];
+    if (request !== undefined && result !== undefined) {
+      byKey.set(request.key, result);
     }
   }
-
-  const workers = Array.from({ length: Math.min(concurrency, unique.length) }, () => worker());
-  await Promise.all(workers);
-
-  return results;
+  return byKey;
 }

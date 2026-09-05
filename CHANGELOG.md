@@ -10,6 +10,20 @@ All notable changes to DepTend, condensed to one entry per phase.
 
 ---
 
+**2026-09-05 — Replace inline worker pool in `changelog-signals.ts` with `runBounded`**
+
+`prefetchEffortSignals` in `packages/core/src/ingestor/changelog-signals.ts`
+had its own bounded-concurrency worker pool (~28 LOC: a closure over a
+shared `index` counter plus a `Promise.all` of `worker()` calls).
+Same shape as `concurrency.ts:runBounded`, but keyed by `request.key`
+rather than input index. Replaced the inline loop with `runBounded` and
+a small post-loop that zips results back to keys. The dedup-by-key
+preprocessing that ran before the worker pool stays; only the
+concurrency primitive is now shared. No behavior change; the existing
+`changelog-signals.test.ts` exercises the contract.
+
+---
+
 **2026-09-05 — Remove single-implementation scorer interfaces**
 
 `packages/core/src/scorer/interface.ts` (46 LOC) defined three
