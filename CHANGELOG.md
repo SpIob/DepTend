@@ -10,9 +10,32 @@ All notable changes to DepTend, condensed to one entry per phase.
 
 ---
 
-**2026-09-06 — Notification subscriptions: simplify core, add getSubscribedRepoIds**
+**2026-09-06 — DB query module split: queries.ts → board-queries.ts + directory-queries.ts + test-utils.ts**
 
-Simplified `packages/core/src/notifications/subscriptions.ts` (93 → 94 lines, +1 export, −1 export, removed dead default) and switched directory/board read paths from `getUserSubscriptions()` (full rows) to `getSubscribedRepoIds()` (just repo IDs in a Set, mirroring `getBookmarkedRepoIds`). The `unsubscribeFromRepo` return type now matches the `bookmarkRepo`/`unbookmarkRepo` pattern (`"unsubscribed" | "not_subscribed"` instead of `boolean`).
+Split the 866-line `packages/core/src/db/queries.ts` into three focused modules plus a shared test utility, reducing complexity and improving navigation. No behavior changes — all 784 core tests and 198 app tests pass.
+
+### Changed
+
+- **`queries.ts` slimmed 866 → 218 lines** — keeps only the shared five-table join (`missionJoinRows`, `toMissionWithScore`), `createReadonlyDb`, fetch-everything path (`getMissionsWithScoresByStatus`, `getRepoMissionsWithScores`), plus re-exports from new modules for backward compatibility.
+- **`board-queries.ts` (new, ~400 lines)** — owns the ADR 0031 paginated mission board: SQL fragments (`BOARD_SEVERITY_EXPR`, `BOARD_TIER_EXPR`, etc.), `buildBoardConditionParts`, `boardOrderBy`, `buildBoardTallySelect`, `runBoardTally`, `fetchBoardPage`, `getBoardMissionsWithScoresPage`, `getRepoBoardPage`. Ordering-parity comments (ADR 0017/0018) move with it.
+- **`directory-queries.ts` (new, ~280 lines)** — owns directory/count queries: `getIndexedRepoCount`, `getTotalRepoCount`, `getSkippedRepos`, `getRepoDirectorySummary`, `getRepoEcosystems`, `getRepoDirectoryBase` (with ADR 0053 LEFT JOIN + COALESCE fix).
+- **`test-utils.ts` (new, ~240 lines)** — shared fake-transport infrastructure (`makeDb`, `flatten`, `bySql`, fixtures, `boardRouter`, `tallyRow`) extracted from `queries.test.ts` so both new test files reuse it without duplication.
+- **`query-types.ts`** — added missing public types: `BoardFilters`, `BoardFacets`, `BoardPage`, `BoardSortMode`, `RepoDirectorySummary`, `SkippedRepo`, `RepoDirectoryOptions`.
+- **`package.json`** — added exports for `./db/board-queries.js`, `./db/directory-queries.js`, `./db/test-utils.js`.
+
+### Test changes
+
+- **`queries.test.ts`** slimmed 905 → 74 lines (only fetch-everything path tests)
+- **`board-queries.test.ts`** (new, 430 lines) — ordering parity, filters, pagination, result shaping, per-repo board page, live-Postgres block
+- **`directory-queries.test.ts`** (new, 324 lines) — directory summary, ecosystems, per-repo severity counts, ADR 0053 LEFT JOIN guard, live-Postgres block
+- All tests use shared `test-utils.ts` infrastructure
+
+### Verification
+
+- Typecheck (core + app + cli): clean
+- Tests: 784 core + 198 app = 982 tests pass
+- Lint: clean for new files
+- Format: clean
 
 ### Changed
 

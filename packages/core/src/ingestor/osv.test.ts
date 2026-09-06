@@ -20,12 +20,8 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  OsvFetcher,
-  cvssScoreToSeverity,
-  cvssVectorToBaseScore,
-  mapStringSeverity,
-} from "./osv.js";
+import { OsvFetcher } from "./osv.js";
+import { cvssScoreToSeverity, cvssVectorToBaseScore, mapStringSeverity } from "./cvss.js";
 import type { ParsedDependency } from "../ingestor/interface.js";
 
 // ---------------------------------------------------------------------------

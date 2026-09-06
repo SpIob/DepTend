@@ -13,15 +13,29 @@ type NotificationRequestState =
  */
 export function NotificationToggle({
   repoId,
+  repoFullName,
   initialSubscribed,
 }: {
   repoId: string;
+  /**
+   * "owner/name" — same screen-reader rationale as BookmarkToggle's
+   * repoFullName prop: a multi-repo page that rendered N of these would
+   * otherwise announce N identical "Sign in with GitHub to subscribe
+   * to notifications" labels with no way to tell them apart. The per-repo
+   * page knows both already; RepoCard has them on the row's `repo`.
+   */
+  repoFullName: string;
   initialSubscribed: boolean;
 }): React.JSX.Element {
   const { data: session } = useSession();
   const login = session?.user?.login;
   const [subscribed, setSubscribed] = useState(initialSubscribed);
   const [request, setRequest] = useState<NotificationRequestState>({ kind: "idle" });
+
+  const signedOutLabel = `Sign in with GitHub to subscribe to notifications for ${repoFullName}`;
+  const signedInLabel = subscribed
+    ? `Unsubscribe from notifications for ${repoFullName}`
+    : `Subscribe to notifications for ${repoFullName}`;
 
   async function toggle(): Promise<void> {
     const action = subscribed ? "unsubscribe" : "subscribe";
@@ -50,8 +64,8 @@ export function NotificationToggle({
       <button
         type="button"
         onClick={() => void signInWithGitHub()}
-        title="Sign in with GitHub to subscribe to notifications"
-        aria-label="Sign in with GitHub to subscribe to notifications"
+        title={signedOutLabel}
+        aria-label={signedOutLabel}
         className="text-ink-muted hover:text-ink shrink-0 p-0.5 font-mono text-xs leading-none"
       >
         Notify
@@ -69,7 +83,8 @@ export function NotificationToggle({
         disabled={pending}
         onClick={() => void toggle()}
         aria-pressed={subscribed}
-        title={subscribed ? "Unsubscribe from notifications" : "Subscribe to notifications"}
+        aria-label={signedInLabel}
+        title={signedInLabel}
         // Same treatment as BookmarkToggle: `aria-pressed` is the
         // source of truth for the "on" state for both assistive tech
         // and sighted users (the active class changes the color). The

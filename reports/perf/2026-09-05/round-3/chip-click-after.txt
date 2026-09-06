@@ -1,0 +1,40 @@
+=== Chip-click timing on the refactored /missions (local prod build, dev Neon) ===
+
+Method: ego-browser task space, gotoAndWait('http://localhost:3000/missions'),
+wait 3s, then click chips and measure click→render via requestAnimationFrame
+polling on document.querySelectorAll('article').length, with
+PerformanceObserver capturing _rsc=... fetches.
+
+Critical (15) (first click):
+  clickToRenderMs: 49
+  rscFetchMs: 18
+  rscSize: 7877 B
+  finalUrl: ?severity=critical
+  finalCards: 15 (from 50)
+
+PyPI (after Critical is on):
+  clickToRenderMs: 208
+  rscFetchMs: 189
+  rscSize: 4993 B
+  finalUrl: ?severity=critical&ecosystem=pypi
+  finalCards: 5 (from 15)
+
+=== Compare with round 2 (deployed prod, pre-refactor) ===
+
+Critical (10) (first click):
+  clickToRenderMs: 1114
+  rscFetchMs: 87
+  rscSize: 5865 B
+  finalCards: 10 (from 50)
+
+PyPI (after Critical is on):
+  clickToRenderMs: 151
+  rscFetchMs: 113
+  rscSize: 3309 B
+  finalCards: 1 (from 10)
+
+=== Note: dataset differs ===
+- Local dev (round 3): Critical = 15 missions, total 310 (per earlier buttons dump)
+- Deployed prod (round 2): Critical = 10 missions, total 184
+- The dev Neon has fresher OSV data; the refactor itself doesn't change
+  the result count.

@@ -536,32 +536,41 @@ export function MissionCard({
             </p>
           </span>
 
-          {isClaimed && (
-            <Tag className="bg-accent/10 text-accent">Claimed · @{mission.claimedBy}</Tag>
-          )}
-
-          <span
-            className="flex shrink-0 flex-row items-center gap-2 sm:flex-col sm:items-end sm:gap-1"
-            // The score is the only quantitative signal on a card and
-            // the preceding title-attr did not reach keyboard or many
-            // screen readers. The bar has its own aria-hidden below
-            // since it is pure decoration of the same number.
-            aria-label={`Composite score ${score.compositeScore.toFixed(1)} out of 10`}
-          >
-            <span>
-              <span className="text-accent font-mono text-2xl font-bold">
-                {score.compositeScore.toFixed(1)}
-              </span>
-              <span className="text-ink-muted font-mono text-xs">/10</span>
-            </span>
+          {/* Right-side cluster: CLAIMED tag stacked above the score so the
+              title's `sm:flex-1` row gets the full available width minus
+              this one fixed-width column. Without the wrapper the
+              CLAIMED tag and the score were both siblings of the title
+              span, each competing for flex space and truncating the
+              title to ~50% of its natural width on a typical repo
+              mission ("Update @tauri-apps/plugin-shell to fix a critical
+              vulnerability" became "Update @tauri…"). */}
+          <span className="flex shrink-0 flex-col items-end gap-1 sm:flex-col-reverse">
+            {isClaimed && (
+              <Tag className="bg-accent/10 text-accent">Claimed · @{mission.claimedBy}</Tag>
+            )}
             <span
-              className="bg-border block h-[3px] w-11 overflow-hidden rounded-full"
-              aria-hidden="true"
+              className="flex flex-row items-center gap-2 sm:flex-col sm:items-end"
+              // The score is the only quantitative signal on a card and
+              // the preceding title-attr did not reach keyboard or many
+              // screen readers. The bar has its own aria-hidden below
+              // since it is pure decoration of the same number.
+              aria-label={`Composite score ${score.compositeScore.toFixed(1)} out of 10`}
             >
+              <span>
+                <span className="text-accent font-mono text-2xl font-bold">
+                  {score.compositeScore.toFixed(1)}
+                </span>
+                <span className="text-ink-muted font-mono text-xs">/10</span>
+              </span>
               <span
-                className={`block h-full ${severityBarClass(severity)}`}
-                style={{ width: `${priorityPct.toString()}%` }}
-              />
+                className="bg-border block h-[3px] w-11 overflow-hidden rounded-full"
+                aria-hidden="true"
+              >
+                <span
+                  className={`block h-full ${severityBarClass(severity)}`}
+                  style={{ width: `${priorityPct.toString()}%` }}
+                />
+              </span>
             </span>
           </span>
         </summary>

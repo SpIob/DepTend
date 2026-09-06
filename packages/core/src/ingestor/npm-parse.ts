@@ -16,9 +16,7 @@
  */
 
 import type { IngestorResult, ParsedDependency } from "./interface.js";
-import { parsePackageLockJson } from "./npm-lock-parse.js";
-import { parseYarnLockContent } from "./yarn-lock-parse.js";
-import { mergeManifestWithLock } from "./lock-parse.js";
+import { finalizeParseResult } from "./lock-parse.js";
 import { isStringRecord } from "./parse-guards.js";
 
 /** Minimal shape we care about from a package.json */
@@ -98,13 +96,6 @@ export function parsePackageJsonContent(
 
   const packageJson = parsed as PackageJson;
 
-  if (!lockFilePresent) {
-    warnings.push(
-      "No lock file detected (package-lock.json, pnpm-lock.yaml, yarn.lock). " +
-        "Dependency versions are unresolved; confidence scores will be lower.",
-    );
-  }
-
   const dependencies: ParsedDependency[] = [];
 
   const sections: {
@@ -152,32 +143,14 @@ export function parsePackageJsonContent(
     warnings.push("package.json contains no dependency entries.");
   }
 
-  // If lock file content was provided, parse and merge it
-  if (lockFileContent && lockFileName && lockFilePresent) {
-    let lockResult;
-    if (lockFileName === "package-lock.json") {
-      lockResult = parsePackageLockJson(lockFileContent);
-    } else if (lockFileName === "yarn.lock") {
-      lockResult = parseYarnLockContent(lockFileContent);
-    } else {
-      warnings.push(
-        `Lock file format ${lockFileName} not yet supported for parsing — falling back to manifest only.`,
-      );
-      lockResult = null;
-    }
-
-    if (lockResult) {
-      return mergeManifestWithLock(dependencies, lockResult, "npm", warnings);
-    }
-  }
-
-  return {
-    ecosystem: "npm",
+  return finalizeParseResult(
     dependencies,
-    lock_file_present: lockFilePresent,
-    manifest_resolved: true,
     warnings,
-  };
+    lockFilePresent,
+    lockFileContent,
+    lockFileName,
+    "npm",
+  );
 }
 
 // ---------------------------------------------------------------------------

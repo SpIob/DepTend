@@ -19,6 +19,18 @@
       "import": "./dist/db/queries.js",
       "types": "./dist/db/queries.d.ts"
     },
+    "./db/board-queries.js": {
+      "import": "./dist/db/board-queries.js",
+      "types": "./dist/db/board-queries.d.ts"
+    },
+    "./db/directory-queries.js": {
+      "import": "./dist/db/directory-queries.js",
+      "types": "./dist/db/directory-queries.d.ts"
+    },
+    "./db/test-utils.js": {
+      "import": "./dist/db/test-utils.js",
+      "types": "./dist/db/test-utils.d.ts"
+    },
     "./db/repos.js": {
       "import": "./dist/db/repos.js",
       "types": "./dist/db/repos.d.ts"

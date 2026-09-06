@@ -48,6 +48,7 @@
  */
 
 import { unstable_cache } from "next/cache";
+import { withTiming } from "@/lib/timing/store";
 
 /** All cache tags in use across /app's read layer. */
 export type ReadCacheTag = "missions" | "repos" | "organizations";
@@ -108,5 +109,11 @@ export function cachedRead<T>(
     revalidate: READ_CACHE_SECONDS,
     tags: [tag],
   });
-  return cached().then(reviveDates);
+  // The outer withTiming is the "total" time for the read; unstable_cache
+  // doesn't expose its internal hit/miss split, so we don't have a
+  // separate `cache;dur` and `db;dur`. A future iteration could add
+  // instrumentation here via patch-fetch on the underlying Postgres
+  // driver, or via `unstable_cache`'s onCacheError / onCacheHit callbacks
+  // if/when Next.js exposes them.
+  return withTiming(`cache:${tag}`, () => cached().then(reviveDates));
 }

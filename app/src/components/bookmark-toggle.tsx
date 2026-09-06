@@ -18,15 +18,31 @@ type BookmarkRequestState =
  */
 export function BookmarkToggle({
   repoId,
+  repoFullName,
   initialBookmarked,
 }: {
   repoId: string;
+  /**
+   * "owner/name" — required for screen-reader-distinguishable aria-labels.
+   * Without it every bookmark button on a multi-repo page shares the
+   * same label, so a screen-reader user hears "Sign in with GitHub to
+   * bookmark this repo" four times in a row and can't tell which button
+   * is which. RepoCard and the per-repo page both have this in scope
+   * (RepoCard's `repo` is a RepoWithMissionSummary, which extends Repo
+   * with `owner` + `name`; the per-repo page already knows both).
+   */
+  repoFullName: string;
   initialBookmarked: boolean;
 }): React.JSX.Element {
   const { data: session } = useSession();
   const [bookmarked, setBookmarked] = useState(initialBookmarked);
   const [request, setRequest] = useState<BookmarkRequestState>({ kind: "idle" });
   const login = session?.user?.login;
+
+  const signedOutLabel = `Sign in with GitHub to bookmark ${repoFullName}`;
+  const signedInLabel = bookmarked
+    ? `Remove bookmark for ${repoFullName}`
+    : `Bookmark ${repoFullName}`;
 
   async function toggle(): Promise<void> {
     const action = bookmarked ? "unbookmark" : "bookmark";
@@ -53,8 +69,8 @@ export function BookmarkToggle({
       <button
         type="button"
         onClick={() => void signInWithGitHub()}
-        title="Sign in with GitHub to bookmark this repo"
-        aria-label="Sign in with GitHub to bookmark this repo"
+        title={signedOutLabel}
+        aria-label={signedOutLabel}
         className="text-ink-muted hover:text-ink shrink-0 p-0.5 font-mono text-xl leading-none"
       >
         ☆
@@ -72,8 +88,8 @@ export function BookmarkToggle({
         disabled={pending}
         onClick={() => void toggle()}
         aria-pressed={bookmarked}
-        aria-label={bookmarked ? "Remove bookmark" : "Bookmark this repo"}
-        title={bookmarked ? "Remove bookmark" : "Bookmark this repo"}
+        aria-label={signedInLabel}
+        title={signedInLabel}
         className={`p-0.5 font-mono text-xl leading-none transition-colors disabled:opacity-50 ${
           bookmarked ? "text-accent" : "text-ink-muted hover:text-ink"
         }`}

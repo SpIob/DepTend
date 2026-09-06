@@ -14,11 +14,65 @@ import type {
   Advisory,
   Dependency,
   Ecosystem,
+  EffortLabel,
   Mission,
   MissionScore,
+  MissionStatus,
+  MissionType,
   Repo,
   Severity,
 } from "./schema.js";
+
+/** Filter and sort parameters for the paginated mission board (ADR 0031). */
+export interface BoardFilters {
+  /** Substring matched against title, package name, owner/name, and OSV id. */
+  q: string;
+  severities: readonly Severity[];
+  ecosystems: readonly Ecosystem[];
+  efforts: readonly EffortLabel[];
+  missionTypes: readonly MissionType[];
+  sort: BoardSortMode;
+}
+
+export type BoardSortMode = "priority" | "quick-wins" | "newest";
+
+/** Per-axis result counts for the filter chips. */
+export interface BoardFacets {
+  severity: Partial<Record<Severity, number>>;
+  ecosystem: Partial<Record<Ecosystem, number>>;
+  effort: Partial<Record<EffortLabel, number>>;
+  missionType: Partial<Record<MissionType, number>>;
+}
+
+/** One page of the board-wide /missions listing (ADR 0031). */
+export interface BoardPage {
+  missions: MissionWithScore[];
+  /** Total open+claimed missions matching all filters (not just this page). */
+  total: number;
+  facets: BoardFacets;
+}
+
+/** Combined header chrome for home page (`/`) and board page (`/missions`). */
+export interface RepoDirectorySummary {
+  /** Count of repos with `ingestion_status = 'complete'` — the "indexed" stat. */
+  indexedCount: number;
+  /** Count of every submitted repo — the MVP cap's denominator. */
+  totalCount: number;
+  /** Repos with `ingestion_status = 'skipped'`, with the ingestor's reason. */
+  skippedRepos: SkippedRepo[];
+}
+
+export interface SkippedRepo {
+  owner: string;
+  name: string;
+  /** Why the winning ingestor couldn't find/parse a manifest — see writer.ts. */
+  reason: string | null;
+}
+
+export interface RepoDirectoryOptions {
+  orgLogin?: string;
+  userLogin?: string;
+}
 
 /**
  * Advisory subset shipped on mission list rows — narrower than the full

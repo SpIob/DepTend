@@ -1,0 +1,18 @@
+=== /missions ===
+0.254691 0.241074 0.188387 0.306684 0.180850 
+=== /missions?severity=critical ===
+0.204148 0.208663 0.193731 0.261540 0.185103 
+=== /missions?ecosystem=pypi ===
+0.224164 0.184049 0.201632 0.189454 0.266281 
+=== /missions?missionType=dependency_update ===
+0.208410 0.183238 0.195799 0.252989 0.189087 
+=== /missions?severity=critical&ecosystem=pypi ===
+0.255837 0.202581 0.209778 0.206665 0.257415 
+=== /missions?severity=critical&ecosystem=pypi&missionType=vulnerability_fix&effort=low ===
+0.179131 0.184697 0.247178 0.193672 0.208461 
+=== /missions?severity=critical&ecosystem=pypi&missionType=vulnerability_fix&effort=low&q=urllib3 ===
+0.177669 0.175625 0.179711 0.204217 0.268061 
+=== /repo/SpIob/deptend-go-test-fixture ===
+0.190089 0.184556 0.275119 0.175554 0.246518 
+=== /repo/SpIob/deptend-go-test-fixture?severity=critical ===
+0.245782 0.189316 0.169748 0.214520 0.195091 

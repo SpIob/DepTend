@@ -114,7 +114,11 @@ export default async function RepoPage({
             <h1 className="text-ink min-w-0 truncate font-mono text-sm font-semibold">
               {repo.owner}/{repo.name}
             </h1>
-            <BookmarkToggle repoId={repo.id} initialBookmarked={bookmarkedIds.has(repo.id)} />
+            <BookmarkToggle
+              repoId={repo.id}
+              repoFullName={`${repo.owner}/${repo.name}`}
+              initialBookmarked={bookmarkedIds.has(repo.id)}
+            />
           </>
         }
         right={

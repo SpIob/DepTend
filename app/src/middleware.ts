@@ -48,9 +48,25 @@
  * headers from inside App Router page renders. The total-time signal
  * is the honest, low-risk first step; per-segment is the explicit
  * follow-up flagged in the ADR.
+ *
+ * S2 (round 5 of the 2026-09-05 perf series, follow-up to S1): the
+ * middleware sets an `x-request-id` header on the request, which the
+ * per-request timing store in `app/src/lib/timing/store.ts` uses to
+ * correlate entries. The page render's `withTiming()` records per-segment
+ * timings into an in-process store. The middleware's `Server-Timing`
+ * header stays as the `total;dur=...` segment from S1; the per-segment
+ * data is logged to stdout in dev mode and shipped to a metrics
+ * endpoint in production. Per AGENTS.md §12, App Router pages cannot
+ * set response headers from a Server Component (next/headers is
+ * sealed read-only), and middleware runs before the page render so
+ * it cannot observe page-render segments. The in-process store is the
+ * most we can do without a deeper restructure (a custom server, or
+ * a side-channel via response-body rewriting — both out of scope for
+ * the solo-dev budget).
  */
 
 import { NextResponse, type NextRequest } from "next/server";
+import { newRequestId, REQUEST_ID_HEADER } from "@/lib/timing/store";
 
 /**
  * The single rollout switch. Flipped to true on 2026-08-26 after the
@@ -98,11 +114,21 @@ export function middleware(request: NextRequest): NextResponse {
   const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
   const csp = buildCsp(nonce);
 
+  // S2 (round 5 of the 2026-09-05 perf series): mint a request id so the
+  // page-render timing store can correlate entries with this middleware
+  // run. The id is set on the request headers (read by next/headers in
+  // the page render) and on the response (so log aggregation can stitch
+  // middleware + page-render segments back together). See S2's long-form
+  // note at the top of this file for why this doesn't extend the
+  // Server-Timing header itself.
+  const requestId = newRequestId();
+
   // Request-side header: how the App Router learns the nonce. (It reads the
   // policy from here regardless of what the response eventually says.)
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set("x-nonce", nonce);
   requestHeaders.set("Content-Security-Policy", csp);
+  requestHeaders.set(REQUEST_ID_HEADER, requestId);
 
   const response = NextResponse.next({ request: { headers: requestHeaders } });
 
@@ -111,6 +137,9 @@ export function middleware(request: NextRequest): NextResponse {
     CSP_ENFORCED ? "Content-Security-Policy" : "Content-Security-Policy-Report-Only",
     csp,
   );
+  // Echo the request id back on the response for log correlation. Not
+  // part of any client-facing contract.
+  response.headers.set(REQUEST_ID_HEADER, requestId);
 
   // H1 (security audit 2026-08-29): additional security headers.
   // Referrer-Policy: no-referrer — every outbound link (e.g. "View on

@@ -15,6 +15,7 @@
  */
 
 import { cachedRead, reviveDates } from "./cached-read";
+import { withTiming } from "@/lib/timing/store";
 import { getBookmarkedRepoIds as coreGetBookmarkedRepoIds } from "@deptend/core/db/bookmarks.js";
 import {
   BOARD_PAGE_SIZE,
@@ -54,14 +55,19 @@ function boardFiltersCacheKey(filters: BoardFilters): string {
 /**
  * One page of the board-wide listing (ADR 0031) — filters and sort applied
  * server-side, page selected by 1-based `page` against BOARD_PAGE_SIZE.
- * Cached under the "missions" tag (ADR 0033).
+ * Cached under the "missions" tag (ADR 0033). Wrapped in `withTiming` for
+ * ADR 0052's per-segment observability — the "missions:board" segment
+ * captures the total time for the read (cache hit returns the deserialization
+ * cost; cache miss returns the full DB roundtrip).
  */
 export function getBoardMissionsPage(filters: BoardFilters, page: number): Promise<BoardPage> {
-  return cachedRead(["board-page", boardFiltersCacheKey(filters), String(page)], "missions", () =>
-    coreGetBoardMissionsWithScoresPage(getDb(), filters, {
-      limit: BOARD_PAGE_SIZE,
-      offset: (page - 1) * BOARD_PAGE_SIZE,
-    }),
+  return withTiming("missions:board", () =>
+    cachedRead(["board-page", boardFiltersCacheKey(filters), String(page)], "missions", () =>
+      coreGetBoardMissionsWithScoresPage(getDb(), filters, {
+        limit: BOARD_PAGE_SIZE,
+        offset: (page - 1) * BOARD_PAGE_SIZE,
+      }),
+    ),
   );
 }
 
@@ -88,8 +94,8 @@ export function getSkippedRepos(): Promise<SkippedRepo[]> {
  * subscribe/unsubscribe) per cached-read.ts:14-31.
  */
 export function getRepoDirectorySummary(): Promise<RepoDirectorySummary> {
-  return cachedRead(["repo-directory-summary"], "repos", () =>
-    coreGetRepoDirectorySummary(getDb()),
+  return withTiming("repos:directory-summary", () =>
+    cachedRead(["repo-directory-summary"], "repos", () => coreGetRepoDirectorySummary(getDb())),
   );
 }
 
@@ -135,24 +141,26 @@ export function getRepoBoardPage(
   filters: BoardFilters,
   options: { limit?: number; offset?: number } = {},
 ): Promise<BoardPage> {
-  return cachedRead(
-    ["repo-board-page", repoId, boardFiltersCacheKey(filters), String(options.limit ?? "")],
-    "missions",
-    () => coreGetRepoBoardPage(getDb(), repoId, filters, options),
+  return withTiming("missions:repo-board", () =>
+    cachedRead(
+      ["repo-board-page", repoId, boardFiltersCacheKey(filters), String(options.limit ?? "")],
+      "missions",
+      () => coreGetRepoBoardPage(getDb(), repoId, filters, options),
+    ),
   );
 }
 
 /** Resolves /repo/[owner]/[name]'s route params to a repo row, or null for a 404 (ADR 0027). Uncached — cheap unique-index lookup. */
 export async function getRepoByOwnerAndName(owner: string, name: string): Promise<Repo | null> {
-  return coreGetRepoByOwnerAndName(getDb(), owner, name);
+  return withTiming("repos:by-owner-name", () => coreGetRepoByOwnerAndName(getDb(), owner, name));
 }
 
 /** Repo IDs bookmarked by userLogin — backs the repo detail page's bookmark toggle (ADR 0027). Uncached by design (see ADR 0033). */
 export async function getBookmarkedRepoIds(userLogin: string): Promise<Set<string>> {
-  return coreGetBookmarkedRepoIds(getDb(), userLogin);
+  return withTiming("repos:bookmarks", () => coreGetBookmarkedRepoIds(getDb(), userLogin));
 }
 
 /** Ecosystems present in one repo — backs the repo detail page's badge row. Uncached — cheap indexed lookup. */
 export async function getRepoEcosystems(repoId: string): Promise<Ecosystem[]> {
-  return coreGetRepoEcosystems(getDb(), repoId);
+  return withTiming("repos:ecosystems", () => coreGetRepoEcosystems(getDb(), repoId));
 }

@@ -41,6 +41,7 @@ function MissionCounts({
 
 export function RepoCard({ repo }: { repo: RepoWithMissionSummary }): React.JSX.Element {
   const statusNote = ingestionStatusNote(repo.ingestionStatus);
+  const repoFullName = `${repo.owner}/${repo.name}`;
 
   return (
     <article className="border-border bg-surface hover:border-ink-muted/50 flex flex-col gap-3 rounded-md border p-4 transition-shadow hover:shadow-md">
@@ -52,9 +53,17 @@ export function RepoCard({ repo }: { repo: RepoWithMissionSummary }): React.JSX.
           {repo.owner}/{repo.name}
         </Link>
         <div className="flex items-center gap-1">
-          <BookmarkToggle repoId={repo.id} initialBookmarked={repo.isBookmarked} />
+          <BookmarkToggle
+            repoId={repo.id}
+            repoFullName={repoFullName}
+            initialBookmarked={repo.isBookmarked}
+          />
           {repo.isSubscribed !== undefined && (
-            <NotificationToggle repoId={repo.id} initialSubscribed={repo.isSubscribed} />
+            <NotificationToggle
+              repoId={repo.id}
+              repoFullName={repoFullName}
+              initialSubscribed={repo.isSubscribed}
+            />
           )}
         </div>
       </div>

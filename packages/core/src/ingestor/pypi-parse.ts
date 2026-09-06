@@ -43,10 +43,7 @@
 
 import { parse as parseToml, TomlError } from "smol-toml";
 import type { IngestorResult, ParsedDependency } from "./interface.js";
-import { parsePoetryLockContent } from "./poetry-lock-parse.js";
-import { parsePipfileLockContent } from "./pipfile-lock-parse.js";
-import { parsePdmLockContent } from "./pdm-lock-parse.js";
-import { mergeManifestWithLock } from "./lock-parse.js";
+import { finalizeParseResult } from "./lock-parse.js";
 import { isStringRecord } from "./parse-guards.js";
 
 /** Minimal shape we care about from a pyproject.toml */
@@ -100,12 +97,13 @@ export function parsePyPIManifests(
   const pyprojectAttempt = attemptPyprojectToml(pyprojectRaw, pyprojectSource);
 
   if (pyprojectAttempt.resolved) {
-    return finish(
+    return finalizeParseResult(
       pyprojectAttempt.dependencies,
       pyprojectAttempt.warnings,
       lockFilePresent,
       lockFileContent,
       lockFileName,
+      "pypi",
     );
   }
 
@@ -116,12 +114,13 @@ export function parsePyPIManifests(
   const warnings = [...pyprojectAttempt.warnings, ...requirementsAttempt.warnings];
 
   if (requirementsAttempt.resolved) {
-    return finish(
+    return finalizeParseResult(
       requirementsAttempt.dependencies,
       warnings,
       lockFilePresent,
       lockFileContent,
       lockFileName,
+      "pypi",
     );
   }
 
@@ -132,56 +131,6 @@ export function parsePyPIManifests(
     lock_file_present: false,
     manifest_resolved: false,
     warnings,
-  };
-}
-
-function finish(
-  dependencies: ParsedDependency[],
-  warnings: string[],
-  lockFilePresent: boolean,
-  lockFileContent: string | null,
-  lockFileName: string | null,
-): IngestorResult {
-  const allWarnings = [...warnings];
-
-  // If lock file content was provided, parse and merge it
-  if (lockFileContent && lockFileName && lockFilePresent) {
-    let lockResult;
-    if (lockFileName === "poetry.lock") {
-      lockResult = parsePoetryLockContent(lockFileContent);
-    } else if (lockFileName === "Pipfile.lock") {
-      lockResult = parsePipfileLockContent(lockFileContent);
-    } else if (lockFileName === "pdm.lock") {
-      lockResult = parsePdmLockContent(lockFileContent);
-    } else {
-      allWarnings.push(
-        `Lock file format ${lockFileName} not yet supported for parsing — falling back to manifest only.`,
-      );
-      lockResult = null;
-    }
-
-    if (lockResult) {
-      return mergeManifestWithLock(dependencies, lockResult, "pypi", allWarnings);
-    }
-  }
-
-  if (!lockFilePresent) {
-    allWarnings.push(
-      "No lock file detected (poetry.lock, Pipfile.lock, pdm.lock). " +
-        "Dependency versions are unresolved; confidence scores will be lower.",
-    );
-  }
-
-  if (dependencies.length === 0) {
-    allWarnings.push("Manifest contains no dependency entries.");
-  }
-
-  return {
-    ecosystem: "pypi",
-    dependencies,
-    lock_file_present: lockFilePresent,
-    manifest_resolved: true,
-    warnings: allWarnings,
   };
 }
 

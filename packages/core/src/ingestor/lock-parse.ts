@@ -1,14 +1,23 @@
 /**
- * Lock file parsing — shared types and merge logic
+ * Lock file parsing — shared types, merge logic, and parser registry
  *
- * Provides the common LockFileParseResult interface and the
- * mergeManifestWithLock() function used by all ecosystem parsers.
+ * Provides the common LockFileParseResult interface, the
+ * mergeManifestWithLock() function used by all ecosystem parsers, and
+ * a registry of lock file parsers (LOCK_PARSERS) plus a shared
+ * finalizeParseResult() helper to eliminate duplication across
+ * npm-parse.ts, pypi-parse.ts, and go-parse.ts.
  *
  * ADR: docs/adr/0038-lock-file-parsing.md
  */
 
 import type { ParsedDependency, IngestorResult } from "./interface.js";
 import type { Ecosystem } from "../db/schema.js";
+import { parsePackageLockJson } from "./npm-lock-parse.js";
+import { parseYarnLockContent } from "./yarn-lock-parse.js";
+import { parseGoSumContent } from "./go-sum-parse.js";
+import { parsePoetryLockContent } from "./poetry-lock-parse.js";
+import { parsePipfileLockContent } from "./pipfile-lock-parse.js";
+import { parsePdmLockContent } from "./pdm-lock-parse.js";
 
 /** Result of parsing a lock file */
 export interface LockFileParseResult {
@@ -27,6 +36,76 @@ export interface LockFileParseResult {
     | "Pipfile.lock"
     | "pdm.lock"
     | "go.sum";
+}
+
+/** Lock file parser function type */
+export type LockFileParser = (content: string) => LockFileParseResult | null;
+
+/** Registry of lock file parsers by filename */
+export const LOCK_PARSERS: Record<string, LockFileParser> = {
+  "package-lock.json": parsePackageLockJson,
+  "yarn.lock": parseYarnLockContent,
+  "go.sum": parseGoSumContent,
+  "poetry.lock": parsePoetryLockContent,
+  "Pipfile.lock": parsePipfileLockContent,
+  "pdm.lock": parsePdmLockContent,
+  // "pnpm-lock.yaml": parsePnpmLockContent, // not yet implemented
+};
+
+/**
+ * Shared finalization logic for ecosystem parsers after lock file processing.
+ * Eliminates duplicated `finish()` functions in npm-parse.ts, pypi-parse.ts, go-parse.ts.
+ *
+ * @param dependencies - Parsed manifest dependencies
+ * @param warnings - Accumulated warnings from manifest parsing
+ * @param lockFilePresent - Whether a lock file was detected
+ * @param lockFileContent - Raw lock file content (if available)
+ * @param lockFileName - Name of the lock file (if available)
+ * @param ecosystem - Target ecosystem
+ * @returns Complete IngestorResult
+ */
+export function finalizeParseResult(
+  dependencies: ParsedDependency[],
+  warnings: string[],
+  lockFilePresent: boolean,
+  lockFileContent: string | null,
+  lockFileName: string | null,
+  ecosystem: Ecosystem,
+): IngestorResult {
+  const allWarnings = [...warnings];
+
+  // If lock file content was provided, parse and merge it
+  if (lockFileContent && lockFileName && lockFilePresent) {
+    const parser = LOCK_PARSERS[lockFileName];
+    if (parser) {
+      const lockResult = parser(lockFileContent);
+      if (lockResult) {
+        return mergeManifestWithLock(dependencies, lockResult, ecosystem, allWarnings);
+      }
+    } else {
+      allWarnings.push(
+        `Lock file format ${lockFileName} not yet supported for parsing — falling back to manifest only.`,
+      );
+    }
+  }
+
+  if (!lockFilePresent) {
+    allWarnings.push(
+      "No lock file detected. Dependency versions are unresolved; confidence scores will be lower.",
+    );
+  }
+
+  if (dependencies.length === 0) {
+    allWarnings.push("Manifest contains no dependency entries.");
+  }
+
+  return {
+    ecosystem,
+    dependencies,
+    lock_file_present: lockFilePresent,
+    manifest_resolved: true,
+    warnings: allWarnings,
+  };
 }
 
 /**

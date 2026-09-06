@@ -77,7 +77,24 @@ browse the mission board; a logged-in GitHub user can submit a repo or claim a m
 - In-memory (`Map`-based) rate limiting is in place on previously-unthrottled mutating endpoints.
 - `CHANGELOG.md` exists at repo root; phase/date-based headers, not semver
   (`package.json.version` deliberately stays `0.0.1`).
-- ADRs currently run through **0052** (`server-timing` — `Server-Timing`
+- ADRs currently run through **0054** (`2026-09-05-audit-fixes` —
+  three small fixes from the 2026-09-05 production audit batched in
+  one ADR: a11y fix on `BookmarkToggle` and `NotificationToggle`
+  (per-repo `aria-label` so a screen reader can distinguish toggles
+  on multi-repo pages); `/api/[...slug]` catch-all returning 404 +
+  JSON envelope so a mistyped API path no longer falls through to
+  Next's HTML 404 page with status 200; and `clampPageNumber()` in
+  `mission-board-query.ts` so `/missions?page=N` for an out-of-range
+  `N` renders the last page on the first byte instead of flashing an
+  empty board for ~1 second while the streaming RSC `redirect()` falls
+  back to a `<meta http-equiv="refresh">`; Proposed; pre-deploy
+  verified by the full §6 gate; live verification happens on the next
+  deploy window). 0053 (`directory-advisory-less-severity-bucket`
+  — directory's per-severity tally moved from `INNER JOIN advisories`
+  to `LEFT JOIN` + `COALESCE(advisories.severity, 'unknown')` so
+  advisory-less missions are correctly bucketed under `unknown` on
+  the home card; Accepted; live-verified against dev Neon). 0052
+  (`server-timing` — `Server-Timing`
   header on every non-asset request via middleware; Accepted). 0047
   (`populate-organizations` — move `packages/core`'s six runtime dependencies
   out of root hoisting and into `packages/core/package.json`'s own

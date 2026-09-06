@@ -105,6 +105,72 @@ export function parseMissionBoardQuery(params: {
 }
 
 /**
+ * Detects whether the raw URL query params, once parsed, round-trip back
+ * to themselves when re-serialized. Returns true when the URL is
+ * already canonical, false when it carries values that parse to a
+ * default (unknown sort, unrecognized filter values, "group=0",
+ * "group=true", "page=0", etc.) and would silently disagree with the
+ * board's actual state.
+ *
+ * The page components call this and redirect to the canonical URL when
+ * it returns false, so a deep link like `?sort=easiest` (a previously-
+ * valid alias that no longer exists) lands on `?sort=priority` (or no
+ * `?sort` at all) instead of rendering with the URL and dropdown
+ * disagreeing. Same pattern as the existing `page > pageCount`
+ * canonicalization in app/src/app/missions/page.tsx.
+ *
+ * Comparison is key-order-insensitive: both sides get sorted by key
+ * before string comparison. URLSearchParams preserves insertion order
+ * on `toString()` rather than alphabetizing, so two semantically-equal
+ * queries (`?sort=newest&severity=critical` vs
+ * `?severity=critical&sort=newest`) would otherwise compare unequal.
+ */
+export function isCanonicalMissionBoardQuery(rawParams: {
+  q?: string | undefined;
+  severity?: string | undefined;
+  ecosystem?: string | undefined;
+  effort?: string | undefined;
+  missionType?: string | undefined;
+  sort?: string | undefined;
+  group?: string | undefined;
+  page?: string | undefined;
+}): boolean {
+  const parsed = parseMissionBoardQuery(rawParams);
+  const canonicalQuery = serializeMissionBoardQuery({
+    q: parsed.q,
+    severity: parsed.severity,
+    ecosystem: parsed.ecosystem,
+    effort: parsed.effort,
+    missionType: parsed.missionType,
+    sort: parsed.sort,
+    group: parsed.group,
+    page: parsed.page,
+  });
+  // Build the raw-side query string. URLSearchParams preserves
+  // insertion order on `toString()` rather than alphabetizing keys,
+  // so to compare structurally-equal query strings we sort both
+  // representations by key. Empty-string fields are dropped from
+  // the raw side so a `?q=` (no value) matches the absent-q
+  // canonical form.
+  const raw = new URLSearchParams();
+  for (const [key, value] of Object.entries(rawParams)) {
+    if (value !== undefined && value !== "") {
+      raw.set(key, value);
+    }
+  }
+  return sortQueryString(canonicalQuery) === sortQueryString(raw.toString());
+}
+
+/** Sorts a URL query string's key=value pairs by key. Both sides of
+ *  `isCanonicalMissionBoardQuery`'s comparison need this because URLSearchParams
+ *  preserves insertion order rather than alphabetizing keys, so two
+ *  semantically-equal queries can compare unequal byte-for-byte otherwise. */
+function sortQueryString(query: string): string {
+  if (query === "") return "";
+  return [...query.split("&")].sort().join("&");
+}
+
+/**
  * Inverse of parseMissionBoardQuery: serializes board state into a query
  * string, omitting every defaulted axis (empty sets, "priority" sort,
  * grouping off, page 1) so URLs stay minimal and stable. Shared by the
@@ -155,4 +221,21 @@ export function toggledSet<T>(set: ReadonlySet<T>, value: T): Set<T> {
     next.add(value);
   }
   return next;
+}
+
+/**
+ * Clamps a 1-based page number to the valid range `[1, pageCount]`. Used
+ * by the missions page (and the per-repo page, when its filters ever
+ * produce a multi-page result) to render the correct content when a
+ * user lands on an out-of-range deep link (e.g. `?page=99` against a
+ * 4-page board) instead of serving an empty body.
+ *
+ * The clamp never changes a page that is already in range, so a
+ * canonical URL's pagination UI is identical to the pre-clamp version.
+ * pageCount is floored at 1 — a board with zero rows still has a
+ * "page 1 of 1" UI, not "page 1 of 0".
+ */
+export function clampPageNumber(page: number, pageCount: number): number {
+  const safeCount = Math.max(1, pageCount);
+  return Math.min(Math.max(1, page), safeCount);
 }
