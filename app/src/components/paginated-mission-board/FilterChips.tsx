@@ -99,6 +99,8 @@ interface FilterChipsProps {
   isPending: boolean;
   navigate: (href: string) => void;
   buildHref: (overrides: MissionBoardQueryState) => string;
+  /** Client mode: called with updated query instead of navigating */
+  onFilterChange?: (nextQuery: MissionBoardQuery) => void;
 }
 
 export function FilterChips({
@@ -107,7 +109,23 @@ export function FilterChips({
   isPending,
   navigate,
   buildHref,
+  onFilterChange,
 }: FilterChipsProps): React.JSX.Element {
+  const isClientMode = typeof onFilterChange === "function";
+
+  const makeOnToggle = <T extends string>(
+    key: keyof MissionBoardQuery,
+    _active: ReadonlySet<T>,
+  ) => {
+    return (next: Set<T>) => {
+      if (isClientMode) {
+        onFilterChange({ [key]: next } as Partial<MissionBoardQuery> as MissionBoardQuery);
+      } else {
+        navigate(buildHref({ [key]: next } as MissionBoardQueryState));
+      }
+    };
+  };
+
   return (
     <div className="flex flex-col gap-2.5">
       <FilterRow
@@ -116,9 +134,7 @@ export function FilterChips({
         labels={SEVERITY_LABELS}
         active={initialQuery.severity}
         countFor={(severity) => facets.severity[severity]}
-        onToggle={(next) => {
-          navigate(buildHref({ severity: next }));
-        }}
+        onToggle={makeOnToggle("severity", initialQuery.severity)}
         disabled={isPending}
       />
       <FilterRow
@@ -127,9 +143,7 @@ export function FilterChips({
         labels={ECOSYSTEM_LABELS}
         active={initialQuery.ecosystem}
         countFor={(ecosystem) => facets.ecosystem[ecosystem]}
-        onToggle={(next) => {
-          navigate(buildHref({ ecosystem: next }));
-        }}
+        onToggle={makeOnToggle("ecosystem", initialQuery.ecosystem)}
         disabled={isPending}
       />
       <FilterRow
@@ -138,9 +152,7 @@ export function FilterChips({
         labels={EFFORT_LABELS}
         active={initialQuery.effort}
         countFor={(effort) => facets.effort[effort]}
-        onToggle={(next) => {
-          navigate(buildHref({ effort: next }));
-        }}
+        onToggle={makeOnToggle("effort", initialQuery.effort)}
         disabled={isPending}
       />
       <FilterRow
@@ -149,9 +161,7 @@ export function FilterChips({
         labels={MISSION_TYPE_LABELS}
         active={initialQuery.missionType}
         countFor={(type) => facets.missionType[type]}
-        onToggle={(next) => {
-          navigate(buildHref({ missionType: next }));
-        }}
+        onToggle={makeOnToggle("missionType", initialQuery.missionType)}
         disabled={isPending}
       />
     </div>

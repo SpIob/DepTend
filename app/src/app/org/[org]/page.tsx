@@ -58,7 +58,7 @@ export default async function OrgPage({
             {org.avatarUrl && (
               <Image
                 src={org.avatarUrl}
-                alt=""
+                alt={org.name ?? orgLogin}
                 width={32}
                 height={32}
                 loading="lazy"

@@ -14,14 +14,22 @@ import {
 // parsing logic in its own client-agnostic module lets both sides share
 // one source of truth without crossing that boundary.
 
-export type SortMode = "priority" | "quick-wins" | "newest";
-export const SORT_MODES: readonly SortMode[] = ["priority", "quick-wins", "newest"];
+export type SortMode = "priority" | "quick-wins" | "newest" | "ecosystem" | "effort";
+export const SORT_MODES: readonly SortMode[] = [
+  "priority",
+  "quick-wins",
+  "newest",
+  "ecosystem",
+  "effort",
+];
 
 /** Display text for each sort mode — shared by both mission boards' selects. */
 export const SORT_LABELS: Record<SortMode, string> = {
   priority: "Highest impact first",
   "quick-wins": "Quickest wins first",
   newest: "Newest advisory first",
+  ecosystem: "Ecosystem",
+  effort: "Effort",
 };
 
 /** Parsed, validated shape of everything the mission board keeps in the URL. */

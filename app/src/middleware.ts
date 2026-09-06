@@ -173,6 +173,9 @@ export function middleware(request: NextRequest): NextResponse {
   const elapsedMs = performance.now() - startedAt;
   response.headers.set("Server-Timing", `total;dur=${elapsedMs.toFixed(1)}`);
 
+  // Allow browsers to expose Server-Timing to PerformanceNavigationTiming.serverTiming
+  response.headers.set("Timing-Allow-Origin", "*");
+
   return response;
 }
 

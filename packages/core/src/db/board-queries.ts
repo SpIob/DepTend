@@ -73,7 +73,7 @@ export const BOARD_UNIQUE_ASC = sql`COALESCE(${advisories.osvId}, ${missions.id}
 /** Rows per page of the board-wide /missions listing. */
 export const BOARD_PAGE_SIZE = 50;
 
-export type BoardSortMode = "priority" | "quick-wins" | "newest";
+export type BoardSortMode = "priority" | "quick-wins" | "newest" | "ecosystem" | "effort";
 
 interface BoardConditionParts {
   /** Status scope — always applied. */
@@ -151,6 +151,23 @@ function boardOrderBy(sort: BoardSortMode): SQL[] {
       ];
     case "newest":
       return [BOARD_PUBLISHED_DESC, BOARD_UNIQUE_ASC];
+    case "ecosystem":
+      // Group by ecosystem, then by priority within each ecosystem
+      return [
+        sql`${BOARD_ECOSYSTEM_EXPR} ASC NULLS LAST`,
+        sql`${BOARD_TIER_EXPR} DESC`,
+        sql`${BOARD_EFFORT_RANK_EXPR} ASC`,
+        BOARD_PUBLISHED_DESC,
+        BOARD_UNIQUE_ASC,
+      ];
+    case "effort":
+      // Group by effort level, then by priority within each effort
+      return [
+        sql`${BOARD_EFFORT_RANK_EXPR} ASC`,
+        sql`${BOARD_TIER_EXPR} DESC`,
+        BOARD_PUBLISHED_DESC,
+        BOARD_UNIQUE_ASC,
+      ];
   }
 }
 

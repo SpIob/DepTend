@@ -33,7 +33,7 @@ export interface BoardFilters {
   sort: BoardSortMode;
 }
 
-export type BoardSortMode = "priority" | "quick-wins" | "newest";
+export type BoardSortMode = "priority" | "quick-wins" | "newest" | "ecosystem" | "effort";
 
 /** Per-axis result counts for the filter chips. */
 export interface BoardFacets {

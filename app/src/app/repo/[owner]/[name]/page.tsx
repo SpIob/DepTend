@@ -180,6 +180,7 @@ export default async function RepoPage({
           initialQuery={initialQuery}
           basePath={basePath}
           showGroupByRepo={false}
+          mode="client"
         />
       )}
     </main>

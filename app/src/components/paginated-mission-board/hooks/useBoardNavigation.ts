@@ -2,7 +2,11 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { MissionBoardQuery, MissionBoardQueryState } from "@/lib/mission-board-query";
+import type {
+  MissionBoardQuery,
+  MissionBoardQueryState,
+  SortMode,
+} from "@/lib/mission-board-query";
 import { buildMissionBoardHref } from "@/lib/mission-board-query";
 
 interface UseBoardNavigationOptions {
@@ -12,6 +16,12 @@ interface UseBoardNavigationOptions {
   groupByRepo: boolean;
   /** Current search state (for buildHref) */
   search: string;
+  /** Mode: "server" (default) uses router.replace for navigation; "client" updates local state and syncs URL */
+  mode?: "server" | "client";
+  /** Called when filters change in client mode */
+  onFilterChange?: (query: MissionBoardQuery) => void;
+  /** Called when sort changes in client mode */
+  onSortChange?: (sort: SortMode) => void;
 }
 
 export function useBoardNavigation({
@@ -19,10 +29,16 @@ export function useBoardNavigation({
   initialQuery,
   groupByRepo,
   search,
+  mode = "server",
+  onFilterChange,
+  onSortChange,
 }: UseBoardNavigationOptions) {
   const router = useRouter();
   const [inFlight, setInFlight] = useState(0);
   const inFlightRef = useRef(0);
+
+  // Client mode: maintain local query state
+  const [clientQuery, setClientQuery] = useState<MissionBoardQuery>(initialQuery);
 
   // Every board interaction funnels through here so one isPending flag can
   // cover chips, sort, clear, pagination, and the debounced search commit.
@@ -33,25 +49,83 @@ export function useBoardNavigation({
   }
 
   // Builds a board URL from the server-rendered filter state plus per-call
-  // overrides. `page` is deliberately absent from the base: every
-  // filter/sort/search/clear navigation should land at the top of the
-  // freshly-filtered ranking (the serializer omits page 1 entirely), and
-  // the only callers that want a specific page — the pagination buttons —
-  // pass it as an explicit override.
+  // overrides. Includes current page so filter/sort/search/clear navigation
+  // preserves the current page (pagination buttons pass explicit page override).
   function buildHref(overrides: MissionBoardQueryState): string {
+    const sourceQuery = mode === "client" ? clientQuery : initialQuery;
     return buildMissionBoardHref(basePath, {
       q: search,
-      severity: initialQuery.severity,
-      ecosystem: initialQuery.ecosystem,
-      effort: initialQuery.effort,
-      missionType: initialQuery.missionType,
-      sort: initialQuery.sort,
+      severity: sourceQuery.severity,
+      ecosystem: sourceQuery.ecosystem,
+      effort: sourceQuery.effort,
+      missionType: sourceQuery.missionType,
+      sort: sourceQuery.sort,
       group: groupByRepo,
+      page: sourceQuery.page,
       ...overrides,
+    });
+  }
+
+  // Client mode: update local state and sync URL without full navigation
+  function updateClientQuery(updates: Partial<MissionBoardQuery>): void {
+    setClientQuery((prev) => {
+      const next = { ...prev, ...updates };
+      if (onFilterChange) {
+        onFilterChange(next);
+      }
+      // Sync URL for shareable links (no navigation, just URL update)
+      if (mode === "client") {
+        const href = buildMissionBoardHref(basePath, {
+          q: next.q,
+          severity: next.severity,
+          ecosystem: next.ecosystem,
+          effort: next.effort,
+          missionType: next.missionType,
+          sort: next.sort,
+          group: next.group,
+          page: next.page,
+        });
+        router.replace(href);
+      }
+      return next;
+    });
+  }
+
+  function updateClientSort(sort: SortMode): void {
+    setClientQuery((prev) => {
+      const next = { ...prev, sort };
+      if (onSortChange) {
+        onSortChange(sort);
+      }
+      if (mode === "client") {
+        const href = buildMissionBoardHref(basePath, {
+          q: next.q,
+          severity: next.severity,
+          ecosystem: next.ecosystem,
+          effort: next.effort,
+          missionType: next.missionType,
+          sort: next.sort,
+          group: next.group,
+          page: next.page,
+        });
+        router.replace(href);
+      }
+      return next;
     });
   }
 
   const isPending = inFlight > 0;
 
-  return { navigate, buildHref, isPending, inFlight, inFlightRef, setInFlight };
+  return {
+    navigate,
+    buildHref,
+    isPending,
+    inFlight,
+    inFlightRef,
+    setInFlight,
+    // Client mode exports
+    clientQuery: mode === "client" ? clientQuery : initialQuery,
+    setClientQuery: mode === "client" ? updateClientQuery : undefined,
+    setClientSort: mode === "client" ? updateClientSort : undefined,
+  };
 }

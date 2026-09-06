@@ -61,6 +61,8 @@ export function PaginatedMissionBoard({
    * the same option the older MissionBoard exposed.
    */
   showGroupByRepo = true,
+  /** "server" (default) uses router.replace for navigation; "client" updates local state and syncs URL */
+  mode = "server",
 }: {
   missions: MissionWithScore[];
   /** Total missions matching the filters across all pages — not this page's count. */
@@ -73,6 +75,8 @@ export function PaginatedMissionBoard({
   initialQuery: MissionBoardQuery;
   basePath: string;
   showGroupByRepo?: boolean;
+  /** "server" (default) uses router.replace for navigation; "client" updates local state and syncs URL */
+  mode?: "server" | "client";
 }): React.JSX.Element {
   // Navigation + in-flight counter
   const { navigate, buildHref, isPending, inFlight, inFlightRef, setInFlight } = useBoardNavigation(
@@ -81,6 +85,7 @@ export function PaginatedMissionBoard({
       initialQuery,
       groupByRepo: false, // Will be overridden by useGroupByRepo's state
       search: "", // Will be overridden by useSearchDebounce's state
+      mode,
     },
   );
 
@@ -181,8 +186,12 @@ export function PaginatedMissionBoard({
           className={`flex flex-wrap items-center gap-3 ${showGroupByRepo ? "justify-between" : "justify-end"}`}
         >
           {showGroupByRepo && (
-            <label className="text-ink-muted flex items-center gap-2 font-mono text-xs">
+            <label
+              htmlFor="group-by-repo"
+              className="text-ink-muted flex items-center gap-2 font-mono text-xs"
+            >
               <input
+                id="group-by-repo"
                 type="checkbox"
                 checked={groupByRepo}
                 onChange={(event) => {
