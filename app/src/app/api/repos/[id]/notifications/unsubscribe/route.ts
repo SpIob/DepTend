@@ -24,9 +24,9 @@ export async function POST(
   const repoId = id;
 
   const db = getDb();
-  const removed = await unsubscribeFromRepo(db, login, repoId);
+  const result = await unsubscribeFromRepo(db, login, repoId);
 
-  if (!removed) {
+  if (result === "not_subscribed") {
     return NextResponse.json({ error: "Subscription not found." }, { status: 404 });
   }
 

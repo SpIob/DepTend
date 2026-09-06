@@ -10,6 +10,30 @@ All notable changes to DepTend, condensed to one entry per phase.
 
 ---
 
+**2026-09-06 — Notification subscriptions: simplify core, add getSubscribedRepoIds**
+
+Simplified `packages/core/src/notifications/subscriptions.ts` (93 → 94 lines, +1 export, −1 export, removed dead default) and switched directory/board read paths from `getUserSubscriptions()` (full rows) to `getSubscribedRepoIds()` (just repo IDs in a Set, mirroring `getBookmarkedRepoIds`). The `unsubscribeFromRepo` return type now matches the `bookmarkRepo`/`unbookmarkRepo` pattern (`"unsubscribed" | "not_subscribed"` instead of `boolean`).
+
+### Changed
+
+- **Removed duplicate JS default** in `subscribeToRepo` (line 35) — the DB column already has `ARRAY['new_mission', 'claimed', 'resolved']` as its server-side default; the route validates `eventTypes` before calling core, so the JS default was only hit on empty body and was redundant.
+- **`unsubscribeFromRepo` returns discriminated outcome** (`"unsubscribed" | "not_subscribed"`) so the route can return 404 for "never subscribed" without an extra SELECT — same pattern as `unbookmarkRepo` returning `"not_bookmarked"`.
+- **Added `getSubscribedRepoIds(db, userLogin): Promise<Set<string>>`** — selects only `repo_id` (index-only scan via `idx_notification_subscriptions_user_login`), returns a `Set` for O(1) membership checks. Replaces `getUserSubscriptions` which returned full `NotificationSubscription[]` rows.
+- **Deleted `getUserSubscriptions`** — only caller was `queries.ts` (for `isSubscribed` flag); directory queries now use the more efficient `getSubscribedRepoIds`.
+
+### Updated call sites
+
+- `packages/core/src/db/directory-queries.ts` — `getRepoDirectoryBase` uses `getSubscribedRepoIds`
+- `app/src/app/api/repos/[id]/notifications/unsubscribe/route.ts` — handles new outcome type
+
+### Tests
+
+- All 198 app route tests pass (subscribe + unsubscribe)
+- All 15 `directory-queries.test.ts` tests pass (updated mock fixture to pass repo IDs directly)
+- Typecheck, lint, format clean
+
+---
+
 **2026-09-06 — Scorer complexity reduction: split mission-scorer, deduplicate floor extraction, data-driven mission copy**
 
 Reduced `packages/core/src/scorer/` complexity by splitting the 605-line `mission-scorer.ts` into four focused modules, deduplicating version-floor logic used by `mission-type-detector.ts`, and refactoring `mission-copy.ts` to a data-driven template approach. No behavior changes — all 176 scorer tests pass, snapshots lock all 4 mission types.

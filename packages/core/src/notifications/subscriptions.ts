@@ -32,7 +32,7 @@ export async function subscribeToRepo(
   outcome: "subscribed" | "updated";
   subscription: NotificationSubscription;
 }> {
-  const { userLogin, repoId, eventTypes = ["new_mission", "claimed", "resolved"] } = options;
+  const { userLogin, repoId, eventTypes } = options;
 
   const rows = await db
     .insert(notificationSubscriptions)
@@ -67,7 +67,7 @@ export async function unsubscribeFromRepo(
   db: ReadonlyDb,
   userLogin: string,
   repoId: string,
-): Promise<boolean> {
+): Promise<"unsubscribed" | "not_subscribed"> {
   const result = await db
     .delete(notificationSubscriptions)
     .where(
@@ -76,18 +76,19 @@ export async function unsubscribeFromRepo(
         eq(notificationSubscriptions.repoId, repoId),
       ),
     );
-  return result.rowCount > 0;
+  return result.rowCount > 0 ? "unsubscribed" : "not_subscribed";
 }
 
 /**
- * Get all subscriptions for a user
+ * Get repo IDs a user is subscribed to (for fast membership checks)
  */
-export async function getUserSubscriptions(
+export async function getSubscribedRepoIds(
   db: ReadonlyDb,
   userLogin: string,
-): Promise<NotificationSubscription[]> {
-  return db
-    .select()
+): Promise<Set<string>> {
+  const rows = await db
+    .select({ repoId: notificationSubscriptions.repoId })
     .from(notificationSubscriptions)
     .where(eq(notificationSubscriptions.userLogin, userLogin));
+  return new Set(rows.map((r) => r.repoId));
 }

@@ -57,7 +57,7 @@ describe("POST /api/repos/[id]/notifications/unsubscribe", () => {
 
   it("returns 404 when core reports no subscription existed", async () => {
     const login = signedIn();
-    unsubscribeFromRepo.mockResolvedValue(false);
+    unsubscribeFromRepo.mockResolvedValue("not_subscribed");
     const response = await post(VALID_ID);
     expect(response.status).toBe(404);
     expect(unsubscribeFromRepo).toHaveBeenCalledWith(DB, login, VALID_ID);
@@ -70,7 +70,7 @@ describe("POST /api/repos/[id]/notifications/unsubscribe", () => {
     expectedStatus: 200,
     expectedRevalidateTags: ["repos"],
     beforeCall: () => {
-      unsubscribeFromRepo.mockResolvedValue(true);
+      unsubscribeFromRepo.mockResolvedValue("unsubscribed");
     },
   });
 });
