@@ -7,7 +7,6 @@
  *      docs/adr/0038-lock-file-resolution.md (resolvedVersion)
  */
 
-import type { Dependency, Advisory, Repo } from "../db/schema.js";
 import type { ImpactInputs, EffortInputs, EcosystemValueInputs } from "../db/json-types.js";
 import type { MissionScoringContext } from "./mission-scorer.js";
 import { extractVersionFloor, inferBumpForEcosystem } from "./bump-inference.js";

@@ -1,5 +1,5 @@
 /**
- * CLI analysis pipeline
+ * CLI analysis pipeline orchestrator
  *
  * Runs the same dependency-parsing -> OSV lookup -> registry lookup ->
  * scoring pipeline as scripts/ingest.js, entirely in-memory against a local
@@ -25,194 +25,49 @@
  * candidates so that loop can stay synchronous, same reasoning as writer.ts.
  */
 
-import { LocalNpmIngestor } from "@deptend/core/ingestor/local-npm.js";
-import { LocalPyPIIngestor } from "@deptend/core/ingestor/local-pypi.js";
-import { LocalGoIngestor } from "@deptend/core/ingestor/local-go.js";
-import { detectEcosystem } from "@deptend/core/ingestor/detect.js";
-import { OsvFetcher } from "@deptend/core/ingestor/osv.js";
-import { NpmRegistryFetcher } from "@deptend/core/ingestor/registry.js";
-import { PyPIRegistryFetcher } from "@deptend/core/ingestor/pypi-registry.js";
-import { GoRegistryFetcher } from "@deptend/core/ingestor/go-registry.js";
-import { fetchGitHubRepoMeta } from "@deptend/core/ingestor/github-meta.js";
-import {
-  buildSignalKey,
-  prefetchEffortSignals,
-  type EffortSignalRequest,
-  type EffortSignals,
-} from "@deptend/core/ingestor/changelog-signals.js";
-import {
-  computeMissionScore,
-  extractVersionFloor,
-  type MissionScoringContext,
-} from "@deptend/core/scorer/mission-scorer.js";
-import { generateMissionCopy } from "@deptend/core/scorer/mission-copy.js";
-import { rankMissions, type RankableMission } from "@deptend/core/scorer/ranking.js";
-import type { AdvisorySource, Ecosystem } from "@deptend/core/db/schema.js";
-import type { ParsedDependency } from "@deptend/core/ingestor/interface.js";
-import type { PackageMetadata } from "@deptend/core/ingestor/registry.js";
-import {
-  buildAdvisories,
-  buildCandidatePairs,
-  buildDependencies,
-  buildRepo,
-  type CandidatePair,
-} from "./build-rows.js";
-import type { AnalyzeOptions, AnalyzeResult, AnalyzedMission } from "./types.js";
-
-/**
- * Common shape all three registry fetchers already share structurally —
- * used only to type REGISTRY_FETCHERS_BY_ECOSYSTEM below, not exported.
- */
-interface RegistryFetcherLike {
-  fetchMetadata(
-    dependencies: ParsedDependency[],
-  ): Promise<{ metadata: Map<string, PackageMetadata>; warnings: string[] }>;
-}
-
-/**
- * Which registry fetcher applies for each detected ecosystem.
- * Record<Ecosystem, ...>, not a ternary — same exhaustiveness guarantee
- * osv.ts's OSV_ECOSYSTEM_NAMES already has; a future ecosystem missing an
- * entry here is a compile error, not a silent npm-fetcher fall-through.
- * (Found as a real pre-existing gap during ADR 0024's own grounding —
- * this was a `ecosystem === "pypi" ? new PyPIRegistryFetcher() : new
- * NpmRegistryFetcher()` ternary before Phase 7, the CLI-side mirror of
- * the identical gap fixed in scripts/ingest.js.)
- */
-const REGISTRY_FETCHERS_BY_ECOSYSTEM: Record<Ecosystem, RegistryFetcherLike> = {
-  npm: new NpmRegistryFetcher(),
-  pypi: new PyPIRegistryFetcher(),
-  go: new GoRegistryFetcher(),
-};
+import { runDetectStep } from "./pipeline/detect-step.js";
+import { runFetchMetaStep } from "./pipeline/fetch-meta-step.js";
+import { runFetchParallelStep } from "./pipeline/fetch-parallel-step.js";
+import { runScoreRankStep } from "./pipeline/score-rank-step.js";
+import type { AnalyzeOptions, AnalyzeResult } from "./types.js";
 
 export async function analyze(options: AnalyzeOptions): Promise<AnalyzeResult> {
   const warnings: string[] = [];
 
   // 1. Detect ecosystem + parse dependencies from the local repo path.
-  // Ordered probing (ADR 0022, extended in ADR 0024): npm first, then
-  // PyPI, then Go — matches scripts/ingest.js's own probing order, so a
-  // repo detects the same way regardless of which pipeline analyzed it.
-  const ingestorResult = await detectEcosystem(
-    [new LocalNpmIngestor(), new LocalPyPIIngestor(), new LocalGoIngestor()],
-    options.repoPath,
-  );
+  const ingestorResult = await runDetectStep(options.repoPath);
   warnings.push(...ingestorResult.warnings);
 
   // 2. Fetch GitHub repo metadata (stars/issues — required for ecosystem_value)
-  const ghMeta = await fetchGitHubRepoMeta(
+  const { repo } = await runFetchMetaStep(
     options.githubOwner,
     options.githubName,
     options.githubToken,
   );
-  const repo = buildRepo(ghMeta);
 
-  // 3. Fetch OSV advisories for whatever dependencies were found
-  const osvFetcher = new OsvFetcher();
-  const osvResult = await osvFetcher.fetchAdvisories(
-    ingestorResult.dependencies,
-    ingestorResult.ecosystem,
-  );
-  warnings.push(...osvResult.warnings);
+  // 3. Fetch OSV advisories and registry metadata in parallel
+  const { osvResult, registryResult, sourceRepoByPackage } =
+    await runFetchParallelStep(ingestorResult);
 
-  // 4. Fetch registry metadata (latest version, deprecation status) —
-  // matching fetcher for whichever ecosystem actually resolved.
-  const registryFetcher = REGISTRY_FETCHERS_BY_ECOSYSTEM[ingestorResult.ecosystem];
-  const registryResult = await registryFetcher.fetchMetadata(ingestorResult.dependencies);
-  warnings.push(...registryResult.warnings);
-
-  // ADR 0029, Step 6: mirrors scripts/ingest.js exactly — no second
-  // registry round trip, sourceRepo was already resolved (best-effort) as
-  // part of the fetchMetadata() call above.
-  const sourceRepoByPackage = new Map(
-    [...registryResult.metadata.entries()].map(([packageName, meta]) => [
-      packageName,
-      meta.sourceRepo,
-    ]),
-  );
-
-  // 5. Fabricate in-memory rows in the shape computeMissionScore expects
-  const dependencies = buildDependencies(repo.id, ingestorResult, registryResult);
-  const advisoriesByOsvId = buildAdvisories(osvResult);
-  const candidates = buildCandidatePairs(
-    dependencies,
-    advisoriesByOsvId,
-    osvResult.packageAdvisoryMap,
-  );
-
-  // ADR 0029, Step 6: prefetch before scoring, not inside it — same
-  // reasoning as writer.ts's Step 5 (keeps the per-candidate scoring loop
-  // below synchronous), even though there's no DB transaction here to
-  // avoid holding open.
-  const effortSignalsByKey = await prefetchEffortSignalsForCandidates(
-    candidates,
+  // 4. Score, generate copy, prefetch effort signals, and rank
+  const {
+    missions,
+    warnings: scoreWarnings,
+    dependenciesScanned,
+    ecosystem,
+    lockFilePresent,
+  } = await runScoreRankStep({
+    repo,
+    ingestorResult,
+    osvResult,
+    registryResult,
     sourceRepoByPackage,
-    options.githubToken,
-  );
-
-  // 6. Score + generate copy for each candidate — same pure functions the
-  // web app's MissionWriter calls, completely unmodified.
-  const now = new Date();
-  const scored: (AnalyzedMission & RankableMission)[] = candidates.map(
-    ({ dependency, advisory }) => {
-      const targetVersion = advisory.fixedVersion ?? dependency.latestVersion;
-      const signals = effortSignalsByKey.get(buildSignalKey(dependency.id, targetVersion));
-      // exactOptionalPropertyTypes — see writer.ts's identical comment.
-      const ctx: MissionScoringContext = {
-        dependency,
-        advisory,
-        repo,
-        ...(signals !== undefined && { effortSignals: signals }),
-      };
-      const score = computeMissionScore(ctx);
-      const copy = generateMissionCopy(ctx, score);
-
-      return {
-        title: copy.title,
-        description: copy.description,
-        action_hint: copy.action_hint,
-        composite_score: score.composite_score,
-        impact_score: score.impact_score,
-        ecosystem_value_score: score.ecosystem_value_score,
-        effort_label: score.effort_label,
-        confidence: score.confidence,
-        confidence_notes: score.confidence_notes,
-        scoring_version: score.scoring_version,
-        scoring_inputs: {
-          impact: score.impact_inputs,
-          effort: score.effort_inputs,
-          ecosystem_value: score.ecosystem_value_inputs,
-        },
-        dependency: {
-          package_name: dependency.packageName,
-          version_spec: dependency.versionSpec,
-          dep_type: dependency.depType,
-          latest_version: dependency.latestVersion,
-          is_deprecated: dependency.isDeprecated,
-        },
-        advisory: {
-          osv_id: advisory.osvId,
-          source: advisory.source,
-          severity: advisory.severity,
-          cvss_score: advisory.cvssScore,
-          fixed_version: advisory.fixedVersion,
-          summary: advisory.summary,
-          url: advisoryUrl(advisory.source, advisory.osvId),
-        },
-        // RankableMission fields — not part of the output shape, stripped
-        // before writing JSON (see index.ts). Not a shared `now` — see
-        // ADR 0018; that was exactly this bug's CLI-side manifestation.
-        tie_break: { published_at: advisory.publishedAt, osv_id: advisory.osvId },
-        score: { composite_score: score.composite_score, effort_label: score.effort_label },
-      };
-    },
-  );
-
-  // 7. Rank — same rankMissions() the dashboard uses, so ordering is
-  // identical to what the same data would produce there (ADR 0017).
-  const ranked = rankMissions(scored);
+    githubToken: options.githubToken,
+  });
+  warnings.push(...scoreWarnings);
 
   return {
-    generated_at: now.toISOString(),
+    generated_at: new Date().toISOString(),
     repo: {
       github_url: repo.githubUrl,
       owner: repo.owner,
@@ -221,56 +76,10 @@ export async function analyze(options: AnalyzeOptions): Promise<AnalyzeResult> {
       stars: repo.stars,
       open_issues_count: repo.openIssuesCount,
     },
-    dependencies_scanned: ingestorResult.dependencies.length,
-    ecosystem: ingestorResult.ecosystem,
-    lock_file_present: ingestorResult.lock_file_present,
-    missions: ranked.map(stripRankingFields),
+    dependencies_scanned: dependenciesScanned,
+    ecosystem,
+    lock_file_present: lockFilePresent,
+    missions,
     warnings,
   };
-}
-
-/**
- * Builds one EffortSignalRequest per candidate — sourceRepo looked up by
- * package name, currentFloor derived via mission-scorer.ts's own
- * extractVersionFloor() — and resolves them all through
- * changelog-signals.ts's bounded-concurrency batch fetch. buildSignalKey
- * itself is imported from changelog-signals.ts so the cli's key shape
- * can't drift from the request key the result map is keyed on.
- */
-async function prefetchEffortSignalsForCandidates(
-  candidates: CandidatePair[],
-  sourceRepoByPackage: Map<string, PackageMetadata["sourceRepo"]>,
-  githubToken: string | null,
-): Promise<Map<string, EffortSignals>> {
-  const requests: EffortSignalRequest[] = candidates.map(({ dependency, advisory }) => {
-    const targetVersion = advisory.fixedVersion ?? dependency.latestVersion;
-    return {
-      key: buildSignalKey(dependency.id, targetVersion),
-      sourceRepo: sourceRepoByPackage.get(dependency.packageName) ?? null,
-      ecosystem: dependency.ecosystem,
-      currentFloor: extractVersionFloor(dependency.ecosystem, dependency.versionSpec),
-      targetVersion,
-    };
-  });
-
-  return prefetchEffortSignals(requests, githubToken);
-}
-
-/**
- * Canonical URL for an advisory, by source. GHSA-sourced advisories live at
- * github.com/advisories/{id} (the GitHub Advisory Database); OSV-sourced
- * advisories live at osv.dev/vulnerability/{id}. Before this lived, every
- * row's URL was hard-coded to osv.dev regardless of source — silently
- * wrong for GHSA (the report's B4).
- */
-function advisoryUrl(source: AdvisorySource, osvId: string): string {
-  return source === "ghsa"
-    ? `https://github.com/advisories/${osvId}`
-    : `https://osv.dev/vulnerability/${osvId}`;
-}
-
-/** Drops the RankableMission-only fields (tie_break, score) before output. */
-function stripRankingFields(m: AnalyzedMission & RankableMission): AnalyzedMission {
-  const { tie_break: _tie_break, score: _score, ...mission } = m;
-  return mission;
 }

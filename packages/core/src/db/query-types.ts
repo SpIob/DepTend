@@ -17,7 +17,6 @@ import type {
   EffortLabel,
   Mission,
   MissionScore,
-  MissionStatus,
   MissionType,
   Repo,
   Severity,

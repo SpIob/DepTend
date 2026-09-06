@@ -246,8 +246,5 @@ export function inferBumpForEcosystem(
   if (ecosystem === "npm" || ecosystem === "go") {
     return inferSemverBump(versionSpec, targetVersion, currentVersion);
   }
-  if (ecosystem === "pypi") {
-    return inferPep440Bump(versionSpec, targetVersion, currentVersion);
-  }
-  return "unknown";
+  return inferPep440Bump(versionSpec, targetVersion, currentVersion);
 }

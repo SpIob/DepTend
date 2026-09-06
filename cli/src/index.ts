@@ -34,7 +34,8 @@
  */
 
 import { fileURLToPath } from "node:url";
-import { parseGithubUrl } from "@deptend/core/db/repos.js";
+import { parseGithubUrl } from "@deptend/core/pipeline/parse-github-url.js";
+import { GITHUB_TOKEN_WARNING } from "@deptend/core/pipeline/github-token-warning.js";
 import { analyze } from "./analyze.js";
 import { writeOutput } from "./output.js";
 
@@ -129,13 +130,7 @@ async function main(): Promise<void> {
 
   const githubToken = process.env.GITHUB_TOKEN ?? null;
   if (githubToken === null) {
-    // ponytail: copy of scripts/ingest.js:115-122 — same warning text
-    // verbatim so the two paths produce the same diagnostic. Promote to
-    // a shared module only if a third caller appears.
-    console.warn(
-      "GITHUB_TOKEN is not set. GitHub API calls will be unauthenticated " +
-        "(60 req/hr limit). Set GITHUB_TOKEN to raise the limit to 5,000 req/hr.",
-    );
+    console.warn(GITHUB_TOKEN_WARNING);
   }
 
   const result = await analyze({

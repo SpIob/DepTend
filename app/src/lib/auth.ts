@@ -75,7 +75,6 @@ export const authOptions: NextAuthOptions = {
       // but the declared type is `User | AdapterUser` with no `undefined`,
       // so this guard reads as "always truthy" to the type checker even
       // though it's genuinely required at runtime.
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
       if (user) {
         const rawLogin = (user as { login?: unknown }).login;
         token.login = isValidLogin(rawLogin) ? rawLogin : undefined;

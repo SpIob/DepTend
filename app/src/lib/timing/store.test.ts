@@ -1,12 +1,5 @@
 /**
- * Tests for the per-request timing store. The store is the foundation
- * for ADR 0052's per-segment Server-Timing follow-up; if these tests
- * drift, the production helper will silently misbehave.
- *
- * The store is built on a module-level Map<requestId, TimingStore>,
- * keyed by the request id set by the middleware and read via
- * `next/headers` in production. In tests we stub `next/headers` to
- * return a fixed id.
+ * Tests for the simplified per-request timing store.
  */
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
@@ -19,18 +12,15 @@ vi.mock("next/headers", () => ({
 import { headers } from "next/headers";
 import {
   withTiming,
-  withTimingSync,
   currentRequestId,
   readEntries,
   formatServerTimingEntries,
-  recordTiming,
   _resetForTests,
-  _setCurrentRequestIdForTests,
+  stores,
 } from "./store";
 
 function setRequestId(id: string | null): void {
   vi.mocked(headers).mockResolvedValue(new Headers(id === null ? {} : { "x-request-id": id }));
-  _setCurrentRequestIdForTests(id);
 }
 
 describe("timing/store", () => {
@@ -75,28 +65,12 @@ describe("timing/store", () => {
   });
 
   it("returns no entries outside a request scope (no recording)", async () => {
-    // No request id set — async withTiming should still work, just not record.
     setRequestId(null);
     expect(await currentRequestId()).toBeNull();
     await withTiming("ignored", async () => {
       await new Promise((r) => setTimeout(r, 1));
     });
     expect(readEntries()).toEqual([]);
-  });
-
-  it("withTimingSync records synchronous work and respects the request scope", () => {
-    setRequestId("req-sync");
-    withTimingSync("sync-op", () => {
-      // Burn ~1ms via setTimeout-equivalent busy-wait.
-      const start = process.hrtime.bigint();
-      while (Number(process.hrtime.bigint() - start) / 1e6 < 2) {
-        // no-op busy wait — long enough to cross the 1ms threshold on any CI box
-      }
-    });
-    const entries = readEntries("req-sync");
-    expect(entries.length).toBe(1);
-    expect(entries[0]?.label).toBe("sync-op");
-    expect(entries[0]?.durMs).toBeGreaterThanOrEqual(1);
   });
 
   it("withTiming records the timing even when fn throws", async () => {
@@ -114,9 +88,14 @@ describe("timing/store", () => {
 
   it("formatServerTimingEntries sums same-label entries and rounds to 1 dp", () => {
     setRequestId("req-format");
-    recordTiming("cache", 3.4567);
-    recordTiming("db", 12.1234);
-    recordTiming("cache", 1.5);
+    // Manually record entries since we don't have recordTiming anymore
+    stores.set("req-format", {
+      entries: [
+        { label: "cache", durMs: 3.4567 },
+        { label: "db", durMs: 12.1234 },
+        { label: "cache", durMs: 1.5 },
+      ],
+    });
     const entries = readEntries("req-format");
     const formatted = formatServerTimingEntries(entries);
     expect(formatted).toBe("cache;dur=5.0, db;dur=12.1");
@@ -136,7 +115,6 @@ describe("timing/store", () => {
     });
     const entries = readEntries("req-nested");
     expect(entries.map((e) => e.label).sort()).toEqual(["inner", "outer"]);
-    // inner < outer (outer includes inner + a bit more)
     const outerEntry = entries.find((e) => e.label === "outer");
     const innerEntry = entries.find((e) => e.label === "inner");
     expect(outerEntry).toBeDefined();

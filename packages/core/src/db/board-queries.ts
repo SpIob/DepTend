@@ -33,17 +33,9 @@ import {
   repos,
   severityEnum,
 } from "./schema.js";
-import type { Ecosystem, EffortLabel, MissionStatus, MissionType, Severity } from "./schema.js";
-import { rankMissions, type RankableMission } from "../scorer/ranking.js";
+import type { Ecosystem, EffortLabel, MissionType, Severity } from "./schema.js";
 import { missionJoinRows, toMissionWithScore, type ReadonlyDb } from "./queries.js";
-import type {
-  AdvisorySummary,
-  BoardFacets,
-  BoardFilters,
-  BoardPage,
-  MissionWithScore,
-} from "./query-types.js";
-import { getBookmarkedRepoIds } from "./bookmarks.js";
+import type { BoardFacets, BoardFilters, BoardPage } from "./query-types.js";
 
 // ---------------------------------------------------------------------------
 // Board SQL fragments (mirror ranking.ts exactly — divergence is a silent bug)

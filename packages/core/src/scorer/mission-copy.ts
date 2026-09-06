@@ -179,12 +179,7 @@ export function generateMissionCopy(
   // New signature: MissionCopyInput
   const input = arg1 as MissionCopyInput;
   const { type, ctx, score, targetVersion, maintenanceReason } = input;
-  const template = TEMPLATES[type as keyof typeof TEMPLATES];
-
-  if (!template) {
-    // This should never happen if TEMPLATES covers all MissionType values
-    throw new Error(`Unhandled mission type: ${String(type)}`);
-  }
+  const template = TEMPLATES[type];
 
   const params: MissionCopyParams = { targetVersion, maintenanceReason };
   return {

@@ -11,10 +11,10 @@
  * - license_issue: license incompatibility (requires license detection)
  */
 
-import type { Dependency, Advisory, MissionType, Ecosystem } from "../db/schema.js";
+import type { Dependency, Advisory, MissionType } from "../db/schema.js";
 import semver from "semver";
-import { compare as pep440Compare, validRange as pep440ValidRange } from "@renovatebot/pep440";
-import { extractVersionFloor, extractPep440Floor } from "./bump-inference.js";
+import { compare as pep440Compare } from "@renovatebot/pep440";
+import { extractVersionFloor } from "./bump-inference.js";
 
 export type { MissionType };
 

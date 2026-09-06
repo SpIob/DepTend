@@ -8,17 +8,20 @@ import {
   getRepoBoardPage,
   getRepoByOwnerAndName,
   getRepoEcosystems,
-  type BoardFilters,
+  type BoardFilters as _BoardFilters,
 } from "@/lib/queries/missions";
 import { PaginatedMissionBoard } from "@/components/paginated-mission-board";
-import { buildMissionBoardHref, parseMissionBoardQuery } from "@/lib/mission-board-query";
+import {
+  parseAndValidateBoardQuery,
+  buildBoardFilters,
+  buildRepoBoardBasePath,
+} from "@/lib/mission-board-server";
 import { AuthStatus } from "@/components/auth-status";
 import { BookmarkToggle } from "@/components/bookmark-toggle";
 import { WithdrawButton } from "@/components/withdraw-button";
 import { EcosystemBadge } from "@/components/ecosystem-badge";
 import { BrandMark } from "@/components/brand-mark";
 import { PageHeader } from "@/components/page-header";
-import { firstSearchParamValue } from "@/lib/search-params";
 import { ingestionStatusNote } from "@/lib/ingestion-status";
 
 export const dynamic = "force-dynamic";
@@ -69,25 +72,9 @@ export default async function RepoPage({
   const session = await getServerSession(authOptions);
   const login = session?.user?.login;
 
-  const rawParams = await searchParams;
-  const initialQuery = parseMissionBoardQuery({
-    q: firstSearchParamValue(rawParams.q),
-    severity: firstSearchParamValue(rawParams.severity),
-    ecosystem: firstSearchParamValue(rawParams.ecosystem),
-    effort: firstSearchParamValue(rawParams.effort),
-    missionType: firstSearchParamValue(rawParams.missionType),
-    sort: firstSearchParamValue(rawParams.sort),
-    group: firstSearchParamValue(rawParams.group),
-  });
-
-  const filters: BoardFilters = {
-    q: initialQuery.q,
-    severities: Array.from(initialQuery.severity),
-    ecosystems: Array.from(initialQuery.ecosystem),
-    efforts: Array.from(initialQuery.effort),
-    missionTypes: Array.from(initialQuery.missionType),
-    sort: initialQuery.sort,
-  };
+  const basePath = buildRepoBoardBasePath(owner, name);
+  const initialQuery = await parseAndValidateBoardQuery(searchParams, basePath);
+  const filters = buildBoardFilters(initialQuery);
 
   const [board, bookmarkedIds, ecosystems] = await Promise.all([
     // Per-repo caller passes a non-default limit so a single repo with more
@@ -191,7 +178,7 @@ export default async function RepoPage({
           page={1}
           pageCount={1}
           initialQuery={initialQuery}
-          basePath={buildMissionBoardHref(`/repo/${repo.owner}/${repo.name}`, {})}
+          basePath={basePath}
           showGroupByRepo={false}
         />
       )}

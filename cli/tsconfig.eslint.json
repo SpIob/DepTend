@@ -1,5 +1,11 @@
 {
   "extends": "./tsconfig.json",
-  "include": ["src/**/*"],
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@deptend/core/*": ["../packages/core/dist/*"]
+    }
+  },
+  "include": ["src/**/*", "../packages/core/dist/**/*.d.ts"],
   "exclude": ["dist", "node_modules"]
 }

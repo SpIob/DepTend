@@ -74,11 +74,8 @@ import * as schema from "../packages/core/dist/db/schema.js";
 import { NpmIngestor } from "../packages/core/dist/ingestor/npm.js";
 import { PyPIIngestor } from "../packages/core/dist/ingestor/pypi.js";
 import { GoIngestor } from "../packages/core/dist/ingestor/go.js";
-import { detectEcosystem } from "../packages/core/dist/ingestor/detect.js";
+import { detectEcosystem } from "../packages/core/dist/pipeline/ecosystem-detection.js";
 import { OsvFetcher } from "../packages/core/dist/ingestor/osv.js";
-import { NpmRegistryFetcher } from "../packages/core/dist/ingestor/registry.js";
-import { PyPIRegistryFetcher } from "../packages/core/dist/ingestor/pypi-registry.js";
-import { GoRegistryFetcher } from "../packages/core/dist/ingestor/go-registry.js";
 import { IngestionWriter } from "../packages/core/dist/ingestor/writer.js";
 import { MissionWriter } from "../packages/core/dist/scorer/writer.js";
 import {
@@ -90,6 +87,10 @@ import {
   lookupGitHubOwnerMeta,
   GitHubOrgMetaError,
 } from "../packages/core/dist/ingestor/github-org-meta.js";
+import { REGISTRY_FETCHERS_BY_ECOSYSTEM } from "../packages/core/dist/pipeline/registry-fetchers.js";
+import { buildSourceRepoByPackage } from "../packages/core/dist/pipeline/source-repo-extraction.js";
+import { GITHUB_TOKEN_WARNING } from "../packages/core/dist/pipeline/github-token-warning.js";
+import { parseGithubUrl } from "../packages/core/dist/pipeline/parse-github-url.js";
 
 // ---------------------------------------------------------------------------
 // Entry point
@@ -114,11 +115,7 @@ async function main() {
 
   const githubToken = process.env["GITHUB_TOKEN"];
   if (!githubToken) {
-    log(
-      "warn",
-      "GITHUB_TOKEN is not set. GitHub API calls will be unauthenticated " +
-        "(60 req/hr limit). Set GITHUB_TOKEN to raise the limit to 5,000 req/hr.",
-    );
+    log("warn", GITHUB_TOKEN_WARNING);
   }
 
   const librariesIoApiKey = process.env["LIBRARIES_IO_API_KEY"] ?? null;
@@ -220,7 +217,7 @@ async function main() {
         pypiIngestor,
         goIngestor,
         osvFetcher,
-        registryFetchersByEcosystem,
+        REGISTRY_FETCHERS_BY_ECOSYSTEM,
         githubToken ?? null,
         librariesIoApiKey,
         args.triggeredBy,
@@ -263,7 +260,6 @@ export async function ingestRepo(
   pypiIngestor,
   goIngestor,
   osvFetcher,
-  registryFetchersByEcosystem,
   githubToken,
   librariesIoApiKey,
   triggeredBy,
@@ -348,7 +344,7 @@ export async function ingestRepo(
     // ecosystem actually resolved. Map lookup, not a ternary — a future
     // ecosystem missing an entry fails loudly here rather than silently
     // reusing npm's fetcher for the wrong registry.
-    const registryFetcher = registryFetchersByEcosystem[ingestorResult.ecosystem];
+    const registryFetcher = REGISTRY_FETCHERS_BY_ECOSYSTEM[ingestorResult.ecosystem];
     if (!registryFetcher) {
       throw new Error(
         `No registry fetcher configured for ecosystem "${ingestorResult.ecosystem}".`,
@@ -383,13 +379,8 @@ export async function ingestRepo(
 
     // ADR 0029, Step 5: no second registry round trip — sourceRepo was
     // already resolved (best-effort) as part of the fetchMetadata() call
-    // above, from data that call already received.
-    const sourceRepoByPackage = new Map(
-      [...registryResult.metadata.entries()].map(([packageName, meta]) => [
-        packageName,
-        meta.sourceRepo,
-      ]),
-    );
+    // above, from data that call already received. Uses shared pipeline module.
+    const sourceRepoByPackage = buildSourceRepoByPackage(registryResult);
     const resolvedSourceRepoCount = [...sourceRepoByPackage.values()].filter(
       (ref) => ref !== null,
     ).length;
@@ -624,25 +615,6 @@ async function resolveByUrl(db, url) {
   // Return a minimal stub that ingestRepo can use to kick off the pipeline.
   // repoInput will be fully populated from the GitHub API response.
   return [{ githubUrl: normalised, submittedBy: null }];
-}
-
-// ---------------------------------------------------------------------------
-// URL parsing
-// ---------------------------------------------------------------------------
-
-/**
- * Extract owner and repo name from a GitHub URL.
- * Handles https://github.com/owner/name and https://github.com/owner/name.git
- */
-function parseGithubUrl(url) {
-  const match = url.match(/github\.com\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?(?:\/.*)?$/);
-  if (!match || !match[1] || !match[2]) {
-    throw new Error(
-      `Cannot parse GitHub owner/name from URL: "${url}". ` +
-        `Expected format: https://github.com/owner/name`,
-    );
-  }
-  return { owner: match[1], name: match[2] };
 }
 
 // ---------------------------------------------------------------------------

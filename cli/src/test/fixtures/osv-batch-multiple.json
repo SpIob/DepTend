@@ -1,0 +1,6 @@
+{
+  "results": [
+    { "vulns": [{ "id": "GHSA-older-1111", "modified": "2020-01-01T00:00:00Z" }] },
+    { "vulns": [{ "id": "GHSA-newer-2222", "modified": "2025-01-01T00:00:00Z" }] }
+  ]
+}

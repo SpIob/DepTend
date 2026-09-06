@@ -1,0 +1,14 @@
+{
+  "id": "GHSA-older-1111",
+  "modified": "2020-01-01T00:00:00Z",
+  "published": "2020-01-01T00:00:00Z",
+  "summary": "Older advisory",
+  "severity": [],
+  "affected": [
+    {
+      "package": { "name": "pkg-a", "ecosystem": "npm" },
+      "ranges": [{ "type": "SEMVER", "events": [{ "introduced": "0" }, { "fixed": "1.0.1" }] }]
+    }
+  ],
+  "database_specific": { "severity": "MODERATE" }
+}

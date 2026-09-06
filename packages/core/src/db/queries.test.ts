@@ -9,12 +9,8 @@
  * - getRepoMissionsWithScores (fetch-everything + JS-side ranking)
  */
 
-import { describe, expect, it, vi } from "vitest";
-import { getTableColumns } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/neon-http";
-import type { PgTable } from "drizzle-orm/pg-core";
-import * as schema from "./schema.js";
-import { getRepoMissionsWithScores, type ReadonlyDb } from "./queries.js";
+import { describe, expect, it } from "vitest";
+import { getRepoMissionsWithScores } from "./queries.js";
 import { missions, missionScores, dependencies, repos } from "./schema.js";
 import {
   makeDb,
@@ -25,7 +21,6 @@ import {
   SCORE_VALUES,
   DEPENDENCY_VALUES,
   REPO_VALUES,
-  NOW,
   flatten,
   bySql,
 } from "./test-utils.js";

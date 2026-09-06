@@ -6,13 +6,12 @@
  * without duplication.
  */
 
-import { describe, expect, it, vi } from "vitest";
+import { vi } from "vitest";
 import { getTableColumns } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/neon-http";
 import type { PgTable } from "drizzle-orm/pg-core";
 import * as schema from "./schema.js";
 import {
-  advisories,
   dependencies,
   missions,
   missionScores,
@@ -20,6 +19,9 @@ import {
   repos,
 } from "./schema.js";
 import type { ReadonlyDb } from "./queries.js";
+import { createReadonlyDb } from "./queries.js";
+
+export { createReadonlyDb };
 
 // ---------------------------------------------------------------------------
 // Fake transport

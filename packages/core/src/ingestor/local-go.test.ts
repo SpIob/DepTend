@@ -17,9 +17,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { LocalGoIngestor } from "./local-go.js";
+import type { EcosystemIngestor } from "./interface.js";
 
 let repoDir: string;
-let ingestor: LocalGoIngestor;
+let ingestor: EcosystemIngestor;
 
 const SIMPLE_GO_MOD = `module example.com/x\n\ngo 1.22\n\nrequire (\n\tgithub.com/foo/bar v1.0.0\n)\n`;
 

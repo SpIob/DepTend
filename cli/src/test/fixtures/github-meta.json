@@ -1,0 +1,11 @@
+{
+  "full_name": "owner/repo",
+  "name": "repo",
+  "owner": { "login": "owner" },
+  "default_branch": "main",
+  "description": "A test repo",
+  "stargazers_count": 100,
+  "open_issues_count": 5,
+  "topics": [],
+  "homepage": null
+}

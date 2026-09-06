@@ -15,12 +15,14 @@ export const GoIngestor = createHttpIngestor({
   ecosystem: "go",
   manifestFiles: ["go.mod"],
   lockFileNames: GO_LOCK_FILE_NAMES,
-  parseManifest: async (manifests, lockFilePresent, lockFileContent, lockFileName) =>
-    parseGoModContent(
-      manifests[0]?.raw ?? null,
-      lockFilePresent,
-      manifests[0]?.source ?? "",
-      lockFileContent,
-      lockFileName,
+  parseManifest: (manifests, lockFilePresent, lockFileContent, lockFileName) =>
+    Promise.resolve(
+      parseGoModContent(
+        manifests[0]?.raw ?? null,
+        lockFilePresent,
+        manifests[0]?.source ?? "",
+        lockFileContent,
+        lockFileName,
+      ),
     ),
 });

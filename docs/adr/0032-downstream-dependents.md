@@ -75,7 +75,7 @@ if (ctx.downstreamDependents === undefined) {
 
 ## Consequences
 
-- Missions for repos whose package resolves on libraries.io drop to one structural flag (`no_lock_file`) → **`medium` for the first time ever**; combined with lock-file parsing (still deferred) they can reach `high`. Everything else stays `low`, honestly.
+- Missions for repos whose package resolves on libraries.io drop to one structural flag (`no_lock_file`) → **`medium` for the first time ever**; combined with lock-file parsing (ADR 0038, shipped) they can reach `high`. Everything else stays `low`, honestly.
 - Ecosystem-value scores shift upward for well-depended-upon library repos once their count lands (the 0.35-weight component activates); board order changes accordingly, transparently, with the count visible in "Why this score?".
 - New third-party dependency in the ingestion path: libraries.io outages degrade to `null`+flag, never failed runs. Its repo↔package linkage is imperfect; polluted with junk links (handled by max-aggregation) and missing for some published repos (reads as unavailable, which understates nothing, renormalized weights, hides nothing, flag visible).
 - The stale CHANGELOG/ADR 0029 claims about post-0029 `medium` confidence are corrected here rather than silently; §11 of AGENTS.md updated in the same pass.

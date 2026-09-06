@@ -5,9 +5,7 @@
  * test-utils.ts infrastructure.
  */
 
-import { describe, expect, it, vi } from "vitest";
-import { drizzle } from "drizzle-orm/neon-http";
-import * as schema from "./schema.js";
+import { describe, expect, it } from "vitest";
 import {
   getIndexedRepoCount,
   getTotalRepoCount,
@@ -16,19 +14,8 @@ import {
   getRepoEcosystems,
   getRepoDirectoryBase,
 } from "./directory-queries.js";
-// eslint-disable-next-line import/no-cycle — ReadonlyDb is defined in queries.ts which re-exports from directory-queries.ts; test file needs the type without creating a runtime cycle
-import type { ReadonlyDb } from "./queries.js";
-import { notificationSubscriptions, repos } from "./schema.js";
-import {
-  makeDb,
-  flatten,
-  bySql,
-  REPO_VALUES,
-  NOW,
-  tallyRow,
-  EMPTY_FILTERS,
-  boardRouter,
-} from "./test-utils.js";
+import { repos } from "./schema.js";
+import { makeDb, flatten, bySql, REPO_VALUES } from "./test-utils.js";
 import { getRepoBoardPage } from "./board-queries.js";
 import { createReadonlyDb } from "./queries.js";
 
@@ -38,15 +25,15 @@ import { createReadonlyDb } from "./queries.js";
 
 describe("getIndexedRepoCount / getTotalRepoCount", () => {
   it("counts only complete repos", async () => {
-    const { db, calls } = makeDb(() => [[7]]);
+    const { db, calls: _calls } = makeDb(() => [[7]]);
     expect(await getIndexedRepoCount(db)).toBe(7);
-    expect(bySql(calls, /from "repos"/).params).toContain("complete");
+    expect(bySql(_calls, /from "repos"/).params).toContain("complete");
   });
 
   it("counts every submitted repo with no status filter", async () => {
-    const { db, calls } = makeDb(() => [[2]]);
+    const { db, calls: _calls } = makeDb(() => [[2]]);
     expect(await getTotalRepoCount(db)).toBe(2);
-    expect(calls[0]?.sql.toLowerCase()).not.toContain("where");
+    expect(_calls[0]?.sql.toLowerCase()).not.toContain("where");
   });
 
   it("returns zero when the count row is missing", async () => {
@@ -173,7 +160,9 @@ describe("getRepoDirectoryBase", () => {
   it("assembles per-repo ecosystems, severity counts, and bookmark + subscription flags", async () => {
     // The new getSubscribedRepoIds query selects only repo_id, so the mock
     // must return rows with just that column (matching the bookmarks pattern).
-    const { db, calls } = makeDb(summaryRouter({ bookmarks: [["r-1"]], subscriptions: [["r-2"]] }));
+    const { db, calls: _calls } = makeDb(
+      summaryRouter({ bookmarks: [["r-1"]], subscriptions: [["r-2"]] }),
+    );
     const result = await getRepoDirectoryBase(db, { userLogin: "octocat" });
 
     expect(result).toHaveLength(2);

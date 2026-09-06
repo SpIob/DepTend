@@ -1,0 +1,13 @@
+{
+  "id": "GHSA-test-go-1234",
+  "modified": "2026-01-01T00:00:00Z",
+  "published": "2025-12-01T00:00:00Z",
+  "summary": "Test vulnerability in github.com/vulnerable/pkg",
+  "severity": [{ "type": "CVSS_V3", "score": "9.8" }],
+  "affected": [
+    {
+      "package": { "name": "github.com/vulnerable/pkg", "ecosystem": "Go" },
+      "ranges": [{ "type": "SEMVER", "events": [{ "introduced": "0" }, { "fixed": "v1.0.1" }] }]
+    }
+  ]
+}

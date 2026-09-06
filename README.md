@@ -26,7 +26,7 @@ Three constraints are non-negotiable and shape every decision in this project:
 
 ## Two ways to use it
 
-**The hosted dashboard.** Visit [deptend.vercel.app](https://deptend.vercel.app). No account is needed to browse missions; GitHub sign-in is only required to submit a new repo or claim a mission.
+**The hosted dashboard.** Visit [deptend.vercel.app](https://deptend.vercel.app). No account is needed to browse missions; GitHub sign-in is only required to submit a new repo or claim a mission. The dashboard indexes up to 150 repositories (`NEXT_PUBLIC_MAX_REPOS`).
 
 **The CLI.** It runs the same scoring engine against a local repo path, entirely in-memory, with no account or hosted infrastructure required:
 
@@ -61,11 +61,15 @@ Every mission, on the dashboard or from the CLI, includes:
 - The advisory: source (OSV/GHSA), severity, CVSS score if available, a link to the original record, and the version that fixes it.
 - The recommended action: a plain-language upgrade instruction.
 - The score and every input that produced it: never a bare number.
-- Confidence: visibly flagged when data is incomplete (no lock file parsed yet, no CVSS score, no downstream-dependents data), never hidden.
+- Confidence: visibly flagged when data is incomplete (lock file absent or unparseable, no CVSS score, no downstream-dependents data), never hidden.
 
 ## The rescue board
 
 Missions aren't private to a repo's own maintainer. The dashboard's board lists every open (and claimed) mission across all indexed repos, filterable by severity and effort. Any signed-in GitHub user can claim a mission, and release it later if they change their mind, turning a maintainer's backlog into something someone else can actually pick up and ship. No separate account, no gatekeeping beyond GitHub sign-in.
+
+## Organization directory
+
+The `/org/[org]` route lists all indexed repositories under a GitHub organization, with per-repo mission counts and severity breakdowns. ([ADR 0047](docs/adr/0047-populate-organizations.md))
 
 ## How scoring works
 
@@ -83,7 +87,7 @@ Missions are ranked by `composite_score`, bucketed into fixed-width tiers so nea
 
 Full detail: [`docs/adr/0006-scoring-algorithm.md`](docs/adr/0006-scoring-algorithm.md).
 
-> **On confidence right now:** most missions still show `low` confidence. Two scoring inputs, downstream-dependents data and migration-guide/breaking-change signals, now have data sources wired up ([ADR 0029](docs/adr/0029-breaking-change-signals.md) and [ADR 0032](docs/adr/0032-downstream-dependents.md)), and a repo whose inputs all resolve reaches `medium`. But the dependents lookup needs a `LIBRARIES_IO_API_KEY` on the ingestion run, and not every dependency's source repo can be identified, so many missions stay conservatively at `low` with the missing input flagged rather than guessed at.
+> **On confidence:** missions with fully resolved lock files and a CVSS score reach `high`; those with lock-file data but missing dependents or breaking-change signals show `medium`; missions lacking lock-file data (no lock file in repo, or unparseable format like `pnpm-lock.yaml`) or missing both downstream dependents and breaking-change signals stay at `low`. Confidence flags are always visible per mission. See [ADR 0038](docs/adr/0038-lock-file-parsing.md), [ADR 0029](docs/adr/0029-breaking-change-signals.md), [ADR 0032](docs/adr/0032-downstream-dependents.md).
 
 ## Ecosystem support
 
@@ -95,7 +99,7 @@ Three ecosystems, auto-detected per repo in this order: npm first, then PyPI, th
 | PyPI      | `pyproject.toml` ([PEP 621](https://peps.python.org/pep-0621/)) primary, `requirements.txt` fallback | [pypi.org JSON API](https://pypi.org/pypi/)                                    | Poetry's `[tool.poetry.dependencies]` table is out of scope ([ADR 0022](docs/adr/0022-phase6-pypi-ecosystem.md)) |
 | Go        | `go.mod` `require` directives, direct only                                                           | [proxy.golang.org](https://proxy.golang.org/)                                  | `replace`/`exclude`/`retract` directives not handled ([ADR 0024](docs/adr/0024-go-ecosystem.md))                 |
 
-Lock files (`package-lock.json`/`pnpm-lock.yaml`/`yarn.lock` for npm, `go.sum` for Go) are detected but never parsed: resolved versions are estimated from declared ranges rather than confirmed. This is visibly flagged as lower confidence wherever it applies, never silently assumed.
+Lock files are parsed for `package-lock.json`, `yarn.lock`, `poetry.lock`, `Pipfile.lock`, `pdm.lock`, and `go.sum` (ADR 0038). `pnpm-lock.yaml` is not yet parsed. Resolved versions from lock files populate `dependencies.resolved_version`; when absent or unparseable, versions are estimated from declared ranges and the `no_lock_file` confidence flag is set.
 
 A repo whose manifest lives outside the repo root is currently indistinguishable from a repo with no manifest at all; both land on `ingestionStatus: 'skipped'`. This is a scoping choice (root-only parsing), not a bug.
 

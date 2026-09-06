@@ -3,11 +3,16 @@ import type {
   DepType,
   Ecosystem,
   EffortLabel,
+  Repo,
   ScoreConfidence,
   Severity,
 } from "@deptend/core/db/schema.js";
-import type { EcosystemValueInputs, EffortInputs, ImpactInputs } from "@deptend/core";
+import type { MissionCopy } from "@deptend/core/scorer/mission-copy.js";
+import type { ImpactInputs, EcosystemValueInputs, EffortInputs } from "@deptend/core";
 
+/**
+ * CLI-specific input options — not shared with core.
+ */
 export interface AnalyzeOptions {
   /**
    * Local filesystem path to the repo root. Which ecosystem it is (npm,
@@ -27,11 +32,11 @@ export interface AnalyzeOptions {
  * (title/description/action_hint, every scoring input, source references)
  * per the project's explainability standard: no score without the data
  * that produced it being immediately accessible.
+ *
+ * Composes core MissionCopy with CLI-specific dependency/advisory details
+ * and nests scoring inputs under `scoring_inputs` for readability.
  */
-export interface AnalyzedMission {
-  title: string;
-  description: string;
-  action_hint: string | null;
+export interface AnalyzedMission extends MissionCopy {
   composite_score: number;
   impact_score: number;
   ecosystem_value_score: number;
@@ -62,6 +67,9 @@ export interface AnalyzedMission {
   };
 }
 
+/**
+ * Full CLI analysis result — combines repo metadata, scan stats, missions, and warnings.
+ */
 export interface AnalyzeResult {
   generated_at: string;
   repo: {
@@ -80,3 +88,5 @@ export interface AnalyzeResult {
   /** Data-quality warnings aggregated across the whole pipeline. */
   warnings: string[];
 }
+
+export type { Repo };

@@ -79,7 +79,7 @@ The set is reconciled against the manifest on every successful ingestion: rows f
 | `ecosystem`        | enum            | `npm \| pypi \| go`                                           |
 | `package_name`     | text            | e.g. `lodash`                                                 |
 | `version_spec`     | text            | Range from package.json, e.g. `^4.17.0`                       |
-| `resolved_version` | text?           | From lock file; NULL in Phase 1 baseline                      |
+| `resolved_version` | text?           | From lock file (ADR 0038); NULL when absent or unparseable    |
 | `dep_type`         | enum            | `production \| development \| peer \| optional \| transitive` |
 | `latest_version`   | text?           | Fetched from registry at ingest time                          |
 | `is_deprecated`    | boolean         |                                                               |
@@ -181,7 +181,7 @@ One row per mission. Stores final scores AND all raw inputs for full auditabilit
 | `created_at`             | timestamptz               |                                                                                           |
 | `updated_at`             | timestamptz               |                                                                                           |
 
-Confidence inputs come from two data sources wired up after this table was first written: `ecosystem_value_inputs.downstream_dependents` (libraries.io, [ADR 0032](../adr/0032-downstream-dependents.md)) and `effort_inputs.has_migration_guide` / `effort_inputs.breaking_change_signals` (GitHub Releases, [ADR 0029](../adr/0029-breaking-change-signals.md)). When a source can't resolve for a mission, the corresponding `_unavailable` flag is set in `confidence_flags` and the mission stays at lower confidence.
+Confidence inputs come from three data sources wired up after this table was first written: `dependencies.resolved_version` (lock-file parsing, [ADR 0038](../adr/0038-lock-file-parsing.md)), `ecosystem_value_inputs.downstream_dependents` (libraries.io, [ADR 0032](../adr/0032-downstream-dependents.md)), and `effort_inputs.has_migration_guide` / `effort_inputs.breaking_change_signals` (GitHub Releases, [ADR 0029](../adr/0029-breaking-change-signals.md)). When a source can't resolve for a mission, the corresponding `_unavailable` flag is set in `confidence_flags` and the mission stays at lower confidence.
 
 **Composite score formula (v0.1):**
 

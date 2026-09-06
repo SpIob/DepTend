@@ -25,6 +25,81 @@ source, **the source wins**. See §1.
 
 ---
 
+## 0a. Parallel Agent Coordination
+
+When multiple agents work on this repository simultaneously, follow these protocols to avoid
+conflicts and wasted effort:
+
+### File Lock Convention
+
+**Before starting work on any file**, check if another agent has claimed it by looking for a
+lock file at `.agent-locks/<file-path>.lock` (relative to repo root). The lock file contains:
+
+- `agent-id`: the identifier of the agent holding the lock
+- `task`: brief description of what the agent is doing
+- `started`: ISO timestamp when work began
+- `expires`: ISO timestamp when the lock auto-expires (default 30 minutes)
+
+**To claim a file:**
+
+```bash
+mkdir -p .agent-locks
+echo '{"agent-id":"<your-agent-id>","task":"<description>","started":"<ISO-timestamp>","expires":"<ISO-timestamp+30min>"}' > .agent-locks/<file-path>.lock
+```
+
+**To release a lock:**
+
+```bash
+rm .agent-locks/<file-path>.lock
+```
+
+**If a lock exists and has not expired:** pause your task and wait, or ask the user to
+reassign. Do not modify the file.
+
+**If a lock exists but has expired:** you may claim it (the previous agent's work may have
+stalled). Overwrite the lock with your own.
+
+### High-Conflict Files (Always Lock)
+
+These files are common conflict hotspots — always claim before editing:
+
+- `packages/core/src/db/schema.ts` — single source of truth for types
+- `packages/core/src/db/queries.ts` / `board-queries.ts` / `directory-queries.ts` — DB reads
+- `packages/core/src/scorer/mission-scorer.ts` / `writer.ts` — scoring + write logic
+- `scripts/ingest.js` — ingestion pipeline entry point
+- `app/src/lib/queries/missions.ts` — cached read wrappers
+- `app/src/app/api/*/route.ts` — mutating API routes
+- `docs/adr/*.md` — ADRs (assign new numbers sequentially; check `docs/adr/` first)
+- `CHANGELOG.md` — single chronological log
+- `AGENTS.md` — this file
+
+### Cross-Cutting Changes (Require Coordination)
+
+If your task touches **multiple files in different directories** that another agent might also
+need (e.g., adding a new ecosystem, changing scoring formula, modifying DB schema), announce
+your intent to the user before starting. The user will serialize or partition the work.
+
+### Read-Only Access
+
+Multiple agents may **read** the same file simultaneously without locking. Only writes
+require a lock.
+
+### Lock Hygiene
+
+- Release locks immediately after completing your edits (not after the full task if the
+  file is done)
+- If you'll be idle >5 min on a locked file, release the lock
+- Expired locks (past `expires` timestamp) are fair game — clean them up if you see them
+- The `.agent-locks/` directory is git-ignored (add to `.gitignore` if not present)
+
+### Conflict Resolution
+
+If two agents simultaneously claim the same file (race on lock creation), the one with the
+earlier `started` timestamp wins. The other agent yields and re-reads the file after the
+first agent releases.
+
+---
+
 ## 1. What This Project Is
 
 DepTend (`github.com/SpIob/DepTend`, live at **https://deptend.vercel.app**) is a free, public,

@@ -18,18 +18,14 @@
  * must move together (AGENTS.md §2).
  */
 
-import { describe, expect, it, vi } from "vitest";
-import { getTableColumns } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/neon-http";
-import type { PgTable } from "drizzle-orm/pg-core";
-import * as schema from "./schema.js";
+import { describe, expect, it } from "vitest";
 import {
   BOARD_PAGE_SIZE,
   getBoardMissionsWithScoresPage,
   getRepoBoardPage,
 } from "./board-queries.js";
-import type { BoardFilters, ReadonlyDb } from "./queries.js";
-import { advisories, dependencies, missions, missionScores, repos } from "./schema.js";
+import { getRepoMissionsWithScores, type BoardFilters } from "./queries.js";
+import { missions, missionScores, dependencies, repos } from "./schema.js";
 import {
   makeDb,
   joinedRow,
@@ -38,7 +34,13 @@ import {
   EMPTY_FILTERS,
   tallyRow,
   boardRouter,
-  NOW,
+  flatten,
+  bySql,
+  MISSION_VALUES,
+  SCORE_VALUES,
+  DEPENDENCY_VALUES,
+  REPO_VALUES,
+  createReadonlyDb,
 } from "./test-utils.js";
 
 // ---------------------------------------------------------------------------
@@ -417,15 +419,3 @@ describe.skipIf(LIVE_DATABASE_URL === "")(
     );
   },
 );
-
-// Helper functions needed by the tests above
-import { getRepoMissionsWithScores } from "./queries.js";
-import {
-  flatten,
-  bySql,
-  MISSION_VALUES,
-  SCORE_VALUES,
-  DEPENDENCY_VALUES,
-  REPO_VALUES,
-} from "./test-utils.js";
-import { createReadonlyDb } from "./queries.js";

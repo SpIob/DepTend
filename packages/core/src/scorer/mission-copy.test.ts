@@ -5,7 +5,7 @@
 import { describe, expect, it } from "vitest";
 import { generateMissionCopy } from "./mission-copy.js";
 import { computeMissionScore } from "./mission-scorer.js";
-import { makeDependency, makeAdvisory, makeContext, makeRepo } from "./test-fixtures.js";
+import { makeDependency, makeAdvisory, makeContext } from "./test-fixtures.js";
 
 describe("generateMissionCopy", () => {
   it("includes the package name and severity in the title when a fix exists", () => {

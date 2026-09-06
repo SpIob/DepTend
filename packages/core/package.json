@@ -95,6 +95,10 @@
       "import": "./dist/ingestor/registry.js",
       "types": "./dist/ingestor/registry.d.ts"
     },
+    "./ingestor/registry-base.js": {
+      "import": "./dist/ingestor/registry-base.js",
+      "types": "./dist/ingestor/registry-base.d.ts"
+    },
     "./ingestor/pypi-registry.js": {
       "import": "./dist/ingestor/pypi-registry.js",
       "types": "./dist/ingestor/pypi-registry.d.ts"
@@ -126,6 +130,26 @@
     "./scorer/ranking.js": {
       "import": "./dist/scorer/ranking.js",
       "types": "./dist/scorer/ranking.d.ts"
+    },
+    "./pipeline/ecosystem-detection.js": {
+      "import": "./dist/pipeline/ecosystem-detection.js",
+      "types": "./dist/pipeline/ecosystem-detection.d.ts"
+    },
+    "./pipeline/registry-fetchers.js": {
+      "import": "./dist/pipeline/registry-fetchers.js",
+      "types": "./dist/pipeline/registry-fetchers.d.ts"
+    },
+    "./pipeline/source-repo-extraction.js": {
+      "import": "./dist/pipeline/source-repo-extraction.js",
+      "types": "./dist/pipeline/source-repo-extraction.d.ts"
+    },
+    "./pipeline/github-token-warning.js": {
+      "import": "./dist/pipeline/github-token-warning.js",
+      "types": "./dist/pipeline/github-token-warning.d.ts"
+    },
+    "./pipeline/parse-github-url.js": {
+      "import": "./dist/pipeline/parse-github-url.js",
+      "types": "./dist/pipeline/parse-github-url.d.ts"
     }
   },
   "scripts": {

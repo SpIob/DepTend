@@ -1,7 +1,6 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { headers } from "next/headers";
-import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import {
   getRepoDirectorySummary,
@@ -11,18 +10,17 @@ import {
 } from "@/lib/queries/missions";
 import { PaginatedMissionBoard } from "@/components/paginated-mission-board";
 import {
-  buildMissionBoardHref,
-  clampPageNumber,
-  isCanonicalMissionBoardQuery,
-  parseMissionBoardQuery,
-  type MissionBoardQuery,
-} from "@/lib/mission-board-query";
-import { firstSearchParamValue } from "@/lib/search-params";
+  parseAndValidateBoardQuery,
+  buildBoardFilters,
+  getEffectivePage,
+  hasActiveFilters,
+} from "@/lib/mission-board-server";
 import { AuthStatus } from "@/components/auth-status";
 import { BrandMark } from "@/components/brand-mark";
 import { PageHeader } from "@/components/page-header";
-import { withRequestStore, REQUEST_ID_HEADER, recordTiming } from "@/lib/timing/store";
+import { REQUEST_ID_HEADER } from "@/lib/timing/store";
 import { logTimingsForRequest } from "@/lib/timing/log";
+import type { MissionBoardQuery } from "@/lib/mission-board-query";
 
 // Live data on every request, same reasoning as the repo directory (page.tsx).
 export const dynamic = "force-dynamic";
@@ -97,97 +95,28 @@ function HeaderRightSkeleton(): React.JSX.Element {
  * are inside the boundary, with a narrow skeleton that doesn't cover the
  * LCP text.
  *
- * Round 5 of the 2026-09-05 perf series wrapped the page's render in
- * `withRequestStore` so the per-segment `withTiming()` calls in the read
- * paths have a per-request scope to write to. The request id is set by
- * the middleware via `x-request-id` and read here via `next/headers`.
- * Per AGENTS.md §12, App Router pages cannot set response headers from
- * a Server Component, so the per-segment data goes to the in-process
- * store; the dev-mode stdout logger in `lib/timing/log.ts` makes it
- * visible. See reports/perf/2026-09-05/round-5/summary.md for the
- * full rationale and the AGENTS.md §12 caveat in detail.
+ * Per-segment timing (ADR 0052 follow-up) is lifted to the query layer via
+ * `withTiming()` in `lib/queries/missions.ts`. The middleware emits a
+ * `Server-Timing: total;dur=...` header for the full request duration.
  */
 export default async function AllMissionsPage({
   searchParams,
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }): Promise<React.JSX.Element> {
-  // Round 5: read the request id from the middleware-set header, then
-  // wrap the page render in `withRequestStore` so the per-segment
-  // `withTiming()` calls in the read paths (and the data fetches inside
-  // `<Suspense>` boundaries) have a per-request scope to write to. The
-  // module-level snapshot fallback in `withTiming` means the data
-  // fetches can record timings even when `next/headers()` is
-  // unreachable in their nested async context. See
-  // reports/perf/2026-09-05/round-5/ for the full rationale and the
-  // AGENTS.md §12 caveat in detail.
   const reqId = (await headers()).get(REQUEST_ID_HEADER) ?? "no-req-id";
-  return withRequestStore(reqId, async () => {
-    const startedAt = Date.now();
-    const result = await renderAllMissionsPage(searchParams);
-    const totalMs = Date.now() - startedAt;
-    recordTiming("page:render", totalMs, reqId);
-    logTimingsForRequest("/missions", totalMs, reqId);
-    return result;
-  });
+  const startedAt = Date.now();
+  const result = await renderAllMissionsPage(searchParams);
+  const totalMs = Date.now() - startedAt;
+  logTimingsForRequest("/missions", totalMs, reqId);
+  return result;
 }
 
 async function renderAllMissionsPage(
   searchParams: Promise<Record<string, string | string[] | undefined>>,
 ): Promise<React.JSX.Element> {
-  const rawParams = await searchParams;
-  const query = parseMissionBoardQuery({
-    q: firstSearchParamValue(rawParams.q),
-    severity: firstSearchParamValue(rawParams.severity),
-    ecosystem: firstSearchParamValue(rawParams.ecosystem),
-    effort: firstSearchParamValue(rawParams.effort),
-    missionType: firstSearchParamValue(rawParams.missionType),
-    sort: firstSearchParamValue(rawParams.sort),
-    group: firstSearchParamValue(rawParams.group),
-    page: firstSearchParamValue(rawParams.page),
-  });
-
-  // Canonicalize the URL when any value was coerced to a default by
-  // parseMissionBoardQuery (unknown sort, unrecognized filter values,
-  // group=0, page=0, etc.) — otherwise the dropdown's actual state and
-  // the URL disagree, and any subsequent chip click re-emits the bad
-  // value as if it were legitimate. Same redirect pattern as the
-  // `page > pageCount` canonicalization below. See mission-board-query.ts
-  // `isCanonicalMissionBoardQuery` for the full rationale.
-  if (
-    !isCanonicalMissionBoardQuery({
-      q: firstSearchParamValue(rawParams.q),
-      severity: firstSearchParamValue(rawParams.severity),
-      ecosystem: firstSearchParamValue(rawParams.ecosystem),
-      effort: firstSearchParamValue(rawParams.effort),
-      missionType: firstSearchParamValue(rawParams.missionType),
-      sort: firstSearchParamValue(rawParams.sort),
-      group: firstSearchParamValue(rawParams.group),
-      page: firstSearchParamValue(rawParams.page),
-    })
-  ) {
-    redirect(
-      buildMissionBoardHref("/missions", {
-        q: query.q,
-        severity: query.severity,
-        ecosystem: query.ecosystem,
-        effort: query.effort,
-        missionType: query.missionType,
-        sort: query.sort,
-        group: query.group,
-        page: query.page,
-      }),
-    );
-  }
-
-  const filters: BoardFilters = {
-    q: query.q,
-    severities: Array.from(query.severity),
-    ecosystems: Array.from(query.ecosystem),
-    efforts: Array.from(query.effort),
-    missionTypes: Array.from(query.missionType),
-    sort: query.sort,
-  };
+  const query = await parseAndValidateBoardQuery(searchParams, "/missions");
+  const filters = buildBoardFilters(query);
 
   return (
     <main id="main" className="mx-auto flex max-w-3xl flex-col gap-8 px-4 py-8 sm:px-6 sm:py-12">
@@ -270,15 +199,9 @@ async function BoardArea({
   const board = await getBoardMissionsPage(filters, page);
 
   const pageCount = Math.max(1, Math.ceil(board.total / BOARD_PAGE_SIZE));
-  const effectivePage = clampPageNumber(page, pageCount);
+  const effectivePage = getEffectivePage(page, board.total, BOARD_PAGE_SIZE);
 
-  const hasFilters =
-    initialQuery.severity.size > 0 ||
-    initialQuery.ecosystem.size > 0 ||
-    initialQuery.effort.size > 0 ||
-    initialQuery.q.trim() !== "";
-
-  if (board.total === 0 && !hasFilters) {
+  if (board.total === 0 && !hasActiveFilters(initialQuery)) {
     return <EmptyState />;
   }
 

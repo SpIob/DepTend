@@ -11,6 +11,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GoIngestor } from "./go.js";
+import type { EcosystemIngestor } from "./interface.js";
 import { BASE, lockUrl, mockFetch } from "./test-helpers.js";
 
 function goModUrl(base = BASE): string {
@@ -20,7 +21,7 @@ function goModUrl(base = BASE): string {
 const SIMPLE_GO_MOD = `module example.com/x\n\ngo 1.22\n\nrequire (\n\tgithub.com/foo/bar v1.0.0\n)\n`;
 
 describe("GoIngestor", () => {
-  let ingestor: GoIngestor;
+  let ingestor: EcosystemIngestor;
 
   beforeEach(() => {
     // Transport backoff/deadline disabled — failure-path tests below stub a

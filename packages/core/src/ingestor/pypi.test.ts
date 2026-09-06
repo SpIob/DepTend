@@ -11,6 +11,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PyPIIngestor } from "./pypi.js";
+import type { EcosystemIngestor } from "./interface.js";
 import { BASE, lockUrl, mockFetch } from "./test-helpers.js";
 
 function pyprojectUrl(base = BASE): string {
@@ -31,7 +32,7 @@ function noLockFiles(base = BASE): Record<string, { status: number }> {
 }
 
 describe("PyPIIngestor", () => {
-  let ingestor: PyPIIngestor;
+  let ingestor: EcosystemIngestor;
 
   beforeEach(() => {
     // Transport backoff/deadline disabled — failure-path tests below stub a

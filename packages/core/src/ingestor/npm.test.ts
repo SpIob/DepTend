@@ -7,6 +7,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NpmIngestor } from "./npm.js";
+import type { EcosystemIngestor } from "./interface.js";
 import { BASE, lockUrl, mockFetch } from "./test-helpers.js";
 
 function packageJsonUrl(base = BASE): string {
@@ -14,7 +15,7 @@ function packageJsonUrl(base = BASE): string {
 }
 
 describe("NpmIngestor", () => {
-  let ingestor: NpmIngestor;
+  let ingestor: EcosystemIngestor;
 
   beforeEach(() => {
     // Transport backoff/deadline disabled — failure-path tests below stub a
