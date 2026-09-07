@@ -87,7 +87,12 @@ import {
   lookupGitHubOwnerMeta,
   GitHubOrgMetaError,
 } from "../packages/core/dist/ingestor/github-org-meta.js";
-import { REGISTRY_FETCHERS_BY_ECOSYSTEM } from "../packages/core/dist/pipeline/registry-fetchers.js";
+import {
+  REGISTRY_FETCHERS_BY_ECOSYSTEM,
+  NpmRegistryFetcher,
+  PyPIRegistryFetcher,
+  GoRegistryFetcher,
+} from "../packages/core/dist/pipeline/registry-fetchers.js";
 import { buildSourceRepoByPackage } from "../packages/core/dist/pipeline/source-repo-extraction.js";
 import { GITHUB_TOKEN_WARNING } from "../packages/core/dist/pipeline/github-token-warning.js";
 import { parseGithubUrl } from "../packages/core/dist/pipeline/parse-github-url.js";
