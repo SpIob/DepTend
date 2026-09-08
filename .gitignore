@@ -44,3 +44,6 @@ coverage/
 
 # opencode CLI local state (skills, plugin cache, package-lock)
 .opencode/
+
+# Agent locks
+.agent-locks/
