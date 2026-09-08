@@ -26,6 +26,9 @@ export function useGroupByRepo({
   // changes the query, so it syncs via replaceState instead of navigating.
   useEffect(() => {
     if (!showGroupByRepo) return;
+    // Skip if groupByRepo hasn't actually changed from the server value
+    // (avoids redundant replaceState on every server render)
+    if (groupByRepo === initialQuery.group) return;
     const query = buildMissionBoardHref(pathname, {
       q: initialQuery.q,
       severity: initialQuery.severity,

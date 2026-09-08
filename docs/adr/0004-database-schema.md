@@ -41,9 +41,9 @@ Rows in `ingestion_runs` are never updated or deleted. They record every executi
 
 Missions are not hard-deleted when dismissed. `status = 'dismissed'` with `dismissed_at` and `dismiss_reason` preserves history. Resolved missions stay in the table with `status = 'resolved'`. This supports future analytics and changelog generation.
 
-### 7. `updated_at` managed by a trigger
+### 7. `updated_at` managed by application code
 
-All mutable tables have a `set_updated_at()` trigger so application code never forgets to update the timestamp.
+`updated_at` columns use `defaultNow()` on INSERT. Application code must set `updated_at` explicitly on UPDATE operations. No database triggers are used; Neon's HTTP driver doesn't support transactions (ADR 0009), making trigger-based updates impractical.
 
 ## Schema not included (deliberately deferred)
 

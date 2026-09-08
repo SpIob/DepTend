@@ -10,6 +10,7 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { repos, type IngestionStatus, type Repo } from "./schema.js";
 import type { ReadonlyDb } from "./queries.js";
+import { WITHDRAWABLE_INGESTION_STATUSES } from "../constants/withdrawable-statuses.js";
 
 const GITHUB_URL_PATTERN =
   /^(?:https?:\/\/)?(?:www\.)?github\.com\/([a-zA-Z0-9](?:[a-zA-Z0-9-]{0,37}[a-zA-Z0-9])?)\/([a-zA-Z0-9._-]+?)(?:\.git)?\/?$/;
@@ -121,19 +122,6 @@ export async function submitRepo(
 
   return { outcome: "created", repo: inserted };
 }
-
-// The set of ingestion statuses a submitter is still allowed to walk their
-// own row back from. Lives here as the single source of truth shared with
-// the guarded DELETE in withdrawOwnRepo() below and the per-repo page's
-// <WithdrawButton /> client-side check; previously each consumer kept its
-// own array and silently drifted when statuses were added.
-//
-// Typed as readonly IngestionStatus[] (not `as const satisfies ...`) so
-// Array#includes() accepts the full IngestionStatus union the call sites
-// hand it; the literal-type narrowing would otherwise force every caller
-// to narrow first, and the type system can't see through the array
-// literal to the values list.
-export const WITHDRAWABLE_INGESTION_STATUSES: readonly IngestionStatus[] = ["pending", "skipped"];
 
 /**
  * Deletes a repo the caller submitted themselves — but only while it's

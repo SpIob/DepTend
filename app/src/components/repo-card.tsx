@@ -58,7 +58,7 @@ export function RepoCard({ repo }: { repo: RepoWithMissionSummary }): React.JSX.
             repoFullName={repoFullName}
             initialBookmarked={repo.isBookmarked}
           />
-          {repo.isSubscribed !== undefined && (
+          {typeof repo.isSubscribed === "boolean" && (
             <NotificationToggle
               repoId={repo.id}
               repoFullName={repoFullName}

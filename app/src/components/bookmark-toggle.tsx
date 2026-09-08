@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useSession } from "next-auth/react";
 import { signInWithGitHub } from "@/lib/sign-in";
 import { extractErrorMessage } from "@/lib/fetch-error";
+import { isValidLogin } from "@/lib/login";
 
 type BookmarkRequestState =
   { kind: "idle" } | { kind: "pending" } | { kind: "error"; message: string };
@@ -37,7 +38,8 @@ export function BookmarkToggle({
   const { data: session } = useSession();
   const [bookmarked, setBookmarked] = useState(initialBookmarked);
   const [request, setRequest] = useState<BookmarkRequestState>({ kind: "idle" });
-  const login = session?.user?.login;
+  const rawLogin = session?.user?.login;
+  const login = isValidLogin(rawLogin) ? rawLogin : undefined;
 
   const signedOutLabel = `Sign in with GitHub to bookmark ${repoFullName}`;
   const signedInLabel = bookmarked
@@ -64,7 +66,7 @@ export function BookmarkToggle({
     }
   }
 
-  if (login === undefined) {
+  if (!isValidLogin(login)) {
     return (
       <button
         type="button"

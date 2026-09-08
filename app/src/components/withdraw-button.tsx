@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useSession } from "next-auth/react";
 import type { IngestionStatus } from "@deptend/core/db/schema.js";
-import { WITHDRAWABLE_INGESTION_STATUSES } from "@deptend/core/db/repos.js";
+import { WITHDRAWABLE_INGESTION_STATUSES } from "@deptend/core/constants/withdrawable-statuses.js";
 import { extractErrorMessage } from "@/lib/fetch-error";
 
 type WithdrawRequestState =

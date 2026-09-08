@@ -34,7 +34,7 @@ function FilterChip({
       onClick={onToggle}
       disabled={disabled}
       aria-pressed={active}
-      className={`rounded-sm border px-2.5 py-1 font-mono text-xs transition-colors disabled:opacity-50 ${
+      className={`rounded-sm border px-2.5 py-1 font-mono text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
         active ? CHIP_ACTIVE_CLASS : CHIP_IDLE_CLASS
       }`}
     >
@@ -100,7 +100,7 @@ interface FilterChipsProps {
   navigate: (href: string) => void;
   buildHref: (overrides: MissionBoardQueryState) => string;
   /** Client mode: called with updated query instead of navigating */
-  onFilterChange?: (nextQuery: MissionBoardQuery) => void;
+  onFilterChange?: (nextQuery: Partial<MissionBoardQuery>) => void;
 }
 
 export function FilterChips({
@@ -119,7 +119,7 @@ export function FilterChips({
   ) => {
     return (next: Set<T>) => {
       if (isClientMode) {
-        onFilterChange({ [key]: next } as Partial<MissionBoardQuery> as MissionBoardQuery);
+        onFilterChange({ [key]: next } as Partial<MissionBoardQuery>);
       } else {
         navigate(buildHref({ [key]: next } as MissionBoardQueryState));
       }

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useSession } from "next-auth/react";
 import { signInWithGitHub } from "@/lib/sign-in";
 import { extractErrorMessage } from "@/lib/fetch-error";
+import { isValidLogin } from "@/lib/login";
 
 type NotificationRequestState =
   { kind: "idle" } | { kind: "pending" } | { kind: "error"; message: string };
@@ -28,7 +29,8 @@ export function NotificationToggle({
   initialSubscribed: boolean;
 }): React.JSX.Element {
   const { data: session } = useSession();
-  const login = session?.user?.login;
+  const rawLogin = session?.user?.login;
+  const login = isValidLogin(rawLogin) ? rawLogin : undefined;
   const [subscribed, setSubscribed] = useState(initialSubscribed);
   const [request, setRequest] = useState<NotificationRequestState>({ kind: "idle" });
 
@@ -59,7 +61,7 @@ export function NotificationToggle({
     }
   }
 
-  if (login === undefined) {
+  if (!isValidLogin(login)) {
     return (
       <button
         type="button"

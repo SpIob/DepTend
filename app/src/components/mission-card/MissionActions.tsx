@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
 import type { MissionStatus } from "@deptend/core/db/schema.js";
 import { extractErrorMessage } from "@/lib/fetch-error";
 import { signInWithGitHub } from "@/lib/sign-in";
@@ -23,7 +22,6 @@ export function MissionActions({
   onStatusChange,
 }: MissionActionsProps): React.JSX.Element {
   const { data: session } = useSession();
-  const router = useRouter();
   const [request, setRequest] = useState<ClaimRequestState>({ kind: "idle" });
   const login = session?.user?.login;
 
@@ -47,8 +45,6 @@ export function MissionActions({
       setRequest({ kind: "idle" });
       if (onStatusChange !== undefined) {
         onStatusChange(missionId, patch);
-      } else {
-        router.refresh();
       }
     } catch {
       setRequest({ kind: "error", message: "Network error — try again." });
