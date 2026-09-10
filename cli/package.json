@@ -12,6 +12,11 @@
     "build": "tsc --project tsconfig.json",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests",
+    "test:live": "vitest run src/live-integration.test.ts",
+    "test:chaos": "vitest run src/chaos.test.ts",
+    "bench": "vitest bench --config vitest.bench.config.ts --run",
+    "bench:compare": "vitest bench --config vitest.bench.config.ts --run --compare ./benchmark-baseline.json",
+    "bench:update": "vitest bench --config vitest.bench.config.ts --run --update",
     "typecheck:tests": "tsc --noEmit --project tsconfig.eslint.json"
   },
   "dependencies": {
@@ -19,7 +24,8 @@
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "fast-check": "^3.15.0",
     "typescript": "^5.5.0",
-    "vitest": "^2.0.0"
+    "vitest": "^2.1.9"
   }
 }
