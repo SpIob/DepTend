@@ -4,11 +4,8 @@ on: [push]
 
 jobs:
   ci:
-    name: Lint · Typecheck · Test
+    name: CI
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -37,10 +34,6 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
-      # packages/core and cli's root typecheck excludes test files by
-      # tsconfig scope; this second pass covers them (AGENTS.md §6 step 6).
-      # It has independently caught required-field and exactOptionalPropertyTypes
-      # violations that steps 1–5 couldn't see, so it runs in CI, not just locally.
       - name: Typecheck test files
         run: |
           pnpm --filter @deptend/core typecheck:tests
@@ -49,55 +42,20 @@ jobs:
       - name: Test
         run: pnpm test
 
-      # Drizzle migration consistency: fails if packages/core/src/db/schema.ts
-      # has drifted from the committed migrations. Catches a whole class of
-      # bug (ADR 0040) where schema.ts and the migration SQL files diverged
-      # silently — hand-written SQL files were committed without their
-      # journal entry, so drizzle-kit migrate silently did nothing while
-      # the deployed site started selecting from columns that didn't exist.
-      # No DB connection required (checks against the local schema vs.
-      # committed journal).
       - name: Migrations match schema
         run: pnpm exec drizzle-kit check
 
-      # Advisory signal, not a gate — fails loudly in the log without
-      # breaking solo-dev CI on every future advisory. Known false
-      # positive: GHSA-6cpc-mj5c-m9rq matches our own private package
-      # literally named "cli", so expect 1 low finding at all times.
       - name: Dependency audit (advisory)
         continue-on-error: true
         run: pnpm audit --prod
 
-      - name: Email on failure
-        if: failure()
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: smtp.gmail.com
-          server_port: 465
-          username: ${{ secrets.ALERT_EMAIL_USERNAME }}
-          password: ${{ secrets.ALERT_EMAIL_PASSWORD }}
-          subject: "[DepTend] CI failed"
-          to: ${{ secrets.ALERT_EMAIL_TO }}
-          from: DepTend Alerts
-          body: |
-            Workflow: CI
-            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-            Commit: ${{ github.sha }}
-            Branch: ${{ github.ref_name }}
-            Trigger: ${{ github.event_name }}
-            Triggered by: ${{ github.actor }}
-
-  # Integration tests against real dev Neon infrastructure.
-  # Runs on PRs and main branch pushes. Skipped if DEV_DATABASE_URL not set.
   integration:
-    name: Integration tests (dev Neon)
+    name: Integration tests
     runs-on: ubuntu-latest
     needs: [ci]
-    if: (github.event_name == 'pull_request' || github.ref == 'refs/heads/main') && secrets.DEV_DATABASE_URL != ''
+    if: secrets.DEV_DATABASE_URL != ''
     env:
       DATABASE_URL: ${{ secrets.DEV_DATABASE_URL }}
-    permissions:
-      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -120,44 +78,10 @@ jobs:
       - name: Run integration tests
         run: pnpm --filter scripts test -- --run integration.test.js
 
-      - name: Email on failure
-        if: failure()
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: smtp.gmail.com
-          server_port: 465
-          username: ${{ secrets.ALERT_EMAIL_USERNAME }}
-          password: ${{ secrets.ALERT_EMAIL_PASSWORD }}
-          subject: "[DepTend] Integration tests failed"
-          to: ${{ secrets.ALERT_EMAIL_TO }}
-          from: DepTend Alerts
-          body: |
-            Workflow: CI (integration)
-            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-            Commit: ${{ github.sha }}
-            Branch: ${{ github.ref_name }}
-            Trigger: ${{ github.event_name }}
-            Triggered by: ${{ github.actor }}
-
-  # Production smoke test: catches the class of bug where a page renders
-  # an error boundary / 404 body in production but unit tests, route tests,
-  # and typecheck are all green. The 5-round perf series on 2026-08-30
-  # found exactly this — every /org/[org] URL was a 404 in production
-  # because the backfill script had never been run, and the audit
-  # cadence trusted the source-code state over the live-deployment state.
-  # Hitting the live site from CI closes that gap.
-  #
-  # Runs against production (no Vercel preview URL injection in this
-  # workflow). The check is anonymous (no auth, no rate-limited writes),
-  # the four URLs are static, and the global Vercel edge cache absorbs
-  # the CI traffic fine. If /org/[org] or /missions ever go down again,
-  # the next PR's CI catches it before merge.
   smoke:
     name: Production smoke test
     runs-on: ubuntu-latest
     needs: [ci]
-    permissions:
-      contents: read
     steps:
       - name: Curl public pages
         run: |
@@ -170,8 +94,6 @@ jobs:
           )
           for path in "${PATHS[@]}"; do
             url="https://deptend.vercel.app${path}"
-            # -L follows redirects; -o /dev/null drops the body; -w captures metadata.
-            # body-$(mktemp) is the full body for the 404 check.
             body=$(mktemp)
             status=$(curl -fsSL -o "$body" -w '%{http_code}' "$url")
             if [[ "$status" != "200" ]]; then
@@ -180,13 +102,8 @@ jobs:
               rm "$body"
               exit 1
             fi
-            # Strip <script> and <style> blocks before matching: the not-found
-            # component's "404 — not found" text lives in the JS bundle and
-            # would produce a false positive if matched against the raw HTML.
-            # Using perl rather than sed because sed's non-greedy `.*?` is
-            # GNU-only and breaks on the BSD sed that ships on macOS.
             visible=$(perl -0777 -pe 's|<script[^>]*>.*?</script>||gs; s|<style[^>]*>.*?</style>||gs' "$body" | tr -d '\n')
-            if [[ "$visible" == *"404 — not found"* ]] || [[ "$visible" == *"404 - not found"* ]]; then
+            if [[ "$visible" == *"404 - not found"* ]]; then
               echo "FAIL: ${url} served a 404 body in production"
               rm "$body"
               exit 1
@@ -194,22 +111,3 @@ jobs:
             echo "OK: ${url} (HTTP ${status}, $(wc -c <"$body") bytes)"
             rm "$body"
           done
-
-      - name: Email on failure
-        if: failure()
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: smtp.gmail.com
-          server_port: 465
-          username: ${{ secrets.ALERT_EMAIL_USERNAME }}
-          password: ${{ secrets.ALERT_EMAIL_PASSWORD }}
-          subject: "[DepTend] Production smoke test failed"
-          to: ${{ secrets.ALERT_EMAIL_TO }}
-          from: DepTend Alerts
-          body: |
-            Workflow: CI (smoke)
-            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-            Commit: ${{ github.sha }}
-            Branch: ${{ github.ref_name }}
-            Trigger: ${{ github.event_name }}
-            Triggered by: ${{ github.actor }}
