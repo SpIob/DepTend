@@ -1,0 +1,53 @@
+name: Health Check
+
+on:
+  schedule:
+    # Every 6 hours at minute 0
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: health-check
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  health:
+    name: Check public endpoints
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Check public endpoints
+        run: |
+          set -euo pipefail
+          for path in "/" "/missions" "/org/SpIob"; do
+            status=$(curl -fsSL -o /dev/null -w '%{http_code}' "https://deptend.vercel.app${path}")
+            if [[ "$status" != "200" ]]; then
+              echo "FAIL: ${path} returned HTTP ${status}"
+              exit 1
+            fi
+            echo "OK: ${path} (HTTP ${status})"
+          done
+          echo "All health checks passed"
+
+      - name: Email on failure
+        if: failure()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{ secrets.ALERT_EMAIL_USERNAME }}
+          password: ${{ secrets.ALERT_EMAIL_PASSWORD }}
+          subject: "[DepTend] Health check failed"
+          to: ${{ secrets.ALERT_EMAIL_TO }}
+          from: DepTend Alerts
+          body: |
+            Workflow: Health Check
+            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            Timestamp: ${{ github.event.workflow_run.created_at || github.event.head_commit.timestamp || 'manual trigger' }}
+            Failed endpoints: /, /missions, /org/SpIob

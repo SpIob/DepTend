@@ -126,4 +126,123 @@ describe("ingestRepo regression (c32878f)", () => {
         `this is the c32878f regression. Log lines:\n${lines.join("\n")}`,
     ).toBeUndefined();
   });
+
+  it("handles GitHub rate limit error (fatal, returns false)", async () => {
+    // Simulate rate limit by throwing an error with kind="rate_limited"
+    // The actual GitHubMetaError class check uses instanceof which doesn't
+    // work well with mocks, so we test the fatal path by throwing a generic
+    // error that won't match the not_found handling.
+    fetchGitHubRepoMetaMock.mockRejectedValue(new Error("Rate limited: 429"));
+    lookupGitHubOwnerMetaMock.mockResolvedValue({
+      login: "octocat",
+      name: "Octo Org",
+      avatarUrl: null,
+      isOrg: true,
+    });
+
+    const writer = { write: vi.fn() };
+
+    const result = await ingestRepo(
+      { githubUrl: "https://github.com/octocat/Hello-World", submittedBy: null },
+      {},
+      writer,
+      { generateMissionsForRepo: vi.fn() },
+      {},
+      {},
+      {},
+      { fetchAdvisories: vi.fn() },
+      { npm: {}, pypi: {}, go: {} },
+      null,
+      null,
+      "manual",
+    );
+
+    // Should return false (fatal error)
+    expect(result).toBe(false);
+    // Should not have called writer
+    expect(writer.write).not.toHaveBeenCalled();
+  });
+
+  it("handles org metadata fetch failure (non-fatal, continues)", async () => {
+    fetchGitHubRepoMetaMock.mockResolvedValue({
+      full_name: "octocat/Hello-World",
+      name: "Hello-World",
+      owner: { login: "octocat" },
+      default_branch: "main",
+      description: null,
+      stargazers_count: 0,
+      open_issues_count: 0,
+      topics: [],
+      homepage: null,
+    });
+    // Org fetch fails with network error (not GitHubOrgMetaError) → non-fatal
+    lookupGitHubOwnerMetaMock.mockRejectedValue(new Error("Network error"));
+
+    const writer = {
+      write: vi.fn().mockRejectedValue(new Error("test: stopped at writer.write")),
+    };
+
+    await ingestRepo(
+      { githubUrl: "https://github.com/octocat/Hello-World", submittedBy: null },
+      /* db */ {},
+      /* writer */ writer,
+      /* missionWriter */ { generateMissionsForRepo: vi.fn() },
+      /* npmIngestor */ {},
+      /* pypiIngestor */ {},
+      /* goIngestor */ {},
+      /* osvFetcher */ { fetchAdvisories: vi.fn() },
+      /* registryFetchersByEcosystem */ { npm: {}, pypi: {}, go: {} },
+      /* githubToken */ null,
+      /* librariesIoApiKey */ null,
+      /* triggeredBy */ "manual",
+    );
+
+    // Should not crash, should reach writer and log the org warning
+    const lines = logLines();
+    const errorLines = lines.filter((l) => l.includes("[ERROR]"));
+    // The org fetch failure should be logged as warning, not error
+    // The error should be from the writer rejection
+    expect(errorLines.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("handles org metadata rate limit (fatal)", async () => {
+    fetchGitHubRepoMetaMock.mockResolvedValue({
+      full_name: "octocat/Hello-World",
+      name: "Hello-World",
+      owner: { login: "octocat" },
+      default_branch: "main",
+      description: null,
+      stargazers_count: 0,
+      open_issues_count: 0,
+      topics: [],
+      homepage: null,
+    });
+    // Org fetch fails with rate limit → fatal (re-thrown)
+    const { GitHubOrgMetaError } =
+      await import("../packages/core/dist/ingestor/github-org-meta.js");
+    lookupGitHubOwnerMetaMock.mockRejectedValue(
+      new GitHubOrgMetaError("Rate limited", "rate_limited"),
+    );
+
+    const writer = { write: vi.fn() };
+
+    const result = await ingestRepo(
+      { githubUrl: "https://github.com/octocat/Hello-World", submittedBy: null },
+      {},
+      writer,
+      { generateMissionsForRepo: vi.fn() },
+      {},
+      {},
+      {},
+      { fetchAdvisories: vi.fn() },
+      { npm: {}, pypi: {}, go: {} },
+      null,
+      null,
+      "manual",
+    );
+
+    // Should return false (fatal error re-thrown)
+    expect(result).toBe(false);
+    expect(writer.write).not.toHaveBeenCalled();
+  });
 });

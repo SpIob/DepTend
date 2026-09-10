@@ -17,6 +17,11 @@ on:
         required: false
         type: string
         default: "manual"
+      send_test_email:
+        description: "Send a test email to verify SMTP config (ignored on cron runs)"
+        required: false
+        type: boolean
+        default: false
 
 # One ingestion run at a time. Overlapping cron/dispatch runs both select
 # the same pending repos, and MissionWriter's check-then-insert has no DB
@@ -28,8 +33,9 @@ concurrency:
   group: ingest
   cancel-in-progress: false
 
-# Least privilege — checkout + authenticated reads of public repos via
-# github.token are all the job needs (no writes to repo state).
+# Least privilege — checkout + authenticated reads of public repos via a
+# PAT with public_repo scope (GH_INGEST_TOKEN) are all the job needs.
+# The auto-injected github.token only accesses this repository.
 permissions:
   contents: read
 
@@ -43,13 +49,13 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@a7487c7e89a1bdf49e1f3899f51c77a5c6d5b5d1
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af
         with:
           node-version: 24
           cache: pnpm
@@ -60,10 +66,29 @@ jobs:
       - name: Build shared packages
         run: pnpm --filter @deptend/core build
 
-      - name: Run ingestion
+      - name: Send test email (manual trigger only)
+        if: github.event_name == 'workflow_dispatch' && inputs.send_test_email == 'true'
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{ secrets.ALERT_EMAIL_USERNAME }}
+          password: ${{ secrets.ALERT_EMAIL_PASSWORD }}
+          subject: "[DepTend] Test email — SMTP config verified"
+          to: ${{ secrets.ALERT_EMAIL_TO }}
+          from: DepTend Alerts
+          body: |
+            This is a test email from the DepTend ingestion workflow.
+            If you received this, the Gmail SMTP configuration is working correctly.
+
+            Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            Triggered by: ${{ github.actor }}
+            Timestamp: ${{ github.event.workflow_dispatch.inputs.triggered_by }}
+
+      - name: Run ingestion with retry
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          GITHUB_TOKEN: ${{ github.token }}
+          GH_INGEST_TOKEN: ${{ secrets.GH_INGEST_TOKEN }}
           LIBRARIES_IO_API_KEY: ${{ secrets.LIBRARIES_IO_API_KEY }}
           # Routed through env: instead of direct ${{ inputs.* }} interpolation
           # in the run block — the standard mitigation for Actions script
@@ -71,15 +96,53 @@ jobs:
           INPUT_REPO_ID: ${{ inputs.repo_id }}
           INPUT_TRIGGERED_BY: ${{ inputs.triggered_by }}
         run: |
-          if [ -n "$INPUT_REPO_ID" ]; then
-            node scripts/ingest.js --repo-id "$INPUT_REPO_ID" --triggered-by "$INPUT_TRIGGERED_BY"
-          else
-            node scripts/ingest.js --triggered-by cron
-          fi
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if node scripts/ingest.js \
+                 ${INPUT_REPO_ID:+--repo-id "$INPUT_REPO_ID"} \
+                 --triggered-by "$INPUT_TRIGGERED_BY"; then
+              exit 0
+            fi
+            echo "Attempt $attempt failed, retrying in 30s..."
+            sleep 30
+          done
+          exit 1
+
+      - name: Post-ingestion smoke test
+        if: always()
+        run: |
+          set -euo pipefail
+          for path in "/" "/missions" "/org/SpIob"; do
+            status=$(curl -fsSL -o /dev/null -w '%{http_code}' "https://deptend.vercel.app${path}")
+            if [[ "$status" != "200" ]]; then
+              echo "FAIL: ${path} returned HTTP ${status}"
+              exit 1
+            fi
+          done
+          echo "All smoke checks passed"
 
       - name: Report failure
         if: failure()
         run: |
-          echo "::error::Ingestion run failed — see the 'Run ingestion' step above for details."
+          echo "::error::Ingestion run failed — see the 'Run ingestion with retry' step above for details."
           echo "## ❌ Ingestion failed" >> "$GITHUB_STEP_SUMMARY"
-          echo "Check the **Run ingestion** step log for the error." >> "$GITHUB_STEP_SUMMARY"
+          echo "Check the **Run ingestion with retry** step log for the error." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Email on failure
+        if: failure()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{ secrets.ALERT_EMAIL_USERNAME }}
+          password: ${{ secrets.ALERT_EMAIL_PASSWORD }}
+          subject: "[DepTend] Ingestion failed"
+          to: ${{ secrets.ALERT_EMAIL_TO }}
+          from: DepTend Alerts
+          body: |
+            Workflow: Ingest
+            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            Commit: ${{ github.sha }}
+            Branch: ${{ github.ref_name }}
+            Trigger: ${{ github.event_name }}
+            Triggered by: ${{ github.actor }}

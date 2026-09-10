@@ -19,13 +19,13 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@a7487c7e89a1bdf49e1f3899f51c77a5c6d5b5d1
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af
         with:
           node-version: 24
           cache: pnpm
@@ -75,6 +75,77 @@ jobs:
       - name: Dependency audit (advisory)
         continue-on-error: true
         run: pnpm audit --prod
+
+      - name: Email on failure
+        if: failure()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{ secrets.ALERT_EMAIL_USERNAME }}
+          password: ${{ secrets.ALERT_EMAIL_PASSWORD }}
+          subject: "[DepTend] CI failed"
+          to: ${{ secrets.ALERT_EMAIL_TO }}
+          from: DepTend Alerts
+          body: |
+            Workflow: CI
+            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            Commit: ${{ github.sha }}
+            Branch: ${{ github.ref_name }}
+            Trigger: ${{ github.event_name }}
+            Triggered by: ${{ github.actor }}
+
+  # Integration tests against real dev Neon infrastructure.
+  # Runs on PRs and main branch pushes. Skipped if DEV_DATABASE_URL not set.
+  integration:
+    name: Integration tests (dev Neon)
+    runs-on: ubuntu-latest
+    needs: [ci]
+    if: (github.event_name == 'pull_request' || github.ref == 'refs/heads/main') && secrets.DEV_DATABASE_URL != ''
+    env:
+      DATABASE_URL: ${{ secrets.DEV_DATABASE_URL }}
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@a7487c7e89a1bdf49e1f3899f51c77a5c6d5b5d1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared packages
+        run: pnpm --filter @deptend/core build
+
+      - name: Run integration tests
+        run: pnpm --filter scripts test -- --run integration.test.js
+
+      - name: Email on failure
+        if: failure()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{ secrets.ALERT_EMAIL_USERNAME }}
+          password: ${{ secrets.ALERT_EMAIL_PASSWORD }}
+          subject: "[DepTend] Integration tests failed"
+          to: ${{ secrets.ALERT_EMAIL_TO }}
+          from: DepTend Alerts
+          body: |
+            Workflow: CI (integration)
+            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            Commit: ${{ github.sha }}
+            Branch: ${{ github.ref_name }}
+            Trigger: ${{ github.event_name }}
+            Triggered by: ${{ github.actor }}
 
   # Production smoke test: catches the class of bug where a page renders
   # an error boundary / 404 body in production but unit tests, route tests,
@@ -131,3 +202,22 @@ jobs:
             echo "OK: ${url} (HTTP ${status}, $(wc -c <"$body") bytes)"
             rm "$body"
           done
+
+      - name: Email on failure
+        if: failure()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{ secrets.ALERT_EMAIL_USERNAME }}
+          password: ${{ secrets.ALERT_EMAIL_PASSWORD }}
+          subject: "[DepTend] Production smoke test failed"
+          to: ${{ secrets.ALERT_EMAIL_TO }}
+          from: DepTend Alerts
+          body: |
+            Workflow: CI (smoke)
+            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            Commit: ${{ github.sha }}
+            Branch: ${{ github.ref_name }}
+            Trigger: ${{ github.event_name }}
+            Triggered by: ${{ github.actor }}

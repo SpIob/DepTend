@@ -87,12 +87,7 @@ import {
   lookupGitHubOwnerMeta,
   GitHubOrgMetaError,
 } from "../packages/core/dist/ingestor/github-org-meta.js";
-import {
-  REGISTRY_FETCHERS_BY_ECOSYSTEM,
-  NpmRegistryFetcher,
-  PyPIRegistryFetcher,
-  GoRegistryFetcher,
-} from "../packages/core/dist/pipeline/registry-fetchers.js";
+import { REGISTRY_FETCHERS_BY_ECOSYSTEM } from "../packages/core/dist/pipeline/registry-fetchers.js";
 import { buildSourceRepoByPackage } from "../packages/core/dist/pipeline/source-repo-extraction.js";
 import { GITHUB_TOKEN_WARNING } from "../packages/core/dist/pipeline/github-token-warning.js";
 import { parseGithubUrl } from "../packages/core/dist/pipeline/parse-github-url.js";
@@ -118,7 +113,7 @@ async function main() {
     fatal("DATABASE_URL environment variable is not set.");
   }
 
-  const githubToken = process.env["GITHUB_TOKEN"];
+  const githubToken = process.env["GH_INGEST_TOKEN"];
   if (!githubToken) {
     log("warn", GITHUB_TOKEN_WARNING);
   }
@@ -193,17 +188,6 @@ async function main() {
   const pypiIngestor = new PyPIIngestor();
   const goIngestor = new GoIngestor();
   const osvFetcher = new OsvFetcher();
-  // Keyed by Ecosystem value, not a chain of ternaries — a future
-  // ecosystem missing an entry here fails loudly (see the lookup in
-  // ingestRepo below), not silently via a wrong fall-through. JS has no
-  // compile-time exhaustiveness check the way osv.ts's
-  // Record<Ecosystem, ...> maps get from TypeScript, so the runtime guard
-  // at the lookup site is this file's equivalent safety net.
-  const registryFetchersByEcosystem = {
-    npm: new NpmRegistryFetcher(),
-    pypi: new PyPIRegistryFetcher(),
-    go: new GoRegistryFetcher(),
-  };
 
   let failCount = 0;
 

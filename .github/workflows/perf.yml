@@ -25,7 +25,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       # Install Chromium for Lighthouse. The Playwright-provided
       # chrome-headless-shell binary is the smallest viable download
@@ -108,8 +108,27 @@ jobs:
           fi
 
       - name: Upload Lighthouse artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882
         with:
           name: lighthouse-${{ github.run_id }}
           path: reports/perf/
           retention-days: 90
+
+      - name: Email on failure
+        if: failure()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{ secrets.ALERT_EMAIL_USERNAME }}
+          password: ${{ secrets.ALERT_EMAIL_PASSWORD }}
+          subject: "[DepTend] Performance audit failed"
+          to: ${{ secrets.ALERT_EMAIL_TO }}
+          from: DepTend Alerts
+          body: |
+            Workflow: Weekly performance audit
+            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            Commit: ${{ github.sha }}
+            Branch: ${{ github.ref_name }}
+            Trigger: ${{ github.event_name }}
+            Triggered by: ${{ github.actor }}
