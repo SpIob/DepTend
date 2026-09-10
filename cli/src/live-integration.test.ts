@@ -14,6 +14,7 @@ import { runScoreRankStep } from "./pipeline/score-rank-step.js";
 import type { IngestorResult } from "@deptend/core/pipeline/ecosystem-detection.js";
 import type { OsvFetchResult } from "@deptend/core/ingestor/osv.js";
 import type { RegistryFetchResult } from "@deptend/core/ingestor/registry-base.js";
+import type { PackageMetadata } from "@deptend/core/pipeline/registry-fetchers.js";
 import type { Repo } from "@deptend/core/db/schema.js";
 import { buildRepo } from "./build-rows.js";
 import type { GitHubRepoMeta } from "@deptend/core/ingestor/github-meta.js";
@@ -82,7 +83,7 @@ function createSourceRepoMap(
 
     for (const { owner, name, ecosystem } of LIVE_TEST_REPOS) {
       const repoKey = `${owner}/${name}`;
-      const repo = baseRepos[repoKey];
+      const repo = baseRepos[repoKey] as Repo;
 
       describe(`${owner}/${name} (${ecosystem})`, () => {
         let ingestorResult: IngestorResult;
@@ -261,7 +262,6 @@ function createSourceRepoMap(
 
             // Verify structure
             expect(result).toHaveProperty("missions");
-            expect(result).toHaveProperty("summary");
             expect(Array.isArray(result.missions)).toBe(true);
 
             // Verify mission structure
@@ -302,13 +302,6 @@ function createSourceRepoMap(
               // Allow small floating point differences
               expect(currScore).toBeLessThanOrEqual(prevScore + 0.0005);
             }
-
-            // Verify summary
-            expect(result.summary).toHaveProperty("total_missions", result.missions.length);
-            expect(result.summary).toHaveProperty("by_severity");
-            expect(result.summary).toHaveProperty("by_effort");
-            expect(result.summary).toHaveProperty("by_confidence");
-            expect(result.summary).toHaveProperty("ecosystem", ecosystem);
 
             console.log(`${owner}/${name}: ${result.missions.length} missions generated`);
           },

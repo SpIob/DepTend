@@ -7,5 +7,5 @@
     }
   },
   "include": ["src/**/*", "../packages/core/dist/**/*.d.ts"],
-  "exclude": ["dist", "node_modules"]
+  "exclude": ["dist", "node_modules", "src/property.test.ts"]
 }

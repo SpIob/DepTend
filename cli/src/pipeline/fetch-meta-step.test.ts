@@ -71,7 +71,7 @@ describe("runFetchMetaStep", () => {
   });
 
   it("handles 403 (rate limited, no token)", async () => {
-    vi.stubGlobal("fetch", async (input) => {
+    vi.stubGlobal("fetch", async (input: string | URL | Request) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
       if (url.includes("api.github.com/repos/owner/repo")) {
         return new Response(JSON.stringify({ message: "API rate limit exceeded" }), {
@@ -86,7 +86,7 @@ describe("runFetchMetaStep", () => {
 
   it("handles network errors (non-retryable 400 response)", async () => {
     let callCount = 0;
-    vi.stubGlobal("fetch", async (input) => {
+    vi.stubGlobal("fetch", async (input: string | URL | Request) => {
       callCount++;
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
       // Match the exact URL pattern used by fetchGitHubRepoMeta
@@ -103,10 +103,11 @@ describe("runFetchMetaStep", () => {
 
   it("passes githubToken to fetch call", async () => {
     let capturedToken: string | null = null;
-    vi.stubGlobal("fetch", async (input, init) => {
+    vi.stubGlobal("fetch", async (input: string | URL | Request, init?: RequestInit) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
       if (url === "https://api.github.com/repos/owner/repo") {
-        const auth = init?.headers?.["Authorization"] || init?.headers?.["authorization"];
+        const headers = init?.headers as Record<string, string> | undefined;
+        const auth = headers?.["Authorization"] || headers?.["authorization"];
         capturedToken = auth?.replace("Bearer ", "") ?? null;
         return new Response(
           JSON.stringify({
@@ -133,10 +134,11 @@ describe("runFetchMetaStep", () => {
 
   it("does not send Authorization header when token is null", async () => {
     let hasAuth = false;
-    vi.stubGlobal("fetch", async (input, init) => {
+    vi.stubGlobal("fetch", async (input: string | URL | Request, init?: RequestInit) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
       if (url === "https://api.github.com/repos/owner/repo") {
-        hasAuth = !!(init?.headers?.["Authorization"] || init?.headers?.["authorization"]);
+        const headers = init?.headers as Record<string, string> | undefined;
+        hasAuth = !!(headers?.["Authorization"] || headers?.["authorization"]);
         return new Response(
           JSON.stringify({
             full_name: "owner/repo",

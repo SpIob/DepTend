@@ -31,11 +31,24 @@ describe("Property-based tests", () => {
   // Arbitraries for test data generation
   // ============================================================
 
-  const ecosystemArb = fc.constantFrom("npm", "pypi", "go");
+  // Use fc.oneof with fc.constant to get proper literal types for exactOptionalPropertyTypes
+  const ecosystemArb = fc.oneof(fc.constant("npm"), fc.constant("pypi"), fc.constant("go"));
 
-  const depTypeArb = fc.constantFrom("production", "development", "peer", "optional", "transitive");
+  const depTypeArb = fc.oneof(
+    fc.constant("production"),
+    fc.constant("development"),
+    fc.constant("peer"),
+    fc.constant("optional"),
+    fc.constant("transitive"),
+  );
 
-  const severityArb = fc.constantFrom("critical", "high", "medium", "low", "unknown");
+  const severityArb = fc.oneof(
+    fc.constant("critical"),
+    fc.constant("high"),
+    fc.constant("medium"),
+    fc.constant("low"),
+    fc.constant("unknown"),
+  );
 
   const packageNameArb = fc
     .string({
@@ -62,13 +75,15 @@ describe("Property-based tests", () => {
   const arbitraryDependency = fc.record({
     package_name: packageNameArb,
     version_spec: versionSpecArb,
-    dep_type: depTypeArb,
+    dep_type: depTypeArb as fc.Arbitrary<
+      "production" | "development" | "peer" | "optional" | "transitive"
+    >,
     resolved_version: fc.option(fc.constantFrom(null, "1.0.0", "v1.0.0")),
     is_transitive: fc.boolean(),
   });
 
   const _arbitraryIngestorResult: fc.Arbitrary<IngestorResult> = fc.record({
-    ecosystem: ecosystemArb,
+    ecosystem: ecosystemArb as fc.Arbitrary<"npm" | "pypi" | "go">,
     dependencies: fc.array(arbitraryDependency, { minLength: 0, maxLength: 20 }),
     lock_file_present: fc.boolean(),
     lock_file_parsed: fc.boolean(),
@@ -82,7 +97,24 @@ describe("Property-based tests", () => {
   const _arbitraryOsvId = fc
     .string({ minLength: 1, maxLength: 30 })
     .filter((s) => /^[A-Z0-9-]+$/.test(s));
-  const _arbitraryOsvAdvisory = (osvId) =>
+  const _arbitraryOsvAdvisory = (
+    osvId: string,
+  ): fc.Arbitrary<{
+    osvId: string;
+    source: "ghsa" | "osv";
+    ecosystem: "npm" | "pypi" | "go";
+    packageName: string;
+    severity: "critical" | "high" | "medium" | "low" | "unknown";
+    cvssScore: number;
+    epssScore: number | undefined;
+    summary: string;
+    details: string | undefined;
+    affectedVersions: string[];
+    fixedVersion: string;
+    publishedAt: Date;
+    modifiedAt: Date;
+    rawData: object;
+  }> =>
     fc.record({
       osvId,
       source: fc.constantFrom("ghsa", "osv"),
@@ -202,7 +234,7 @@ describe("Property-based tests", () => {
             };
 
             // Mock fetch to return our arbitrary data
-            vi.stubGlobal("fetch", async (input) => {
+            vi.stubGlobal("fetch", async (input: string | URL | Request) => {
               const url =
                 typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
               if (url.includes("api.osv.dev/v1/querybatch")) {
@@ -269,7 +301,7 @@ describe("Property-based tests", () => {
       await fc.assert(
         fc.asyncProperty(
           fc.record({
-            ecosystem: ecosystemArb,
+            ecosystem: ecosystemArb as fc.Arbitrary<"npm" | "pypi" | "go">,
             warnings: fc.array(fc.string({ minLength: 1, maxLength: 100 }), {
               minLength: 0,
               maxLength: 5,
@@ -313,7 +345,7 @@ describe("Property-based tests", () => {
             }));
 
             let batchCallCount = 0;
-            vi.stubGlobal("fetch", async (input) => {
+            vi.stubGlobal("fetch", async (input: string | URL | Request) => {
               const url =
                 typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
               if (url.includes("api.osv.dev/v1/querybatch")) {
@@ -345,7 +377,7 @@ describe("Property-based tests", () => {
 
   describe("runScoreRankStep - scoring and ranking invariants", () => {
     const mockGitHubReleases = async (releases: { tag_name: string; body: string }[]) => {
-      vi.stubGlobal("fetch", async (input) => {
+      vi.stubGlobal("fetch", async (input: string | URL | Request) => {
         const url =
           typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
         if (url.includes("api.github.com/repos/") && url.includes("/releases")) {

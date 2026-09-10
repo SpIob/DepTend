@@ -76,7 +76,7 @@ describe("runFetchParallelStep", () => {
     });
 
     it("handles npm registry API failure gracefully", async () => {
-      vi.stubGlobal("fetch", async (input) => {
+      vi.stubGlobal("fetch", async (input: string | URL | Request) => {
         const url =
           typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
         if (url.includes("api.osv.dev/v1/querybatch")) {
@@ -207,7 +207,7 @@ describe("runFetchParallelStep", () => {
       };
 
       let batchCallCount = 0;
-      vi.stubGlobal("fetch", async (input) => {
+      vi.stubGlobal("fetch", async (input: string | URL | Request) => {
         const url =
           typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
         if (url.includes("api.osv.dev/v1/querybatch")) {
@@ -261,7 +261,7 @@ describe("runFetchParallelStep", () => {
 
       // OSV batch returns one result per query (in order of queries)
       // Each query is for a unique package name
-      vi.stubGlobal("fetch", async (input) => {
+      vi.stubGlobal("fetch", async (input: string | URL | Request) => {
         const url =
           typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
         if (url.includes("api.osv.dev/v1/querybatch")) {

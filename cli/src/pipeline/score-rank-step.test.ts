@@ -88,7 +88,7 @@ describe("runScoreRankStep", () => {
   };
 
   const baseSourceRepoByPackage = new Map<string, PackageMetadata["sourceRepo"] | null>([
-    ["vulnerable-pkg", { host: "github.com", owner: "vulnerable-org", name: "vulnerable-pkg" }],
+    ["vulnerable-pkg", { owner: "vulnerable-org", name: "vulnerable-pkg" }],
   ]);
 
   beforeEach(() => {
@@ -101,7 +101,7 @@ describe("runScoreRankStep", () => {
 
   it("produces a ranked mission for a single vulnerable dependency", async () => {
     // Mock GitHub releases - empty = no signals found (but source was available)
-    vi.stubGlobal("fetch", async (input) => {
+    vi.stubGlobal("fetch", async (input: string | URL | Request) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
       if (url.includes("api.github.com/repos/vulnerable-org/vulnerable-pkg/releases")) {
         return new Response(JSON.stringify([]), { status: 200 });
@@ -147,7 +147,7 @@ describe("runScoreRankStep", () => {
       lock_file_parsed: false,
     };
 
-    vi.stubGlobal("fetch", async (input) => {
+    vi.stubGlobal("fetch", async (input: string | URL | Request) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
       if (url.includes("api.github.com/repos/")) {
         return new Response(JSON.stringify([]), { status: 200 });
@@ -177,7 +177,7 @@ describe("runScoreRankStep", () => {
       warnings: ["npm registry rate limited"],
     };
 
-    vi.stubGlobal("fetch", async (input) => {
+    vi.stubGlobal("fetch", async (input: string | URL | Request) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
       if (url.includes("api.github.com/repos/")) {
         return new Response(JSON.stringify([]), { status: 200 });
@@ -204,7 +204,7 @@ describe("runScoreRankStep", () => {
       // Version range: floor="1.0.0" (from ^1.0.0), target="1.0.1" (fixedVersion)
       // Releases in range: > 1.0.0 and <= 1.0.1
       // The signal extraction captures bullet points in "## Breaking Changes" section as-is
-      vi.stubGlobal("fetch", async (input) => {
+      vi.stubGlobal("fetch", async (input: string | URL | Request) => {
         const url =
           typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
         if (url.includes("api.github.com/repos/vulnerable-org/vulnerable-pkg/releases")) {
@@ -247,7 +247,7 @@ describe("runScoreRankStep", () => {
     });
 
     it("handles missing source repo gracefully (source_available = false)", async () => {
-      vi.stubGlobal("fetch", async (input) => {
+      vi.stubGlobal("fetch", async (input: string | URL | Request) => {
         const url =
           typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
         if (url.includes("api.github.com/repos/")) {
@@ -294,7 +294,7 @@ describe("runScoreRankStep", () => {
     it("handles GitHub releases pagination", async () => {
       // Page 1 has v1.0.2 (newer than target 1.0.1 - skipped) and v1.0.1 (in range, has breaking change)
       // Page 2 has v1.0.0 (at floor - stops pagination)
-      vi.stubGlobal("fetch", async (input) => {
+      vi.stubGlobal("fetch", async (input: string | URL | Request) => {
         const url =
           typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
         if (url.includes("api.github.com/repos/vulnerable-org/vulnerable-pkg/releases")) {
@@ -341,7 +341,7 @@ describe("runScoreRankStep", () => {
     });
 
     it("handles GitHub API 404 (repo not found or no releases)", async () => {
-      vi.stubGlobal("fetch", async (input) => {
+      vi.stubGlobal("fetch", async (input: string | URL | Request) => {
         const url =
           typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
         if (url.includes("api.github.com/repos/")) {
@@ -370,7 +370,7 @@ describe("runScoreRankStep", () => {
 
     it("handles releases with no breaking changes in range", async () => {
       // Release at v1.0.1 but no breaking changes in body
-      vi.stubGlobal("fetch", async (input) => {
+      vi.stubGlobal("fetch", async (input: string | URL | Request) => {
         const url =
           typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
         if (url.includes("api.github.com/repos/vulnerable-org/vulnerable-pkg/releases")) {
@@ -504,7 +504,7 @@ describe("runScoreRankStep", () => {
         warnings: [],
       };
 
-      vi.stubGlobal("fetch", async (input) => {
+      vi.stubGlobal("fetch", async (input: string | URL | Request) => {
         const url =
           typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
         if (url.includes("api.github.com/repos/")) {
@@ -628,7 +628,7 @@ describe("runScoreRankStep", () => {
         warnings: [],
       };
 
-      vi.stubGlobal("fetch", async (input) => {
+      vi.stubGlobal("fetch", async (input: string | URL | Request) => {
         const url =
           typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
         if (url.includes("api.github.com/repos/")) {
@@ -660,7 +660,7 @@ describe("runScoreRankStep", () => {
   describe("confidence levels", () => {
     it("sets confidence to medium when lock file present AND breaking changes available", async () => {
       // Return releases with breaking changes so source_available = true
-      vi.stubGlobal("fetch", async (input) => {
+      vi.stubGlobal("fetch", async (input: string | URL | Request) => {
         const url =
           typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
         if (url.includes("api.github.com/repos/vulnerable-org/vulnerable-pkg/releases")) {
@@ -710,7 +710,7 @@ describe("runScoreRankStep", () => {
         lock_file_parsed: false,
       };
 
-      vi.stubGlobal("fetch", async (input) => {
+      vi.stubGlobal("fetch", async (input: string | URL | Request) => {
         const url =
           typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
         if (url.includes("api.github.com/repos/")) {
@@ -733,7 +733,7 @@ describe("runScoreRankStep", () => {
     });
 
     it("sets confidence to low when effort signals unavailable (adds breaking_change_signals_unavailable flag)", async () => {
-      vi.stubGlobal("fetch", async (input) => {
+      vi.stubGlobal("fetch", async (input: string | URL | Request) => {
         const url =
           typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
         if (url.includes("api.github.com/repos/")) {
@@ -772,7 +772,7 @@ describe("runScoreRankStep", () => {
 
     it("sets confidence to medium when lock file present but no breaking changes in range", async () => {
       // Release exists but no breaking changes
-      vi.stubGlobal("fetch", async (input) => {
+      vi.stubGlobal("fetch", async (input: string | URL | Request) => {
         const url =
           typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
         if (url.includes("api.github.com/repos/vulnerable-org/vulnerable-pkg/releases")) {
@@ -868,7 +868,7 @@ describe("runScoreRankStep", () => {
         warnings: [],
       };
 
-      vi.stubGlobal("fetch", async (input) => {
+      vi.stubGlobal("fetch", async (input: string | URL | Request) => {
         const url =
           typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
         if (url.includes("api.github.com/repos/")) {
@@ -949,7 +949,7 @@ describe("runScoreRankStep", () => {
         warnings: [],
       };
 
-      vi.stubGlobal("fetch", async (input) => {
+      vi.stubGlobal("fetch", async (input: string | URL | Request) => {
         const url =
           typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
         if (url.includes("api.github.com/repos/")) {
@@ -1029,7 +1029,7 @@ describe("runScoreRankStep", () => {
         warnings: [],
       };
 
-      vi.stubGlobal("fetch", async (input) => {
+      vi.stubGlobal("fetch", async (input: string | URL | Request) => {
         const url =
           typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
         if (url.includes("api.github.com/repos/")) {
@@ -1089,7 +1089,7 @@ describe("runScoreRankStep", () => {
         warnings: [],
       };
 
-      vi.stubGlobal("fetch", async (input) => {
+      vi.stubGlobal("fetch", async (input: string | URL | Request) => {
         const url =
           typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
         if (url.includes("api.github.com/repos/")) {
