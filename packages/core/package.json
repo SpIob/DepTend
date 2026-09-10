@@ -163,7 +163,7 @@
     "typecheck:tests": "tsc --noEmit --project tsconfig.eslint.json"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0",
+    "@types/node": "^26.4.1",
     "@types/semver": "^7.7.1",
     "@types/yarnpkg__lockfile": "^1.1.9",
     "typescript": "^5.5.0",
