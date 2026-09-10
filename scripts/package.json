@@ -9,6 +9,6 @@
     "typecheck": "echo 'no tsconfig in scripts/ — plain JS only'"
   },
   "devDependencies": {
-    "vitest": "^2.0.0"
+    "vitest": "^5.0.0"
   }
 }
