@@ -55,7 +55,7 @@ jobs:
         uses: pnpm/action-setup@a7487c7e89a1bdf49e1f3899f51c77a5c6d5b5d1
 
       - name: Setup Node.js
-        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: 24
           cache: pnpm
