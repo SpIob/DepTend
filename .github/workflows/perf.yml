@@ -58,6 +58,12 @@ jobs:
           # cache doesn't pollute the cold measurement. Single-run
           # (no warm repeats) for the weekly audit; deeper cold/warm
           # comparison lives in reports/perf/2026-08-30/.
+          # Single --output-path: the CLI collapses a repeated flag into an
+          # array and aborts with "cannot be written to" (both scheduled runs
+          # so far, 2026-09-06 and 2026-09-13, failed this way). With multiple
+          # --output types, lighthouse strips the extension and writes
+          # ${slug}.report.json + ${slug}.report.html — the *.json glob in the
+          # assertion step and the artifact upload both still match.
           for path in "${PATHS[@]}"; do
             slug=$(echo "$path" | tr '/' '_' | sed 's/^_//; s/_$//; s/__/_/g')
             if [[ -z "$slug" ]]; then slug="root"; fi
@@ -66,8 +72,8 @@ jobs:
             npx --yes lighthouse \
               "https://deptend.vercel.app${path}" \
               --quiet \
-              --output json --output-path "reports/perf/${slug}.json" \
-              --output html --output-path "reports/perf/${slug}.html" \
+              --output json --output html \
+              --output-path "reports/perf/${slug}.json" \
               --only-categories=performance \
               --form-factor=desktop \
               --screenEmulation.disabled \

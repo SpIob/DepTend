@@ -10,7 +10,24 @@ All notable changes to DepTend, condensed to one entry per phase.
 
 ---
 
-**2026-09-06 — DB query module split: queries.ts → board-queries.ts + directory-queries.ts + test-utils.ts**
+**2026-09-16 — Fix ingest and weekly perf workflows (no successful scheduled run since 2026-09-06)**
+
+### Fixed
+
+- **`ingest.yml`: invalid `pnpm/action-setup` pin.** The SHA `a7487c7e89a1bdf49e1f3899f51c77a5c6d5b5d1` introduced in the 2026-09-10 hardening commit never resolved to a real ref, so every scheduled ingest from 2026-09-10 through 2026-09-16 died during job setup ("Unable to resolve action"), before the retry loop or the failure-email step could run. Corrected to the real `v4.1.0` commit `a7487c7e89a18df4991f7f222e4898a00d66ddda`, verified against the tag object via the GitHub API.
+- **`perf.yml`: duplicate `--output-path`.** Passing the flag twice (`.json` and `.html`) collapses into an array that Lighthouse rejects with "cannot be written to"; the weekly audit never succeeded since its creation (2026-09-06 and 2026-09-13 failed identically). Now a single `--output-path "reports/perf/${slug}.json"`; with multiple output types Lighthouse strips the extension and writes `${slug}.report.json` + `${slug}.report.html`, which the threshold glob and artifact upload still match.
+- **Deleted `.github/workflows/test.yml`.** Leftover "Hello World" debug workflow from the 2026-09-10 YAML troubleshooting; was running on every push.
+
+### Earlier failures in the same gap, already resolved
+
+- 2026-09-07 ingest: `NpmRegistryFetcher is not defined`, fixed same day in `5d56301`.
+- 2026-09-08 through 2026-09-10 ingest: `GH_INGEST_TOKEN` returned HTTP 401 against public repos (three consecutive runs). Secret regenerated 2026-09-16.
+
+### Noted
+
+- Setup-phase workflow failures (unresolvable action refs) execute zero steps, so the email-on-failure step never fires. This is why the ingest outage produced no alert mail; GitHub's native failed-workflow notifications are the backstop.
+
+---
 
 Split the 866-line `packages/core/src/db/queries.ts` into three focused modules plus a shared test utility, reducing complexity and improving navigation. No behavior changes — all 784 core tests and 198 app tests pass.
 
