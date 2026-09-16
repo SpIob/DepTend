@@ -68,7 +68,7 @@ jobs:
 
       - name: Send test email (manual trigger only)
         if: github.event_name == 'workflow_dispatch' && inputs.send_test_email == 'true'
-        uses: dawidd6/action-send-mail@v3
+        uses: dawidd6/action-send-mail@v21
         with:
           server_address: smtp.gmail.com
           server_port: 465
@@ -130,7 +130,7 @@ jobs:
 
       - name: Email on failure
         if: failure()
-        uses: dawidd6/action-send-mail@v3
+        uses: dawidd6/action-send-mail@v21
         with:
           server_address: smtp.gmail.com
           server_port: 465
