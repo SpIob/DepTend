@@ -97,8 +97,6 @@ jobs:
           INPUT_TRIGGERED_BY: ${{ inputs.triggered_by }}
         run: |
           set -euo pipefail
-          echo "GH_INGEST_TOKEN length: ${#GH_INGEST_TOKEN}"
-          echo "GH_INGEST_TOKEN first 4: ${GH_INGEST_TOKEN:0:4}****"
           for attempt in 1 2 3; do
             if node scripts/ingest.js \
                  ${INPUT_REPO_ID:+--repo-id "$INPUT_REPO_ID"} \
