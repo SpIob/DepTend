@@ -262,6 +262,9 @@ export async function ingestRepo(
     // and both public, so they run in parallel rather than serially —
     // cuts roughly half the per-repo GitHub wall time.
     const { owner, name } = parseGithubUrl(repo.githubUrl ?? repo.url);
+    console.error(
+      `[DEBUG] Token length: ${githubToken?.length}, first 4: ${githubToken?.slice(0, 4)}`,
+    );
     const [ghMetaResult, orgResult] = await Promise.allSettled([
       fetchGitHubRepoMeta(owner, name, githubToken),
       lookupGitHubOwnerMeta(owner, githubToken),
