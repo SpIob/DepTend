@@ -97,13 +97,6 @@ jobs:
           INPUT_TRIGGERED_BY: ${{ inputs.triggered_by }}
         run: |
           set -euo pipefail
-          echo "GH_INGEST_TOKEN length: ${#GH_INGEST_TOKEN}"
-          echo "GH_INGEST_TOKEN first 4: ${GH_INGEST_TOKEN:0:4}****"
-          # Test token against this repo (should work)
-          curl -s -o /dev/null -w "API test (this repo): %{http_code}\n" -H "Authorization: Bearer $GH_INGEST_TOKEN" https://api.github.com/repos/SpIob/DepTend
-          # Test token against failing repos
-          curl -s -o /dev/null -w "API test (psf/requests): %{http_code}\n" -H "Authorization: Bearer $GH_INGEST_TOKEN" https://api.github.com/repos/psf/requests
-          curl -s -o /dev/null -w "API test (SpIob/FlowState): %{http_code}\n" -H "Authorization: Bearer $GH_INGEST_TOKEN" https://api.github.com/repos/SpIob/FlowState
           for attempt in 1 2 3; do
             if node scripts/ingest.js \
                  ${INPUT_REPO_ID:+--repo-id "$INPUT_REPO_ID"} \
