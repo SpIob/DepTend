@@ -78,6 +78,6 @@ jobs:
 
       - name: Run ingestion against fixture repo
         run: |
-          node --env-file=.env.local scripts/ingest.js \
+          node scripts/ingest.js \
             --repo-url https://github.com/SpIob/deptend-go-test-fixture \
             --triggered-by manual
