@@ -36,8 +36,10 @@ concurrency:
 # Least privilege — checkout + authenticated reads of public repos via a
 # PAT with public_repo scope (GH_INGEST_TOKEN) are all the job needs.
 # The auto-injected github.token only accesses this repository.
+# issues: write is required for the circuit breaker step (gh issue create).
 permissions:
   contents: read
+  issues: write
 
 jobs:
   ingest:
@@ -49,13 +51,13 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        uses: actions/checkout@v4
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda
+        uses: pnpm/action-setup@v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af
+        uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: pnpm
@@ -65,6 +67,35 @@ jobs:
 
       - name: Build shared packages
         run: pnpm --filter @deptend/core build
+
+      - name: Pre-flight validation
+        env:
+          GH_INGEST_TOKEN: ${{ secrets.GH_INGEST_TOKEN }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          # 1. GH_INGEST_TOKEN required (not optional)
+          if [[ -z "${GH_INGEST_TOKEN}" ]]; then
+            echo "::error::GH_INGEST_TOKEN secret not set — ingestion cannot run authenticated"
+            exit 1
+          fi
+          # 2. Validate token works against GitHub API
+          code=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer ${GH_INGEST_TOKEN}" https://api.github.com/user)
+          if [[ "$code" != "200" ]]; then
+            echo "::error::GH_INGEST_TOKEN invalid (HTTP $code)"
+            exit 1
+          fi
+          # 3. Validate DATABASE_URL format
+          if [[ ! "${DATABASE_URL}" =~ ^postgresql:// ]]; then
+            echo "::error::DATABASE_URL malformed"
+            exit 1
+          fi
+          # 4. Validate OSV API reachable
+          curl -sf https://api.osv.dev/v1/vulns/CVE-2021-44228 >/dev/null || {
+            echo "::error::OSV API unreachable"
+            exit 1
+          }
+          echo "Pre-flight checks passed"
 
       - name: Send test email (manual trigger only)
         if: github.event_name == 'workflow_dispatch' && inputs.send_test_email == 'true'
@@ -146,3 +177,20 @@ jobs:
             Branch: ${{ github.ref_name }}
             Trigger: ${{ github.event_name }}
             Triggered by: ${{ github.actor }}
+
+      - name: Circuit breaker (3 consecutive failures)
+        if: failure() && github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # Get last 3 completed runs for this workflow (excluding in-progress)
+          runs=$(gh api repos/${{ github.repository }}/actions/workflows/ingest.yml/runs \
+            --jq '.workflow_runs[:5] | map(select(.conclusion != null)) | .[:3] | map(.conclusion) | join(",")')
+          if [[ "$runs" == "failure,failure,failure" ]]; then
+            gh issue create \
+              --title "⚠️ Ingest workflow: 3 consecutive failures" \
+              --body "The scheduled ingestion workflow has failed 3 times in a row. Latest run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+              --label "ops:ingest-failure,blocker" \
+              || true  # Don't fail workflow if issue creation fails
+          fi

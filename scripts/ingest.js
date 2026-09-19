@@ -89,7 +89,6 @@ import {
 } from "../packages/core/dist/ingestor/github-org-meta.js";
 import { REGISTRY_FETCHERS_BY_ECOSYSTEM } from "../packages/core/dist/pipeline/registry-fetchers.js";
 import { buildSourceRepoByPackage } from "../packages/core/dist/pipeline/source-repo-extraction.js";
-import { GITHUB_TOKEN_WARNING } from "../packages/core/dist/pipeline/github-token-warning.js";
 import { parseGithubUrl } from "../packages/core/dist/pipeline/parse-github-url.js";
 
 // ---------------------------------------------------------------------------
@@ -115,7 +114,7 @@ async function main() {
 
   const githubToken = process.env["GH_INGEST_TOKEN"];
   if (!githubToken) {
-    log("warn", GITHUB_TOKEN_WARNING);
+    fatal("GH_INGEST_TOKEN environment variable is not set.");
   }
 
   const librariesIoApiKey = process.env["LIBRARIES_IO_API_KEY"] ?? null;

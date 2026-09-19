@@ -48,3 +48,36 @@ jobs:
       - name: Dependency audit (advisory)
         continue-on-error: true
         run: pnpm audit --prod
+
+  integration-test:
+    name: Integration test (ingest fixture repo)
+    runs-on: ubuntu-latest
+    needs: ci
+    if: github.ref == 'refs/heads/main'
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      GH_INGEST_TOKEN: ${{ secrets.GH_INGEST_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared packages
+        run: pnpm --filter @deptend/core build
+
+      - name: Run ingestion against fixture repo
+        run: |
+          node --env-file=.env.local scripts/ingest.js \
+            --repo-url https://github.com/SpIob/deptend-go-test-fixture \
+            --triggered-by manual

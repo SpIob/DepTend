@@ -3,6 +3,8 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Live dashboard](https://img.shields.io/badge/live-deptend.vercel.app-brightgreen)](https://deptend.vercel.app)
 [![GitHub stars](https://img.shields.io/github/stars/SpIob/DepTend?style=social)](https://github.com/SpIob/DepTend)
+[![Ingest status](https://github.com/SpIob/DepTend/actions/workflows/ingest.yml/badge.svg)](https://github.com/SpIob/DepTend/actions/workflows/ingest.yml)
+[![CI status](https://github.com/SpIob/DepTend/actions/workflows/ci.yml/badge.svg)](https://github.com/SpIob/DepTend/actions/workflows/ci.yml)
 
 **DepTend** converts a GitHub repository's dependency data into a prioritized, explainable list of maintenance missions. Instead of a flat vulnerability feed, it tells you what to fix next by combining security impact, ecosystem value, and estimated effort into a single ranked list, with every score's inputs one click away.
 

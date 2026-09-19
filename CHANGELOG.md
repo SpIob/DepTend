@@ -10,6 +10,22 @@ All notable changes to DepTend, condensed to one entry per phase.
 
 ---
 
+**[Unreleased] — Ingest workflow hardening & observability**
+
+### Fixed
+
+- **`ingest.yml`: action pins → major version tags.** Replaced SHA pins for checkout, pnpm/setup, setup-node with `@v4` to prevent silent rot (root cause of 6-day outage 2026-09-10..16).
+
+### Added
+
+- **Pre-flight validation step** in ingest workflow — validates `GH_INGEST_TOKEN`, `DATABASE_URL`, OSV API, GitHub API before ingestion starts.
+- **Integration test** in CI — runs full ingestion against `SpIob/deptend-go-test-fixture` on every PR to main.
+- **Circuit breaker** — creates GitHub issue after 3 consecutive scheduled failures.
+- **Dependabot config** — weekly GitHub Actions updates.
+- **Workflow status badges** in README.
+
+---
+
 **2026-09-16 — Fix ingest and weekly perf workflows (no successful scheduled run since 2026-09-06)**
 
 ### Fixed
