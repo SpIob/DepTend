@@ -128,10 +128,12 @@ jobs:
           INPUT_TRIGGERED_BY: ${{ inputs.triggered_by }}
         run: |
           set -euo pipefail
+          # Default triggered_by to "cron" for scheduled runs (inputs.triggered_by is only set for workflow_dispatch)
+          TRIGGERED_BY="${INPUT_TRIGGERED_BY:-cron}"
           for attempt in 1 2 3; do
             if node scripts/ingest.js \
                  ${INPUT_REPO_ID:+--repo-id "$INPUT_REPO_ID"} \
-                 --triggered-by "$INPUT_TRIGGERED_BY"; then
+                 --triggered-by "$TRIGGERED_BY"; then
               exit 0
             fi
             echo "Attempt $attempt failed, retrying in 30s..."
