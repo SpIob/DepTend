@@ -145,47 +145,47 @@ describe("block logging (added 2026-08-06)", () => {
 });
 
 describe("checkRepoSubmissionLimit", () => {
-  it("allows 5 submissions per hour then blocks the 6th", () => {
+  it("allows 5 submissions per hour then blocks the 6th", async () => {
     const key = `repo-test-${crypto.randomUUID()}`;
     for (let i = 0; i < 5; i++) {
-      expect(checkRepoSubmissionLimit(key).allowed).toBe(true);
+      expect((await checkRepoSubmissionLimit(key)).allowed).toBe(true);
     }
-    expect(checkRepoSubmissionLimit(key).allowed).toBe(false);
+    expect((await checkRepoSubmissionLimit(key)).allowed).toBe(false);
   });
 
-  it("frees up once the full hour window elapses", () => {
+  it("frees up once the full hour window elapses", async () => {
     const key = `repo-test-${crypto.randomUUID()}`;
-    for (let i = 0; i < 5; i++) checkRepoSubmissionLimit(key);
-    expect(checkRepoSubmissionLimit(key).allowed).toBe(false);
+    for (let i = 0; i < 5; i++) await checkRepoSubmissionLimit(key);
+    expect((await checkRepoSubmissionLimit(key)).allowed).toBe(false);
 
     vi.advanceTimersByTime(60 * 60 * 1000 + 1);
-    expect(checkRepoSubmissionLimit(key).allowed).toBe(true);
+    expect((await checkRepoSubmissionLimit(key)).allowed).toBe(true);
   });
 });
 
 describe("checkMissionActionLimit", () => {
-  it("allows 20 claim/unclaim actions per minute then blocks the 21st", () => {
+  it("allows 20 claim/unclaim actions per minute then blocks the 21st", async () => {
     const key = `mission-test-${crypto.randomUUID()}`;
     for (let i = 0; i < 20; i++) {
-      expect(checkMissionActionLimit(key).allowed).toBe(true);
+      expect((await checkMissionActionLimit(key)).allowed).toBe(true);
     }
-    expect(checkMissionActionLimit(key).allowed).toBe(false);
+    expect((await checkMissionActionLimit(key)).allowed).toBe(false);
   });
 
-  it("shares one budget across claim and unclaim for the same user", () => {
+  it("shares one budget across claim and unclaim for the same user", async () => {
     // The claim and unclaim routes both call this same singleton keyed on
     // login — there's no separate bucket per action type, by design.
     const key = `mission-test-${crypto.randomUUID()}`;
-    for (let i = 0; i < 20; i++) checkMissionActionLimit(key);
-    expect(checkMissionActionLimit(key).allowed).toBe(false);
+    for (let i = 0; i < 20; i++) await checkMissionActionLimit(key);
+    expect((await checkMissionActionLimit(key)).allowed).toBe(false);
   });
 
-  it("frees up once the full minute window elapses", () => {
+  it("frees up once the full minute window elapses", async () => {
     const key = `mission-test-${crypto.randomUUID()}`;
-    for (let i = 0; i < 20; i++) checkMissionActionLimit(key);
-    expect(checkMissionActionLimit(key).allowed).toBe(false);
+    for (let i = 0; i < 20; i++) await checkMissionActionLimit(key);
+    expect((await checkMissionActionLimit(key)).allowed).toBe(false);
 
     vi.advanceTimersByTime(60 * 1000 + 1);
-    expect(checkMissionActionLimit(key).allowed).toBe(true);
+    expect((await checkMissionActionLimit(key)).allowed).toBe(true);
   });
 });

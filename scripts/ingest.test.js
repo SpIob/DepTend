@@ -36,7 +36,16 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ingestRepo } from "./ingest.js";
+import {
+  ingestRepo,
+  resolvePending,
+  resolveDueRepos,
+  resolveById,
+  resolveByUrl,
+  parseArgs,
+  argValue,
+  intEnv,
+} from "./ingest.js";
 
 // Hoisted so the vi.mock factory closures can reach them.
 const fetchGitHubRepoMetaMock = vi.hoisted(() => vi.fn());
@@ -69,11 +78,26 @@ function logLines() {
     .filter((line) => /^\[\d{4}-\d{2}-\d{2}T/.test(line));
 }
 
+/** Mock DB with configurable select/where behavior */
+function createMockDb(selectResult = []) {
+  return {
+    select: vi.fn(() => ({
+      from: vi.fn(() => ({
+        where: vi.fn(() => Promise.resolve(selectResult)),
+        orderBy: vi.fn(() => ({ limit: vi.fn(() => Promise.resolve(selectResult)) })),
+        limit: vi.fn(() => Promise.resolve(selectResult)),
+      })),
+    })),
+    update: vi.fn(() => ({
+      set: vi.fn(() => ({
+        where: vi.fn(() => Promise.resolve([])),
+      })),
+    })),
+  };
+}
+
 describe("ingestRepo regression (c32878f)", () => {
   it("does not hit 'Assignment to constant variable' on the happy path", async () => {
-    // Both allSettled promises resolve → ingestRepo's `ghMetaResult.status
-    // === 'rejected'` branch is skipped, the buggy `ghMeta = ghMeta.value;`
-    // line is reached, and the pre-fix code throws TypeError.
     fetchGitHubRepoMetaMock.mockResolvedValue({
       full_name: "octocat/Hello-World",
       name: "Hello-World",
@@ -92,10 +116,6 @@ describe("ingestRepo regression (c32878f)", () => {
       isOrg: true,
     });
 
-    // Stop at the writer boundary so the test doesn't depend on the
-    // (unmocked) detectEcosystem/registry flow. The writer rejects, the
-    // outer catch at ingestRepo:480 logs "Ingestion failed: ..." with
-    // the writer's error, and the function returns false.
     const writer = {
       write: vi.fn().mockRejectedValue(new Error("test: stopped at writer.write")),
     };
@@ -115,9 +135,6 @@ describe("ingestRepo regression (c32878f)", () => {
       /* triggeredBy */ "manual",
     );
 
-    // The c32878f bug surfaces as this exact log line. Asserting its
-    // absence is the regression: with the fix, the error log instead
-    // names the writer's "test: stopped at writer.write" message.
     const lines = logLines();
     const bugLine = lines.find((l) => l.includes("Assignment to constant variable"));
     expect(
@@ -128,10 +145,6 @@ describe("ingestRepo regression (c32878f)", () => {
   });
 
   it("handles GitHub rate limit error (fatal, returns false)", async () => {
-    // Simulate rate limit by throwing an error with kind="rate_limited"
-    // The actual GitHubMetaError class check uses instanceof which doesn't
-    // work well with mocks, so we test the fatal path by throwing a generic
-    // error that won't match the not_found handling.
     fetchGitHubRepoMetaMock.mockRejectedValue(new Error("Rate limited: 429"));
     lookupGitHubOwnerMetaMock.mockResolvedValue({
       login: "octocat",
@@ -157,9 +170,7 @@ describe("ingestRepo regression (c32878f)", () => {
       "manual",
     );
 
-    // Should return false (fatal error)
     expect(result).toBe(false);
-    // Should not have called writer
     expect(writer.write).not.toHaveBeenCalled();
   });
 
@@ -175,7 +186,6 @@ describe("ingestRepo regression (c32878f)", () => {
       topics: [],
       homepage: null,
     });
-    // Org fetch fails with network error (not GitHubOrgMetaError) → non-fatal
     lookupGitHubOwnerMetaMock.mockRejectedValue(new Error("Network error"));
 
     const writer = {
@@ -197,11 +207,8 @@ describe("ingestRepo regression (c32878f)", () => {
       /* triggeredBy */ "manual",
     );
 
-    // Should not crash, should reach writer and log the org warning
     const lines = logLines();
     const errorLines = lines.filter((l) => l.includes("[ERROR]"));
-    // The org fetch failure should be logged as warning, not error
-    // The error should be from the writer rejection
     expect(errorLines.length).toBeGreaterThanOrEqual(1);
   });
 
@@ -217,7 +224,6 @@ describe("ingestRepo regression (c32878f)", () => {
       topics: [],
       homepage: null,
     });
-    // Org fetch fails with rate limit → fatal (re-thrown)
     const { GitHubOrgMetaError } =
       await import("../packages/core/dist/ingestor/github-org-meta.js");
     lookupGitHubOwnerMetaMock.mockRejectedValue(
@@ -241,8 +247,218 @@ describe("ingestRepo regression (c32878f)", () => {
       "manual",
     );
 
-    // Should return false (fatal error re-thrown)
     expect(result).toBe(false);
     expect(writer.write).not.toHaveBeenCalled();
+  });
+});
+
+describe("resolvePending", () => {
+  it("returns pending and failed repos", async () => {
+    const repos = [
+      { id: "1", ingestionStatus: "pending" },
+      { id: "2", ingestionStatus: "failed" },
+      { id: "3", ingestionStatus: "complete" },
+    ];
+    const db = createMockDb(
+      repos.filter((r) => r.ingestionStatus === "pending" || r.ingestionStatus === "failed"),
+    );
+
+    const result = await resolvePending(db);
+    expect(result).toHaveLength(2);
+    expect(result.map((r) => r.id)).toEqual(["1", "2"]);
+  });
+
+  it("returns empty array when no pending/failed repos", async () => {
+    const db = createMockDb([]);
+    const result = await resolvePending(db);
+    expect(result).toEqual([]);
+  });
+});
+
+describe("resolveDueRepos", () => {
+  it("returns pending/failed repos plus stale complete repos up to max", async () => {
+    const now = Date.now();
+    const staleCutoff = new Date(now - 8 * 24 * 60 * 60 * 1000).toISOString();
+    // const recentCutoff = new Date(now - 3 * 24 * 60 * 60 * 1000).toISOString(); // unused
+
+    const pendingFailedRepos = [
+      { id: "1", ingestionStatus: "pending" },
+      { id: "2", ingestionStatus: "failed" },
+    ];
+    const staleRepos = [
+      { id: "3", ingestionStatus: "complete", lastIngestedAt: staleCutoff },
+      { id: "5", ingestionStatus: "complete", lastIngestedAt: null },
+    ];
+
+    // Create a mock db that returns pending/failed for the first select (resolvePending)
+    // and stale repos for the second select (staleComplete)
+    let callCount = 0;
+    const db = {
+      select: vi.fn(() => ({
+        from: vi.fn(() => ({
+          where: vi.fn(() => {
+            callCount++;
+            if (callCount === 1) {
+              // First call is resolvePending
+              return Promise.resolve(pendingFailedRepos);
+            }
+            // Second call is staleComplete
+            return {
+              orderBy: vi.fn(() => ({
+                limit: vi.fn(() => Promise.resolve(staleRepos)),
+              })),
+            };
+          }),
+        })),
+      })),
+    };
+
+    const result = await resolveDueRepos(db);
+    expect(result).toHaveLength(4); // 2 pending/failed + 2 stale
+    expect(result.map((r) => r.id).sort()).toEqual(["1", "2", "3", "5"]);
+  });
+});
+
+describe("resolveById", () => {
+  it("returns repo by UUID", async () => {
+    const repo = { id: "test-id", ingestionStatus: "pending" };
+    const db = createMockDb([repo]);
+
+    const result = await resolveById(db, "test-id");
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("test-id");
+  });
+
+  it("exits with code 1 when repo not found", async () => {
+    const db = createMockDb([]);
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation(() => {});
+    await resolveById(db, "nonexistent");
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    exitSpy.mockRestore();
+  });
+});
+
+describe("resolveByUrl", () => {
+  it("returns existing repo from DB", async () => {
+    const repo = {
+      githubUrl: "https://github.com/octocat/Hello-World",
+      ingestionStatus: "complete",
+    };
+    const db = createMockDb([repo]);
+
+    const result = await resolveByUrl(db, "https://github.com/octocat/Hello-World");
+    expect(result).toHaveLength(1);
+    expect(result[0].githubUrl).toBe("https://github.com/octocat/Hello-World");
+  });
+
+  it("normalizes URL (strips .git and trailing slash)", async () => {
+    const repo = {
+      githubUrl: "https://github.com/octocat/Hello-World",
+      ingestionStatus: "complete",
+    };
+    const db = createMockDb([repo]);
+
+    const result = await resolveByUrl(db, "https://github.com/octocat/Hello-World.git/");
+    expect(result).toHaveLength(1);
+    expect(result[0].githubUrl).toBe("https://github.com/octocat/Hello-World");
+  });
+
+  it("returns stub for new URL not in DB", async () => {
+    const db = createMockDb([]);
+
+    const result = await resolveByUrl(db, "https://github.com/new/repo");
+    expect(result).toHaveLength(1);
+    expect(result[0].githubUrl).toBe("https://github.com/new/repo");
+    expect(result[0].submittedBy).toBeNull();
+  });
+});
+
+describe("parseArgs", () => {
+  it("defaults triggeredBy to cron", () => {
+    const result = parseArgs([]);
+    expect(result.triggeredBy).toBe("cron");
+    expect(result.repoId).toBeNull();
+    expect(result.repoUrl).toBeNull();
+  });
+
+  it("parses triggeredBy", () => {
+    const result = parseArgs(["--triggered-by", "manual"]);
+    expect(result.triggeredBy).toBe("manual");
+  });
+
+  it("parses repo-id", () => {
+    const result = parseArgs(["--repo-id", "test-uuid"]);
+    expect(result.repoId).toBe("test-uuid");
+  });
+
+  it("parses repo-url", () => {
+    const result = parseArgs(["--repo-url", "https://github.com/octocat/Hello-World"]);
+    expect(result.repoUrl).toBe("https://github.com/octocat/Hello-World");
+  });
+
+  it("exits with code 1 on invalid triggeredBy", () => {
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation(() => {});
+    parseArgs(["--triggered-by", "invalid"]);
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    exitSpy.mockRestore();
+  });
+
+  it("exits with code 1 when both repo-id and repo-url provided", () => {
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation(() => {});
+    parseArgs(["--repo-id", "test", "--repo-url", "https://github.com/octocat/Hello-World"]);
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    exitSpy.mockRestore();
+  });
+});
+
+describe("argValue", () => {
+  it("returns value after flag", () => {
+    expect(argValue(["--flag", "value"], "--flag")).toBe("value");
+  });
+
+  it("returns undefined for missing flag", () => {
+    expect(argValue(["--other", "value"], "--flag")).toBeUndefined();
+  });
+
+  it("returns undefined when flag is last arg", () => {
+    expect(argValue(["--flag"], "--flag")).toBeUndefined();
+  });
+});
+
+describe("intEnv", () => {
+  beforeEach(() => {
+    vi.stubEnv("TEST_POSITIVE", "42");
+    vi.stubEnv("TEST_ZERO", "0");
+    vi.stubEnv("TEST_NEGATIVE", "-5");
+    vi.stubEnv("TEST_NON_NUMERIC", "abc");
+    vi.stubEnv("TEST_EMPTY", "");
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("returns parsed positive integer", () => {
+    expect(intEnv("TEST_POSITIVE", 10)).toBe(42);
+  });
+
+  it("returns fallback for zero", () => {
+    expect(intEnv("TEST_ZERO", 10)).toBe(10);
+  });
+
+  it("returns fallback for negative", () => {
+    expect(intEnv("TEST_NEGATIVE", 10)).toBe(10);
+  });
+
+  it("returns fallback for non-numeric", () => {
+    expect(intEnv("TEST_NON_NUMERIC", 10)).toBe(10);
+  });
+
+  it("returns fallback for empty string", () => {
+    expect(intEnv("TEST_EMPTY", 10)).toBe(10);
+  });
+
+  it("returns fallback for unset", () => {
+    expect(intEnv("TEST_UNSET", 10)).toBe(10);
   });
 });

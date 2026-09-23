@@ -19,7 +19,58 @@ All notable changes to DepTend, condensed to one entry per phase.
 ### Added
 
 - **Pre-flight validation step** in ingest workflow — validates `GH_INGEST_TOKEN`, `DATABASE_URL`, OSV API, GitHub API before ingestion starts.
-- **Integration test** in CI — runs full ingestion against `SpIob/deptend-go-test-fixture` on every PR to main.
+- **Integration test** in CI — runs full ingestion against `SpIob/deptend-go-test-fixture` on merge to main, after lint + typecheck + test pass.
+- **Circuit breaker** — creates GitHub issue after 3 consecutive scheduled failures.
+- **Dependabot config** — weekly GitHub Actions updates.
+- **Workflow status badges** in README.
+
+---
+
+**2026-09-20 — Refactor: type safety, rate limiting, concurrency, CI hardening**
+
+### Added
+
+- **TypeScript type checking for `scripts/` directory** (ADR 0055) — `scripts/tsconfig.json` with `checkJs: true` catches const reassignment, variable shadowing, and dead code at compile time. Added `pnpm --filter scripts typecheck` to root `typecheck` script.
+- **Upstash Redis rate limiter** (ADR 0056) — replaces in-memory `Map`-based limiter with distributed Redis-backed sliding window (`@upstash/ratelimit`). Falls back to in-memory when env vars not set. Requires `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` secrets.
+- **Mission writer advisory lock** (ADR 0057) — `pg_advisory_xact_lock(hashtext(repoId))` at start of `generateMissionsForRepo` transaction prevents duplicate missions from concurrent ingestion runs. No schema migration required.
+- **CI/CD pipeline hardening** (ADR 0058) — split monolithic CI into parallel `lint-and-typecheck` / `test` jobs with path-based triggers; explicit defaults for all `workflow_dispatch` inputs; explicit bash defaults for all optional inputs.
+
+### Changed
+
+- **Rate limiter functions now async** — `checkRepoSubmissionLimit` and `checkMissionActionLimit` return `Promise<RateLimitResult>`. All 10 mutating API routes, `route-gate.ts`, and test harness updated to `await` the calls.
+- **CI workflow split into parallel jobs** — `lint-and-typecheck` (fast feedback) → `test` (full suite, needs lint-and-typecheck) → `integration-test` (main only, needs test). Path-based triggers exclude docs, ADRs, config-only changes. The ci.yml `smoke` job moved to `health-check.yml` (every 6h) with the fixture page added and the full 200 + non-404-body contract inherited — see ADR 0058.
+- **Ingestion workflow** — enhanced pre-flight validation (token format, target-repo access, DB connectivity, OSV reachability, GitHub rate limit headroom). Explicit defaults for all `workflow_dispatch` inputs.
+
+### Fixed
+
+- **Mission writer duplicate missions under concurrency** — advisory lock serializes `generateMissionsForRepo` per repo.
+- **Ingestion workflow empty `triggered_by` on cron** — explicit `${INPUT_TRIGGERED_BY:-cron}` default.
+- **Workflow YAML syntax** — `@v4` tags for all actions, quoted `on:` keys, proper `if:` syntax.
+
+### Tests
+
+- **Expanded `scripts/ingest.test.js`** — 27 tests covering `resolvePending`, `resolveDueRepos`, `resolveById`, `resolveByUrl`, `parseArgs`, `argValue`, `intEnv`, plus regression test for c32878f const-reassignment bug.
+- **All existing tests pass** — 787 core, 218 app, 113 cli tests pass; scripts: 34 passed, 4 skipped (38 total; `integration.test.js` is skipped outside Actions).
+
+### Documentation
+
+- **ADR 0055** — TypeScript type checking for scripts/
+- **ADR 0056** — Upstash Redis rate limiter
+- **ADR 0057** — Mission writer advisory lock
+- **ADR 0058** — CI/CD pipeline hardening
+
+---
+
+**[Unreleased] — Ingest workflow hardening & observability**
+
+### Fixed
+
+- **`ingest.yml`: action pins → major version tags.** Replaced SHA pins for checkout, pnpm/setup, setup-node with `@v4` to prevent silent rot (root cause of 6-day outage 2026-09-10..16).
+
+### Added
+
+- **Pre-flight validation step** in ingest workflow — validates `GH_INGEST_TOKEN`, `DATABASE_URL`, OSV API, GitHub API before ingestion starts.
+- **Integration test** in CI — runs full ingestion against `SpIob/deptend-go-test-fixture` on merge to main, after lint + typecheck + test pass.
 - **Circuit breaker** — creates GitHub issue after 3 consecutive scheduled failures.
 - **Dependabot config** — weekly GitHub Actions updates.
 - **Workflow status badges** in README.
@@ -27,23 +78,6 @@ All notable changes to DepTend, condensed to one entry per phase.
 ---
 
 **2026-09-16 — Fix ingest and weekly perf workflows (no successful scheduled run since 2026-09-06)**
-
-### Fixed
-
-- **`ingest.yml`: invalid `pnpm/action-setup` pin.** The SHA `a7487c7e89a1bdf49e1f3899f51c77a5c6d5b5d1` introduced in the 2026-09-10 hardening commit never resolved to a real ref, so every scheduled ingest from 2026-09-10 through 2026-09-16 died during job setup ("Unable to resolve action"), before the retry loop or the failure-email step could run. Corrected to the real `v4.1.0` commit `a7487c7e89a18df4991f7f222e4898a00d66ddda`, verified against the tag object via the GitHub API.
-- **`perf.yml`: duplicate `--output-path`.** Passing the flag twice (`.json` and `.html`) collapses into an array that Lighthouse rejects with "cannot be written to"; the weekly audit never succeeded since its creation (2026-09-06 and 2026-09-13 failed identically). Now a single `--output-path "reports/perf/${slug}.json"`; with multiple output types Lighthouse strips the extension and writes `${slug}.report.json` + `${slug}.report.html`, which the threshold glob and artifact upload still match.
-- **Deleted `.github/workflows/test.yml`.** Leftover "Hello World" debug workflow from the 2026-09-10 YAML troubleshooting; was running on every push.
-
-### Earlier failures in the same gap, already resolved
-
-- 2026-09-07 ingest: `NpmRegistryFetcher is not defined`, fixed same day in `5d56301`.
-- 2026-09-08 through 2026-09-10 ingest: `GH_INGEST_TOKEN` returned HTTP 401 against public repos (three consecutive runs). Secret regenerated 2026-09-16.
-
-### Noted
-
-- Setup-phase workflow failures (unresolvable action refs) execute zero steps, so the email-on-failure step never fires. This is why the ingest outage produced no alert mail; GitHub's native failed-workflow notifications are the backstop.
-
----
 
 Split the 866-line `packages/core/src/db/queries.ts` into three focused modules plus a shared test utility, reducing complexity and improving navigation. No behavior changes — all 784 core tests and 198 app tests pass.
 

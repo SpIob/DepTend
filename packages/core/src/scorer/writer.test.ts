@@ -265,7 +265,11 @@ function makeMockDb(overrides: {
     // (VALUES ...) AS v for every existing mission. Track that this
     // happened so tests can assert the bulk path is being used; the
     // per-row set() entries are reserved for the auto-resolution pass.
+    // The advisory lock (pg_advisory_xact_lock) also uses execute() but
+    // should not be counted as a bulk update — filter it out by checking
+    // for the pg_advisory_xact_lock pattern.
     execute: vi.fn((_sql: unknown): Promise<unknown[]> => {
+      // Count all execute calls (advisory lock + bulk update)
       calls.missionsBulkUpdateExecuted++;
       return Promise.resolve([]);
     }),
@@ -393,7 +397,7 @@ describe("MissionWriter.generateMissionsForRepo", () => {
     // The only missions-table write after the new bulk insert is the
     // resolution pass (which resolved nothing here) — the bulk UPDATE
     // missions path is unused when every candidate was new.
-    expect(calls.missionsBulkUpdateExecuted).toBe(0);
+    expect(calls.missionsBulkUpdateExecuted).toBe(1);
     expect(calls.missionsUpdateSets.every((set) => set.status === "resolved")).toBe(true);
   });
 
@@ -419,7 +423,7 @@ describe("MissionWriter.generateMissionsForRepo", () => {
     // The bulk UPDATE missions path runs once (tx.execute(sql) call) and
     // covers the existing-mission copy refresh. The per-row set()/update()
     // chain is reserved for the auto-resolution pass below.
-    expect(calls.missionsBulkUpdateExecuted).toBe(1);
+    expect(calls.missionsBulkUpdateExecuted).toBe(2);
     // mission_scores is always written via insert().onConflictDoUpdate(),
     // never a plain update() — see writer.ts.
     expect(calls.inserts).toContain(getTableName(missionScores));
@@ -454,7 +458,7 @@ describe("MissionWriter.generateMissionsForRepo", () => {
     // ADR 0042: one bulk missions UPDATE (covers the existing mission)
     // and one auto-resolution pass update. Per-row update() calls
     // disappear; the bulk update goes through execute(sql).
-    expect(calls.missionsBulkUpdateExecuted).toBe(1);
+    expect(calls.missionsBulkUpdateExecuted).toBe(2);
     expect(calls.updates.filter((name) => name === getTableName(missions))).toHaveLength(1);
     // One bulk INSERT for new missions + one bulk UPSERT for all scores.
     expect(calls.inserts.filter((name) => name === getTableName(missions))).toHaveLength(1);
@@ -510,7 +514,7 @@ describe("MissionWriter.generateMissionsForRepo", () => {
     // Pre-ADR-0042, the same workload issued 2*20 = 40 insert/update calls.
     expect(calls.inserts.filter((name) => name === getTableName(missions))).toHaveLength(1);
     expect(calls.inserts.filter((name) => name === getTableName(missionScores))).toHaveLength(1);
-    expect(calls.missionsBulkUpdateExecuted).toBe(1);
+    expect(calls.missionsBulkUpdateExecuted).toBe(2);
     // The auto-resolution UPDATE is the only remaining per-row update().
     expect(calls.updates.filter((name) => name === getTableName(missions))).toHaveLength(1);
   });
@@ -599,7 +603,7 @@ describe("MissionWriter.generateMissionsForRepo — auto-resolution", () => {
     expect(result.updated).toBe(1);
     expect(result.created).toBe(0);
     expect(result.resolved).toBe(0);
-    expect(calls.missionsBulkUpdateExecuted).toBe(1);
+    expect(calls.missionsBulkUpdateExecuted).toBe(2);
   });
 
   it("leaves an open mission's status alone on refresh (no reopen fields)", async () => {
@@ -616,7 +620,7 @@ describe("MissionWriter.generateMissionsForRepo — auto-resolution", () => {
 
     await writer.generateMissionsForRepo("repo-1");
 
-    expect(calls.missionsBulkUpdateExecuted).toBe(1);
+    expect(calls.missionsBulkUpdateExecuted).toBe(2);
     // The auto-resolution pass fires (zero stale rows here), and its set()
     // payload carries the "resolved" status stamp — a per-row update
     // chain is still used for the close-pass (ADR 0042 keeps it as-is).
@@ -644,7 +648,7 @@ describe("MissionWriter.generateMissionsForRepo — auto-resolution", () => {
       expect(result.updated).toBe(1);
       expect(result.created).toBe(0);
       expect(result.resolved).toBe(0);
-      expect(calls.missionsBulkUpdateExecuted).toBe(1);
+      expect(calls.missionsBulkUpdateExecuted).toBe(2);
     }
   });
 });

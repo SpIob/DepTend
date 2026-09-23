@@ -1,0 +1,14 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "checkJs": true,
+    "allowJs": true,
+    "noEmit": true,
+    "rootDir": ".",
+    "types": ["node", "vitest/globals"],
+    "noImplicitAny": false,
+    "exactOptionalPropertyTypes": false
+  },
+  "include": ["*.js", "*.mjs"],
+  "exclude": ["node_modules", "dist", "*.test.js", "*.test.mjs"]
+}

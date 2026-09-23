@@ -58,6 +58,8 @@ export default tseslint.config(
       ...eslint.configs.recommended.rules,
       "no-console": "off",
       "no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
+      "no-shadow": "error",
+      "no-const-assign": "error",
     },
   },
 

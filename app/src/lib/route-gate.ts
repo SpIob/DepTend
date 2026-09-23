@@ -24,7 +24,7 @@ export interface GateRequestOptions {
   request: Request;
   params: Promise<{ id: string }>;
   /** Per-action limiter, e.g. checkMissionActionLimit or checkRepoSubmissionLimit. */
-  rateLimiter: (key: string) => RateLimitResult;
+  rateLimiter: (key: string) => Promise<RateLimitResult>;
   /** 401 message — different copy per surface (claim, bookmark, withdraw, etc.). */
   authMessage: string;
   /** 429 message — "mission actions" vs "actions" depending on the limiter's scope. */
@@ -50,7 +50,7 @@ export async function gateRequest(opts: GateRequestOptions): Promise<GateRequest
     return { ok: false, response: NextResponse.json({ error: opts.authMessage }, { status: 401 }) };
   }
 
-  const rateLimit = opts.rateLimiter(login);
+  const rateLimit = await opts.rateLimiter(login);
   if (!rateLimit.allowed) {
     return {
       ok: false,

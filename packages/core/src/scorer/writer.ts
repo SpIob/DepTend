@@ -213,6 +213,10 @@ export class MissionWriter {
     let resolved = 0;
 
     await this.db.transaction(async (tx) => {
+      // Acquire advisory lock to prevent concurrent mission generation for the same repo
+      // This prevents duplicate missions when multiple ingestion runs process the same repo concurrently
+      // pg_advisory_xact_lock is transaction-scoped and auto-releases on commit/rollback
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${repoId}))`);
       // Build pairs for existing mission lookup (all classified dependencies)
       const classificationPairs = classifications.map((c) => ({
         dependencyId: c.dependencyId,

@@ -79,22 +79,46 @@ jobs:
             echo "::error::GH_INGEST_TOKEN secret not set — ingestion cannot run authenticated"
             exit 1
           fi
-          # 2. Validate token works against GitHub API
+          # 2. Validate token format (ghp_ for classic PAT, github_pat_ for fine-grained PAT)
+          if [[ ! "${GH_INGEST_TOKEN}" =~ ^(ghp_|github_pat_) ]]; then
+            echo "::error::GH_INGEST_TOKEN format invalid — must start with ghp_ or github_pat_"
+            exit 1
+          fi
+          # 3. Validate token works against GitHub API (this repo)
           code=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer ${GH_INGEST_TOKEN}" https://api.github.com/user)
           if [[ "$code" != "200" ]]; then
             echo "::error::GH_INGEST_TOKEN invalid (HTTP $code)"
             exit 1
           fi
-          # 3. Validate DATABASE_URL format
+          # 4. Validate token works against target public repos (public_repo scope)
+          for repo in "psf/requests" "SpIob/FlowState"; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer ${GH_INGEST_TOKEN}" "https://api.github.com/repos/${repo}")
+            if [[ "$code" != "200" ]]; then
+              echo "::error::GH_INGEST_TOKEN lacks access to ${repo} (HTTP $code) — ensure public_repo scope"
+              exit 1
+            fi
+          done
+          # 5. Validate DATABASE_URL format
           if [[ ! "${DATABASE_URL}" =~ ^postgresql:// ]]; then
             echo "::error::DATABASE_URL malformed"
             exit 1
           fi
-          # 4. Validate OSV API reachable
+          # 6. Validate DATABASE_URL connectivity using Node.js (neon-http driver)
+          node -e "
+            const { neon } = require('@neondatabase/serverless');
+            const sql = neon(process.env.DATABASE_URL);
+            sql('SELECT 1').then(() => console.log('DB connection OK')).catch(e => { console.error('DB connection failed:', e.message); process.exit(1); });
+          " || exit 1
+          # 7. Validate OSV API reachable
           curl -sf https://api.osv.dev/v1/vulns/CVE-2021-44228 >/dev/null || {
             echo "::error::OSV API unreachable"
             exit 1
           }
+          # 8. Validate GitHub API rate limit headroom
+          rate_limit=$(curl -s -H "Authorization: Bearer ${GH_INGEST_TOKEN}" https://api.github.com/rate_limit | jq -r '.resources.core.remaining')
+          if [[ "$rate_limit" -lt 100 ]]; then
+            echo "::warning::GitHub API rate limit low: ${rate_limit} remaining"
+          fi
           echo "Pre-flight checks passed"
 
       - name: Send test email (manual trigger only)

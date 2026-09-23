@@ -109,11 +109,39 @@ export function cachedRead<T>(
     revalidate: READ_CACHE_SECONDS,
     tags: [tag],
   });
-  // The outer withTiming is the "total" time for the read; unstable_cache
-  // doesn't expose its internal hit/miss split, so we don't have a
-  // separate `cache;dur` and `db;dur`. A future iteration could add
-  // instrumentation here via patch-fetch on the underlying Postgres
-  // driver, or via `unstable_cache`'s onCacheError / onCacheHit callbacks
-  // if/when Next.js exposes them.
-  return withTiming(`cache:${tag}`, () => cached().then(reviveDates));
+  // Split timing into cache hit/miss + db + revive for LCP debugging
+  // unstable_cache doesn't expose hit/miss directly, so we measure the
+  // total time and the inner read time separately
+  return withTiming(`cache:${tag}:total`, async () => {
+    const readStart = performance.now();
+    const result = await cached();
+    const readEnd = performance.now();
+    const readDurMs = Math.max(0, readEnd - readStart);
+
+    const reviveStart = performance.now();
+    const revived = reviveDates(result);
+    const reviveEnd = performance.now();
+    const reviveDurMs = Math.max(0, reviveEnd - reviveStart);
+
+    // Heuristic: if read took < 5ms it's likely a cache hit (in-memory),
+    // if > 50ms it's likely a cache miss (DB round-trip)
+    const isLikelyHit = readDurMs < 5;
+    const segment = isLikelyHit ? `cache:${tag}:hit` : `cache:${tag}:miss`;
+    const dbSegment = isLikelyHit ? null : `cache:${tag}:db`;
+
+    // Record the segments using withTiming's internal store
+    // We manually add entries to the timing store
+    const { currentRequestId, getOrCreateStore } = await import("@/lib/timing/store");
+    const requestId = await currentRequestId();
+    if (requestId) {
+      const store = getOrCreateStore(requestId);
+      store.entries.push({ label: segment, durMs: readDurMs });
+      if (dbSegment) {
+        store.entries.push({ label: dbSegment, durMs: readDurMs });
+      }
+      store.entries.push({ label: `cache:${tag}:revive`, durMs: reviveDurMs });
+    }
+
+    return revived;
+  });
 }

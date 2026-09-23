@@ -45,12 +45,18 @@ jobs:
           # and uploads the JSON so a future regression on read-path perf
           # is catchable from the artifacts.
           PAGES: "/, /missions, /org/SpIob, /repo/SpIob/deptend-go-test-fixture"
+          # Routed through env: (same pattern as ingest.yml) so a hostile
+          # workflow_dispatch `pages` value can't break out of the string
+          # into arbitrary command execution.
+          INPUT_PAGES: ${{ inputs.pages }}
         run: |
           set -euo pipefail
           mkdir -p reports/perf
           # If the user passed a custom list via workflow_dispatch, use that.
-          if [[ -n "${{ inputs.pages }}" ]]; then
-            IFS=',' read -ra PATHS <<< "${{ inputs.pages }}"
+          # On scheduled runs, inputs.pages is not set, so default to PAGES.
+          PAGES_INPUT="$INPUT_PAGES"
+          if [[ -n "$PAGES_INPUT" ]]; then
+            IFS=',' read -ra PATHS <<< "$PAGES_INPUT"
           else
             IFS=',' read -ra PATHS <<< "${PAGES//, /,}"
           fi

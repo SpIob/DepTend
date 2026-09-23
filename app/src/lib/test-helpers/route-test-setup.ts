@@ -46,7 +46,7 @@ export interface CreateHarnessOptions {
   /** The route's POST handler to test. */
   handler: (request: Request, context: { params: Promise<{ id: string }> }) => Promise<Response>;
   /** The rate limiter to use (checkMissionActionLimit or checkRepoSubmissionLimit). */
-  rateLimiter: (key: string) => RateLimitResult;
+  rateLimiter: (key: string) => Promise<RateLimitResult>;
   /** Base URL for POST requests (without the ID param). */
   baseUrl: string;
   /** Custom POST request builder. Default builds a same-origin JSON POST. */
@@ -141,7 +141,7 @@ export function createRouteTestHarness({
       it("returns 429 once the rate-limit budget is exhausted", async () => {
         const login = signedIn();
         for (let i = 0; i < 20; i++) {
-          rateLimiter(login);
+          await rateLimiter(login);
         }
         const request = makeRequest(VALID_ID);
         const response = await handler(request, { params: Promise.resolve({ id: VALID_ID }) });

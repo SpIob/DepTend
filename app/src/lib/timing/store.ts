@@ -54,7 +54,7 @@ export async function currentRequestId(): Promise<string | null> {
 // Test-only export for direct store manipulation
 export const stores = new Map<string, TimingStore>();
 
-function getOrCreateStore(requestId: string): TimingStore {
+export function getOrCreateStore(requestId: string): TimingStore {
   let s = stores.get(requestId);
   if (s === undefined) {
     s = { entries: [] };
@@ -79,13 +79,13 @@ export async function withTiming<T>(label: string, fn: () => Promise<T>): Promis
     return await fn();
   }
   const store = getOrCreateStore(requestId);
-  const startNs = process.hrtime.bigint();
+  const start = performance.now();
   try {
     return await fn();
   } finally {
-    const endNs = process.hrtime.bigint();
-    const durMs = Number(endNs - startNs) / 1e6;
-    store.entries.push({ label, durMs: Math.max(0, durMs) });
+    const end = performance.now();
+    const durMs = Math.max(0, end - start);
+    store.entries.push({ label, durMs });
   }
 }
 

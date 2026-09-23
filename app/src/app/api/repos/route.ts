@@ -29,7 +29,7 @@ export async function POST(request: Request): Promise<Response> {
     return NextResponse.json({ error: "Sign in with GitHub to submit a repo." }, { status: 401 });
   }
 
-  const rateLimit = checkRepoSubmissionLimit(login);
+  const rateLimit = await checkRepoSubmissionLimit(login);
   if (!rateLimit.allowed) {
     return NextResponse.json(
       { error: "Too many repo submissions. Try again later." },

@@ -18,8 +18,8 @@
  *
  * Environment variables:
  *   DATABASE_URL           Required. Pooled Neon connection string (PgBouncer).
- *   GITHUB_TOKEN           Optional but strongly recommended. Raises the GitHub API
- *                          rate limit from 60 to 5,000 requests/hour.
+ *   GH_INGEST_TOKEN        Required. Fine-grained PAT (public repo read access) -
+ *                          used for GitHub API calls to fetch repo/org metadata.
  *   LIBRARIES_IO_API_KEY   Optional. Free-tier libraries.io key — enables the
  *                          downstream_dependents prefetch (ADR 0032). Without
  *                          it, downstream_dependents stays null on every
@@ -238,6 +238,20 @@ async function main() {
  * of this file is gated on import.meta.url so importing the module
  * from a test doesn't kick off a real cron run.
  */
+/**
+ * @param {{ githubUrl?: string; url?: string; submittedBy?: string | null }} repo
+ * @param {import("../packages/core/dist/db/db-types.js").AnyNeonDb} db
+ * @param {import("../packages/core/dist/ingestor/writer.js").IngestionWriter} writer
+ * @param {import("../packages/core/dist/scorer/writer.js").MissionWriter} missionWriter
+ * @param {import("../packages/core/dist/ingestor/npm.js").NpmIngestor} npmIngestor
+ * @param {import("../packages/core/dist/ingestor/pypi.js").PyPIIngestor} pypiIngestor
+ * @param {import("../packages/core/dist/ingestor/go.js").GoIngestor} goIngestor
+ * @param {import("../packages/core/dist/ingestor/osv.js").OsvFetcher} osvFetcher
+ * @param {string | null} githubToken
+ * @param {string | null} librariesIoApiKey
+ * @param {"cron" | "manual" | "submit"} triggeredBy
+ * @returns {Promise<boolean>}
+ */
 export async function ingestRepo(
   repo,
   db,
@@ -259,7 +273,15 @@ export async function ingestRepo(
     // profile for `owner` (ADR 0047). The two calls are independent
     // and both public, so they run in parallel rather than serially —
     // cuts roughly half the per-repo GitHub wall time.
-    const { owner, name } = parseGithubUrl(repo.githubUrl ?? repo.url);
+    const repoUrl = repo.githubUrl ?? repo.url;
+    if (!repoUrl) {
+      throw new Error("Repo URL is required");
+    }
+    const parsed = parseGithubUrl(repoUrl);
+    if (parsed === null) {
+      throw new Error(`Invalid GitHub URL: ${repoUrl}`);
+    }
+    const { owner, name } = parsed;
     const [ghMetaResult, orgResult] = await Promise.allSettled([
       fetchGitHubRepoMeta(owner, name, githubToken),
       lookupGitHubOwnerMeta(owner, githubToken),
@@ -383,6 +405,7 @@ export async function ingestRepo(
     // org step is a no-op when this is undefined, so callers that
     // haven't yet migrated (the legacy test fixture, manifest-check.ts)
     // are unaffected.
+    /** @type {import("../packages/core/dist/ingestor/writer.js").WriteIngestionInput} */
     const writerInput = {
       repo: repoInput,
       ingestorResult,
@@ -465,16 +488,19 @@ export async function ingestRepo(
     // daily job red with nothing actionable left.
     if (err instanceof GitHubMetaError && err.kind === "not_found") {
       log("warn", `[${label}] Repo not found on GitHub — marking 'skipped' (terminal).`);
-      try {
-        await db
-          .update(schema.repos)
-          .set({
-            ingestionStatus: "skipped",
-            ingestionError: `Repo not found on GitHub: ${err.message}`,
-          })
-          .where(eq(schema.repos.githubUrl, repo.githubUrl ?? repo.url));
-      } catch {
-        // Best-effort — the warn above already records what happened
+      const repoUrl = repo.githubUrl ?? repo.url;
+      if (repoUrl) {
+        try {
+          await db
+            .update(schema.repos)
+            .set({
+              ingestionStatus: "skipped",
+              ingestionError: `Repo not found on GitHub: ${err.message}`,
+            })
+            .where(eq(schema.repos.githubUrl, repoUrl));
+        } catch {
+          // Best-effort — the warn above already records what happened
+        }
       }
       return true;
     }
@@ -488,16 +514,19 @@ export async function ingestRepo(
     }
 
     // Record the error on the repo row so it shows as 'failed' in the dashboard
-    try {
-      await db
-        .update(schema.repos)
-        .set({
-          ingestionStatus: "failed",
-          ingestionError: err instanceof Error ? err.message : String(err),
-        })
-        .where(eq(schema.repos.githubUrl, repo.githubUrl ?? repo.url));
-    } catch {
-      // Best-effort — don't mask the original error
+    const repoUrl = repo.githubUrl ?? repo.url;
+    if (repoUrl) {
+      try {
+        await db
+          .update(schema.repos)
+          .set({
+            ingestionStatus: "failed",
+            ingestionError: err instanceof Error ? err.message : String(err),
+          })
+          .where(eq(schema.repos.githubUrl, repoUrl));
+      } catch {
+        // Best-effort — don't mask the original error
+      }
     }
 
     return false;
@@ -681,3 +710,17 @@ import { pathToFileURL } from "node:url";
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   main();
 }
+
+// Export helper functions for testing
+export {
+  resolvePending,
+  resolveDueRepos,
+  resolveById,
+  resolveByUrl,
+  parseArgs,
+  argValue,
+  intEnv,
+  log,
+  logWarnings,
+  fatal,
+};

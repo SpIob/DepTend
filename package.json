@@ -14,7 +14,8 @@
     "lint": "eslint . --max-warnings 0",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "typecheck": "pnpm --filter @deptend/core build && pnpm -r typecheck && pnpm --filter @deptend/core typecheck:tests && pnpm --filter cli typecheck:tests",
+    "typecheck": "pnpm --filter @deptend/core build && pnpm -r typecheck && pnpm --filter @deptend/core typecheck:tests && pnpm --filter cli typecheck:tests && pnpm --filter scripts typecheck",
+    "typecheck:scripts": "tsc --noEmit --project scripts/tsconfig.json",
     "test": "pnpm -r test",
     "prepare": "husky",
     "postinstall": "pnpm --filter @deptend/core build"

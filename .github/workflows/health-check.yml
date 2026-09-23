@@ -20,18 +20,32 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        uses: actions/checkout@v4
 
       - name: Check public endpoints
+        # Full smoke contract from the former ci.yml `smoke` job (removed in
+        # cc7559e): HTTP 200 + non-404 visible body per page. The body check
+        # catches the error-boundary class (status 200, body says not found).
         run: |
           set -euo pipefail
-          for path in "/" "/missions" "/org/SpIob"; do
-            status=$(curl -fsSL -o /dev/null -w '%{http_code}' "https://deptend.vercel.app${path}")
+          for path in "/" "/missions" "/org/SpIob" "/repo/SpIob/deptend-go-test-fixture"; do
+            url="https://deptend.vercel.app${path}"
+            body=$(mktemp)
+            status=$(curl -fsSL -o "$body" -w '%{http_code}' "$url")
             if [[ "$status" != "200" ]]; then
-              echo "FAIL: ${path} returned HTTP ${status}"
+              echo "FAIL: ${url} returned HTTP ${status}"
+              cat "$body"
+              rm "$body"
               exit 1
             fi
-            echo "OK: ${path} (HTTP ${status})"
+            visible=$(perl -0777 -pe 's|<script[^>]*>.*?</script>||gs; s|<style[^>]*>.*?</style>||gs' "$body" | tr -d '\n')
+            if [[ "$visible" == *"404 - not found"* ]]; then
+              echo "FAIL: ${url} served a 404 body in production"
+              rm "$body"
+              exit 1
+            fi
+            echo "OK: ${url} (HTTP ${status}, $(wc -c <"$body") bytes)"
+            rm "$body"
           done
           echo "All health checks passed"
 
@@ -50,4 +64,4 @@ jobs:
             Workflow: Health Check
             Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
             Timestamp: ${{ github.event.workflow_run.created_at || github.event.head_commit.timestamp || 'manual trigger' }}
-            Failed endpoints: /, /missions, /org/SpIob
+            Failed endpoints: /, /missions, /org/SpIob, /repo/SpIob/deptend-go-test-fixture
