@@ -103,11 +103,14 @@ jobs:
             echo "::error::DATABASE_URL malformed"
             exit 1
           fi
-          # 6. Validate DATABASE_URL connectivity using Node.js (neon-http driver)
+          # 6. Validate DATABASE_URL connectivity using Node.js (neon-http driver).
+          # sql.query(), not sql(): @neondatabase/serverless >=1.0 removed the
+          # conventional-call API — sql('SELECT 1') throws at runtime and killed
+          # the 2026-09-24 08:57 UTC cron (run 35978272261) before ingestion.
           node -e "
             const { neon } = require('@neondatabase/serverless');
             const sql = neon(process.env.DATABASE_URL);
-            sql('SELECT 1').then(() => console.log('DB connection OK')).catch(e => { console.error('DB connection failed:', e.message); process.exit(1); });
+            sql.query('SELECT 1').then(() => console.log('DB connection OK')).catch(e => { console.error('DB connection failed:', e.message); process.exit(1); });
           " || exit 1
           # 7. Validate OSV API reachable
           curl -sf https://api.osv.dev/v1/vulns/CVE-2021-44228 >/dev/null || {

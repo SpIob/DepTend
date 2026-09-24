@@ -15,6 +15,7 @@ All notable changes to DepTend, condensed to one entry per phase.
 ### Fixed
 
 - **`ingest.yml`: action pins → major version tags.** Replaced SHA pins for checkout, pnpm/setup, setup-node with `@v4` to prevent silent rot (root cause of 6-day outage 2026-09-10..16).
+- **Pre-flight DB check: `sql.query()`, not `sql()`.** The pre-flight step's Node DB connectivity check called the Neon client conventionally; the installed `@neondatabase/serverless` 1.1.0 is tagged-template-only, so the call threw at runtime and killed the 2026-09-24 08:57 UTC cron (run 35978272261) in Pre-flight validation, before ingestion started. Fixed to `sql.query('SELECT 1')` (verified against the real Neon connection from `.env.local`), with a colocated workflow regression test (`scripts/ingest-workflow.test.js`) that extracts the `node -e` snippet from `ingest.yml` and executes it against the real 1.1.0 API shape. See ADR 0058's 2026-09-24 correction.
 
 ### Added
 
@@ -58,22 +59,6 @@ All notable changes to DepTend, condensed to one entry per phase.
 - **ADR 0056** — Upstash Redis rate limiter
 - **ADR 0057** — Mission writer advisory lock
 - **ADR 0058** — CI/CD pipeline hardening
-
----
-
-**[Unreleased] — Ingest workflow hardening & observability**
-
-### Fixed
-
-- **`ingest.yml`: action pins → major version tags.** Replaced SHA pins for checkout, pnpm/setup, setup-node with `@v4` to prevent silent rot (root cause of 6-day outage 2026-09-10..16).
-
-### Added
-
-- **Pre-flight validation step** in ingest workflow — validates `GH_INGEST_TOKEN`, `DATABASE_URL`, OSV API, GitHub API before ingestion starts.
-- **Integration test** in CI — runs full ingestion against `SpIob/deptend-go-test-fixture` on merge to main, after lint + typecheck + test pass.
-- **Circuit breaker** — creates GitHub issue after 3 consecutive scheduled failures.
-- **Dependabot config** — weekly GitHub Actions updates.
-- **Workflow status badges** in README.
 
 ---
 

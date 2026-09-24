@@ -91,6 +91,7 @@ Removed custom `yamllint`/`actionlint` steps (tools not available in GitHub-host
 - Path-based triggers verified: pushing only `docs/adr/*.md` does not trigger CI.
 - Integration test runs on `main` branch merge and passes.
 - **(2026-09-23 correction)** the three claims above were not corroborated by an attached artifact, and the `integration-test` job as originally written (`needs: ci`) would have failed job setup on push. Status reverted to Proposed until a green run of the pushed workflow is attached per AGENTS.md §10.
+- **(2026-09-24 correction)** The pre-flight step's new DB connectivity check (check #6) called `neon(...)('SELECT 1')` — a conventional call the installed `@neondatabase/serverless` 1.1.0 no longer supports (tagged-template-only; the only conventional-call entry point is `sql.query()`). The first scheduled run under it (2026-09-24 08:57 UTC, run 35978272261) failed in Pre-flight validation before ingestion started: valid YAML, parseable JS, runtime throw — `node --check` and shell syntax validation are silent on this class of bug (same class as the c32878f const-reassignment failure). Fixed to `sql.query('SELECT 1')`. Verification: the broken call reproduced locally against the real Neon connection from `.env.local` (exit 1), the fixed call passes (exit 0, "DB connection OK"), and `scripts/ingest-workflow.test.js` executes the extracted `node -e` snippet against the real 1.1.0 API shape — red before the fix (3/4), green after (4/4).
 
 ---
 
