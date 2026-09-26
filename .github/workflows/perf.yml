@@ -119,6 +119,11 @@ jobs:
           fi
 
       - name: Upload Lighthouse artifacts
+        # `!cancelled()` (not the default) so the JSON reports are preserved
+        # even when the assert step above fails — both failing runs so far
+        # (2026-09-20, 2026-09-25) lost their artifacts to this exact gap,
+        # which hid the LCP element identity from the perf diagnosis.
+        if: "!cancelled()"
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882
         with:
           name: lighthouse-${{ github.run_id }}

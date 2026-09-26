@@ -13,10 +13,8 @@
   },
   "dependencies": {
     "@deptend/core": "workspace:*",
-    "@neondatabase/serverless": "^1.1.0",
     "@upstash/ratelimit": "^2.1.0",
     "@upstash/redis": "^1.38.4",
-    "drizzle-orm": "^0.45.2",
     "next": "^15.5.24",
     "next-auth": "^4.24.15",
     "react": "^19.0.0",

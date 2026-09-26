@@ -188,3 +188,16 @@ Live-verified empirically before this ADR was finalized:
    Next.js production build from a clean state, including the
    `rm -rf .next dist` step), `lint` (no warnings), `format:check`
    (clean).
+
+## Verification evidence (TASK-04, 2026-09-25)
+
+Decision 1 and Decision 2 were implemented 2026-09-25 — the `dependencies`
+block had not been added in the month between this ADR's acceptance and that
+date, so the Verification claims above were written in anticipation, not from
+a completed run. TASK-04 ran the empirical test for real: root's
+`dependencies` block temporarily removed, `node_modules` and
+`packages/core/dist` wiped, then `pnpm install` + `pnpm --filter @deptend/core
+build` from that clean state — core's build succeeded (clean `dist/`, 82
+`.js` files plus declarations), confirming the fragility is closed. Root's
+block was restored afterward and `pnpm install` re-run. The full §6 gate
+passed the same day.

@@ -10,9 +10,39 @@ All notable changes to DepTend, condensed to one entry per phase.
 
 ---
 
-**[Unreleased] — Ingest workflow hardening & observability**
+**2026-09-25 — Patch the 6 production-dependency vulnerabilities**
 
 ### Fixed
+
+- **Four high + one moderate advisories in prod deps cleared** (`pnpm audit --prod` now reports only the documented `cli` false positive; was 1 low | 1 moderate | 4 high on HEAD `07e5435`):
+  - **`smol-toml` `^1.7.0` → `^1.7.1`** (resolved 1.9.0) in root `dependencies` — the untrusted-manifest parser the ingestion pipeline runs against public repos' `pyproject.toml` files; the DoS advisory (GHSA-7w5x-hrqm-74c2, high) is in this project's exact threat model.
+  - **`sharp` 0.35.3 → 0.35.4** (GHSA-rgj7-g3m4-5g8c, high) — the ADR 0036 override bumped to `^0.35.4`; `sharp` itself stays transitive via `next`.
+  - **`browserslist` 4.28.5 → 4.29.1** (GHSA-c83g-rgw3-j3cx / GHSA-73wf-gq98-2v4g, high) and **`baseline-browser-mapping` → 2.11.26** (GHSA-w5vr-8v7q-w6rv, moderate) — transitive chain fixed via pnpm `overrides`, not by adding them as direct dependencies.
+- **`cli` advisory (GHSA-6cpc-mj5c-m9rq, low) documented as a false positive.** Registry name-collision with `@deptend/cli`'s unpublished name: `pnpm why cli` returns empty, no installed package, empty paths. Not fixable by a version bump; it is what keeps `pnpm audit --prod` at exit 1 (1 low) — the CI advisory step's noise is real signal now that this is documented.
+
+### Added
+
+- **`packages/core/package.json` declares its own `dependencies` block** (ADR 0044 Decision 1, implemented): the six packages core imports — `@neondatabase/serverless ^1.1.0`, `@renovatebot/pep440 ^5.0.0`, `@yarnpkg/lockfile ^1.0.0`, `drizzle-orm ^0.45.2`, `semver ^7.8.5`, `smol-toml ^1.7.1` (matching root's block; lockstep rule applies). The ADR was Accepted 2026-08-29 but the block was never added until now; the acceptance check it cites — root's `dependencies` temporarily removed, clean `pnpm install` from a wiped `node_modules`, `pnpm --filter @deptend/core build` — was run for real this time and passes with a clean `dist/`.
+
+### Changed
+
+- **Dead `drizzle-orm` / `@neondatabase/serverless` entries removed from `app/package.json`** (ADR 0044 Decision 2): zero direct imports in `app/src/` (ADR 0012 keeps all Drizzle query-building in core); both resolve transitively via the `@deptend/core` workspace dependency. No-op at install time (pnpm dedupes), a real change to the manifest contract.
+
+- **Overrides now live in two places, identical sets, lockstep rule applies (ADR 0044 pattern).** `overrides:` was added to `pnpm-workspace.yaml` (pnpm ≥10's settings home) while `pnpm.overrides` stays in root `package.json` (ADR 0036's documented home) — both carrying `postcss ^8.5.23`, `nanoid ^3.3.18`, `sharp ^0.35.4`, `browserslist ^4.28.7`, `baseline-browser-mapping ^2.11.0`. Rationale, from isolation tests on the pinned pnpm 9.15.0: a `pnpm-workspace.yaml`-only install does **not** apply overrides (sharp stayed 0.35.3, browserslist 4.28.5, no `overrides:` written to the lockfile settings), while `package.json#pnpm.overrides` is still read **despite its deprecation WARN** ("The 'pnpm' field in package.json is no longer read by pnpm" — the WARN is cosmetic; the lockfile proves the field is live). Keeping the yaml entry means a future pnpm ≥10 bump (where the WARN becomes real) takes over seamlessly instead of silently dropping all overrides. On that bump, remove `package.json#pnpm` and keep the yaml entry.
+
+---
+
+**[Unreleased] — Ingest workflow hardening & observability; 2026-09-25 fix pass**
+
+### Fixed
+
+- **Home page `/` performance regression diagnosed (TASK-01)** — Lighthouse evidence (`reports/perf/local-root.json`, `local-root-warm.json`) shows the LCP breakdown is TTFB ~130–175 ms + elementRenderDelay ~2140 ms: the DB render is fast (7 chunks all arrive within ~180 ms of headers; TBT=0, bootup=0) and the regression is **Vercel Hobby function cold start + first-visit-after-idle**, not the page render — the DB-free `/api/bogus` route paid the same ~1.5 s cold. Root cause documented; no code change gamed the thresholds.
+- **`rate-limit-redis.ts` failure modes (TASK-02)** — lazy per-kind limiter init (module-load init was the §12 build-time-eval class; env-absent fallback re-evaluated per cold instance, thrown Redis construction retried after cooldown), `limit()` wrapped in try/catch with a deliberate **fail-open** on Redis errors (rate limiting is abuse protection, not a security boundary), bounded fallback Map (`MAX_FALLBACK_KEYS` eviction). New colocated `rate-limit-redis.test.ts` (9 tests).
+- **6 production-dependency vulnerabilities patched (TASK-03)** — 4 high + 1 moderate: `smol-toml` ^1.7.1 (DoS in the untrusted-manifest parser), `sharp` ^0.35.4, `browserslist` ^4.28.7, `baseline-browser-mapping` ^2.11.0 via overrides; `pnpm.audit --prod` now exits 0 except the documented `cli` false positive (GHSA-6cpc-mj5c-m9rq, not installed, empty paths). Finding: pnpm 9.15.0 still reads `package.json#pnpm.overrides` despite the deprecation WARN (proven live by lockfile settings); overrides live in BOTH `package.json#pnpm` and `pnpm-workspace.yaml` until a pnpm ≥10 bump.
+- **ADR 0044 implemented (TASK-04)** — `packages/core/package.json` gains its own `dependencies` block (six packages, matching root's, smol-toml ^1.7.1); `app/package.json` loses the unused `drizzle-orm`/`@neondatabase/serverless`; the acceptance check (root's deps removed, clean install, core build) was run for real and passes.
+- **Docs drift repaired (TASK-05)** — ADRs 0054 and 0058 flipped to Accepted with attached live-verification evidence; AGENTS.md §5/§13 updated: migration 0005 is applied to production (all 8 hashes verified), `GITHUB_TOKEN` is set in production.
+
+### Fixed (ingest workflow hardening — carried from the previous [Unreleased])
 
 - **`ingest.yml`: action pins → major version tags.** Replaced SHA pins for checkout, pnpm/setup, setup-node with `@v4` to prevent silent rot (root cause of 6-day outage 2026-09-10..16).
 - **Pre-flight DB check: `sql.query()`, not `sql()`.** The pre-flight step's Node DB connectivity check called the Neon client conventionally; the installed `@neondatabase/serverless` 1.1.0 is tagged-template-only, so the call threw at runtime and killed the 2026-09-24 08:57 UTC cron (run 35978272261) in Pre-flight validation, before ingestion started. Fixed to `sql.query('SELECT 1')` (verified against the real Neon connection from `.env.local`), with a colocated workflow regression test (`scripts/ingest-workflow.test.js`) that extracts the `node -e` snippet from `ingest.yml` and executes it against the real 1.1.0 API shape. See ADR 0058's 2026-09-24 correction.

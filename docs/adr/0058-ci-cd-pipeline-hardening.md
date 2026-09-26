@@ -1,6 +1,6 @@
 # ADR 0058: CI/CD pipeline hardening
 
-**Status:** Proposed (flipped back from Accepted 2026-09-23: the workflow was never validated on GitHub's servers — the original `needs: ci` reference pointed at a job name that no longer existed, which GitHub rejects at push time; corrected to `needs: test`. Live verification pending a green run on the pushed workflow.)
+**Status:** Accepted (green run on the pushed workflow attached 2026-09-25: CI run 36000910781, push of `07e5435`, all three jobs pass — Lint & Typecheck 1m11s, Test 42s, Integration test 37s; plus the scheduled Ingest success after the `sql.query()` fix. Evidence per AGENTS.md §10.)
 **Date:** 2026-09-20
 
 ---
