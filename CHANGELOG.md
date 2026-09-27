@@ -10,6 +10,27 @@ All notable changes to DepTend, condensed to one entry per phase.
 
 ---
 
+**2026-09-27 — Circuit breaker rework (label auto-create)**
+
+### Fixed
+
+- **Ingest circuit breaker silently produced no issue** (decision point flagged in the 2026-09-27 audit; resolved: rework the condition, not label pre-creation in repo config): `gh issue create --label "ops:ingest-failure,blocker"` fails outright when a label doesn't exist (no auto-create; no issue created) and the `|| true` on the create swallowed that failure — a real 3-consecutive-failure event would have raised nothing, since neither label existed in the repo. Both labels are now created idempotently inside the breaker step before the issue create, and the create's failure is no longer swallowed. `.github/workflows/ingest.yml`.
+
+---
+
+**2026-09-26 — NaN-hardened scoring, CI build gate, header hardening**
+
+### Fixed
+
+- **NaN-poisoned mission scores** (found live by the dependabot bump PR's failing CI run 36219595599 — `expected NaN to be greater than or equal to 0` at `cli/src/property.test.ts:503`): the EPSS boost multiplied the impact score by `NaN` behind an `epss_score != null` guard (true for `NaN`), and the scorers' `Math.min(Math.max(x, 0), 10)` clamps pass `NaN` straight through. Fixed class-wide with a shared NaN-safe `clampScore()` (`packages/core/src/scorer/impact.ts`) used by all four clamp sites across the three scorers; the EPSS boost now fires only on finite `epss_score` values, mapping `NaN` to the same conservative floor as the `unknown` severity fallback. Property test unchanged (it caught the real bug); deterministic unit tests pin the NaN path. ADR 0059.
+- **`X-Powered-By: Next.js` removed** (`poweredByHeader: false` in `app/next.config.ts`) — framework disclosure on every response, inconsistent with the H1 header hardening. Verified live on a local production build: header absent, all other headers intact. ADR 0059.
+
+### Changed
+
+- **CI gains a `build` job** (`.github/workflows/ci.yml`): a full `next build` on every push/PR, parallel with `test` after `lint-and-typecheck`. CI previously verified lint/typecheck/tests only, so a build-breaking regression in `app/` surfaced as a failed Vercel deploy instead of a red CI run. No `DATABASE_URL` needed at build time (lazy DB singleton). ADR 0059.
+
+---
+
 **2026-09-25 — Patch the 6 production-dependency vulnerabilities**
 
 ### Fixed

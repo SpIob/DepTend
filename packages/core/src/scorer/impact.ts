@@ -77,6 +77,21 @@ const UNCONFIRMED_TRANSITIVE_DISCOUNT = 0.9;
  */
 const EPSS_BOOST_FACTOR = 0.5;
 
+/**
+ * Clamp a score onto the 0–10 range, mapping NaN to 0.
+ *
+ * Math.min(Math.max(x, 0), 10) passes NaN straight through (Math.max(NaN, 0)
+ * is NaN), so a single NaN input — a JSON-parsed NaN string, an upstream
+ * numeric parse gone wrong, or an optional field whose `!= null` guard
+ * can't catch NaN — would propagate into every score this function returns
+ * and fail every downstream 0–10 invariant. Found live by the property
+ * test's NaN counterexample (cli/src/property.test.ts; CI run 36219595599).
+ */
+export function clampScore(score: number): number {
+  if (Number.isNaN(score)) return 0;
+  return Math.min(Math.max(score, 0), 10);
+}
+
 // ---------------------------------------------------------------------------
 // DefaultImpactScorer
 // ---------------------------------------------------------------------------
@@ -92,8 +107,13 @@ export class DefaultImpactScorer {
 
     let score = base * depTypeWeight(inputs.dep_type);
 
-    // Apply EPSS exploitability boost when available (scoring_version 1.1.0)
-    if (inputs.epss_score != null) {
+    // Apply EPSS exploitability boost when available (scoring_version 1.1.0).
+    // The `Number.isFinite` guard is load-bearing: `!= null` alone is true
+    // for NaN, and multiplying by NaN would poison the score — clamp()
+    // maps NaN to 0, the same conservative floor as the `unknown` severity
+    // fallback, rather than a boosted garbage value. (Number.isFinite does
+    // not narrow `number | null`, so both guards are needed.)
+    if (inputs.epss_score != null && Number.isFinite(inputs.epss_score)) {
       score *= 1 + inputs.epss_score * EPSS_BOOST_FACTOR;
     }
 
@@ -101,6 +121,6 @@ export class DefaultImpactScorer {
       score *= UNCONFIRMED_TRANSITIVE_DISCOUNT;
     }
 
-    return { score: Math.min(Math.max(score, 0), 10), inputs };
+    return { score: clampScore(score), inputs };
   }
 }

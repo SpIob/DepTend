@@ -21,7 +21,7 @@ import type {
   ImpactInputs,
 } from "../db/json-types.js";
 import type { EffortSignals } from "../ingestor/changelog-signals.js";
-import { DefaultImpactScorer } from "./impact.js";
+import { DefaultImpactScorer, clampScore } from "./impact.js";
 import { DefaultEffortScorer } from "./effort.js";
 import { DefaultEcosystemValueScorer } from "./ecosystem-value.js";
 import {
@@ -112,10 +112,10 @@ export function computeMissionScore(ctx: MissionScoringContext): MissionScoreCom
   const effortResult = effortScorer.score(effortInputs);
   const ecosystemValueResult = ecosystemValueScorer.score(ecosystemValueInputs);
 
-  const composite_score = Math.min(
-    Math.max(impactResult.score * 0.6 + ecosystemValueResult.score * 0.4, 0),
-    10,
-  );
+  // clampScore maps NaN to 0 — the bare Math.min(Math.max(...)) form would
+  // pass NaN straight through (Math.max(NaN, 0) is NaN). Same poison path
+  // the impact scorer's clamp hardened; see clampScore for the live find.
+  const composite_score = clampScore(impactResult.score * 0.6 + ecosystemValueResult.score * 0.4);
 
   return {
     impact_score: impactResult.score,

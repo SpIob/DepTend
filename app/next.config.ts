@@ -4,6 +4,12 @@ const config: NextConfig = {
   // Enforce strict mode to catch potential issues early
   reactStrictMode: true,
 
+  // Drop the `X-Powered-By: Next.js` response header. Framework disclosure
+  // is recon value for an attacker and zero value for this app's users;
+  // consistent with the middleware's H1 header hardening (no-referrer,
+  // Permissions-Policy). Next emits the header by default on every route.
+  poweredByHeader: false,
+
   // Transpile shared workspace packages
   transpilePackages: ["@deptend/core"],
 
