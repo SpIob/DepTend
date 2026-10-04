@@ -10,6 +10,15 @@ All notable changes to DepTend, condensed to one entry per phase.
 
 ---
 
+**2026-09-27 — Weekly performance audit #11 fix (assert-glob defect + cold-start mitigation)**
+
+### Fixed
+
+- **Weekly performance audit failed on 2 phantom pages every run** (audit #11, run 36304685824, reported "3 page(s) failed thresholds" when only 1 was a fresh measurement): the assert step globbed `reports/perf/*.json`, which also matched `local-root.json` / `local-root-warm.json` — stale local-measurement artifacts committed at the directory's top level in f2cbd93 as the TASK-01 evidence. The glob now reads only the run's own `*.report.json` outputs (with a `shopt -s nullglob` + empty-set guard so a Lighthouse-step failure can't pass silently), and the evidence files moved to `reports/perf/2026-09-25-cold-start-evidence/` (preserved, not deleted; CHANGELOG TASK-01 path updated). `.github/workflows/perf.yml`.
+- **Weekly audit's first audited page paid the Vercel Hobby function cold start** (root LCP 1016ms on the 09-19 pass → 2219–3224ms on every run since, reproduced exactly by local runs against prod; no `app/` code changed in the window — last touch 09-10, the passing run served the same build): the four pages run sequentially with `/` first, so `/` always absorbed the ~1–2s cold start while the remaining three (warmed by that pass) scored 99–100 — a cold-start lottery the single-run assert measured as a page regression. New **Warm Vercel functions** step curls all four pages before the measured pass (verified live: after ~40 min idle, first request TTFB 0.97s → 0.19s warm). AGENTS.md §9 updated in the same pass.
+
+---
+
 **2026-09-27 — Circuit breaker rework (label auto-create)**
 
 ### Fixed
@@ -57,7 +66,7 @@ All notable changes to DepTend, condensed to one entry per phase.
 
 ### Fixed
 
-- **Home page `/` performance regression diagnosed (TASK-01)** — Lighthouse evidence (`reports/perf/local-root.json`, `local-root-warm.json`) shows the LCP breakdown is TTFB ~130–175 ms + elementRenderDelay ~2140 ms: the DB render is fast (7 chunks all arrive within ~180 ms of headers; TBT=0, bootup=0) and the regression is **Vercel Hobby function cold start + first-visit-after-idle**, not the page render — the DB-free `/api/bogus` route paid the same ~1.5 s cold. Root cause documented; no code change gamed the thresholds.
+- **Home page `/` performance regression diagnosed (TASK-01)** — Lighthouse evidence (`reports/perf/2026-09-25-cold-start-evidence/local-root.json`, `local-root-warm.json`; originally committed at `reports/perf/local-root{,-warm}.json`, moved 2026-09-27 — they sat in the weekly audit's assert glob and phantom-failed every run) shows the LCP breakdown is TTFB ~130–175 ms + elementRenderDelay ~2140 ms: the DB render is fast (7 chunks all arrive within ~180 ms of headers; TBT=0, bootup=0) and the regression is **Vercel Hobby function cold start + first-visit-after-idle**, not the page render — the DB-free `/api/bogus` route paid the same ~1.5 s cold. Root cause documented; no code change gamed the thresholds.
 - **`rate-limit-redis.ts` failure modes (TASK-02)** — lazy per-kind limiter init (module-load init was the §12 build-time-eval class; env-absent fallback re-evaluated per cold instance, thrown Redis construction retried after cooldown), `limit()` wrapped in try/catch with a deliberate **fail-open** on Redis errors (rate limiting is abuse protection, not a security boundary), bounded fallback Map (`MAX_FALLBACK_KEYS` eviction). New colocated `rate-limit-redis.test.ts` (9 tests).
 - **6 production-dependency vulnerabilities patched (TASK-03)** — 4 high + 1 moderate: `smol-toml` ^1.7.1 (DoS in the untrusted-manifest parser), `sharp` ^0.35.4, `browserslist` ^4.28.7, `baseline-browser-mapping` ^2.11.0 via overrides; `pnpm.audit --prod` now exits 0 except the documented `cli` false positive (GHSA-6cpc-mj5c-m9rq, not installed, empty paths). Finding: pnpm 9.15.0 still reads `package.json#pnpm.overrides` despite the deprecation WARN (proven live by lockfile settings); overrides live in BOTH `package.json#pnpm` and `pnpm-workspace.yaml` until a pnpm ≥10 bump.
 - **ADR 0044 implemented (TASK-04)** — `packages/core/package.json` gains its own `dependencies` block (six packages, matching root's, smol-toml ^1.7.1); `app/package.json` loses the unused `drizzle-orm`/`@neondatabase/serverless`; the acceptance check (root's deps removed, clean install, core build) was run for real and passes.
