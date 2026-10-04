@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import { Analytics } from "@vercel/analytics/next";
 import { Providers } from "@/components/providers";
 
 // Canonical origin per ADR 0015 — deptend.vercel.app is the project's
@@ -39,6 +40,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }):
           Skip to content
         </a>
         <Providers>{children}</Providers>
+        <Analytics />
         <footer className="border-border border-t">
           <div className="text-ink-muted mx-auto flex max-w-6xl flex-wrap items-center gap-x-3 gap-y-1 px-4 py-6 font-mono text-xs sm:px-6">
             <span className="text-ink font-semibold">DepTend</span>

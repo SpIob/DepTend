@@ -10,6 +10,14 @@ All notable changes to DepTend, condensed to one entry per phase.
 
 ---
 
+**2026-10-04 — Vercel Web Analytics**
+
+### Added
+
+- **`@vercel/analytics@^2.0.1`** in `app/package.json` + **`<Analytics />`** (from the `@vercel/analytics/next` App Router import) mounted in `app/src/app/layout.tsx` after `<Providers>` — audience-level analytics (page views, referrers) on every route from one mount point. First-party to the existing Vercel Hobby hosting; free within 50,000 events/month (overage pauses collection, never bills — zero-budget compliant). CSP needed no change: the script is served same-origin (`/_vercel/insights/script.js`), covered by the nonce-based `script-src 'self'` (ADR 0037). No cookie banner introduced (no cookies at the Hobby tier). Install run with pnpm, not npm (workspace-member rule). ADR 0060 (Proposed — flips to Accepted after deploy + enablement live verification).
+
+---
+
 **2026-09-27 — Weekly performance audit #11 fix (assert-glob defect + cold-start mitigation)**
 
 ### Fixed
