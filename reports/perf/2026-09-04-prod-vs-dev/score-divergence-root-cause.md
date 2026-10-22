@@ -114,7 +114,7 @@ branch. Specifically:
 Confidence matches the same picture: dev has 4 flags set (no_lock_file,
 cvss_score_missing, downstream_dependents_unavailable,
 breaking_change_signals_unavailable) → `"low"` per
-`deriveConfidence()` (line 513-518: 2+ flags → low). Prod has only
+`deriveConfidence()` (`scorer/confidence.ts`: 2+ flags → low). Prod has only
 `no_lock_file` → `"medium"`. AGENTS.md §11 already notes that pre-ADR-0032
 docs overclaimed `"medium"`; the dev branch's state is the
 pre-ADR-0032 / pre-CRSS-V3-extraction era.

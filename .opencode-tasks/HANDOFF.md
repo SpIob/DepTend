@@ -1,5 +1,10 @@
 # HANDOFF — DepTend autonomous fix/improvement pass (2026-09-25)
 
+> **2026-10-22 status:** all five staged tasks below were executed in `f2cbd93`
+> (2026-09-26, PR #17; TASK-01 as the documented diagnosis it specified, evidence in
+> `reports/perf/2026-09-25-cold-start-evidence/`). This file is now the historical record
+> of the 2026-09-25 audit pass; test counts and the HEAD hash below are from that date.
+
 ## Why this directory exists
 
 Mico asked for a bug-fix/improvement pass with each task assigned to OpenCode, requiring
