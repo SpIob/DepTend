@@ -90,6 +90,7 @@ function createMockOsvResult(depCount: number): OsvFetchResult {
   return {
     advisories,
     packageAdvisoryMap,
+    versionMatchedPackages: new Set(),
     warnings: [],
   };
 }

@@ -113,6 +113,13 @@ function missionPairKey(dependencyId: string, advisoryId: string): string {
   return `${dependencyId}:${advisoryId}`;
 }
 
+/** One prefetchable effort-signal request — see generateMissionsForRepo(). */
+interface EffortSignalCandidate {
+  dependency: Dependency;
+  /** Same derivation the in-transaction lookup uses — never null-drifts. */
+  targetVersion: string | null;
+}
+
 export class MissionWriter {
   constructor(private readonly db: AnyNeonDb) {}
 
@@ -179,19 +186,44 @@ export class MissionWriter {
     // Classify all dependencies into mission types
     const classifications = classifyAllMissions(allDeps, advisoryMap, registryMetadata);
 
-    // Prepare candidate rows for prefetch (only vulnerability_fix for effort signals)
-    const vulnCandidates = advisoryRows.filter((r) =>
-      classifications.some(
-        (c) => c.dependencyId === r.dependency.id && c.classification.type === "vulnerability_fix",
-      ),
-    );
+    // O(1) dependency lookup, built before any DB work — used by both the
+    // prefetch below and the classification loop inside the transaction.
+    const depsById = new Map<string, Dependency>();
+    for (const dep of allDeps) {
+      depsById.set(dep.id, dep);
+    }
+
+    // Candidate rows for the effort-signal prefetch. Originally
+    // vulnerability_fix only (ADR 0029 Step 5); dep_update added because
+    // changelog / migration-guide signals are equally relevant to a plain
+    // version bump — without them every dep_update mission carried
+    // breaking_change_signals_unavailable and was structurally capped at
+    // "low" confidence. Both types derive the target version exactly the
+    // way the in-transaction lookup does (advisory fix → classification
+    // target → latest), so the prefetch key and the lookup key cannot drift.
+    const effortSignalCandidates: EffortSignalCandidate[] = [];
+    for (const { dependencyId, classification } of classifications) {
+      const dependency = depsById.get(dependencyId);
+      if (dependency === undefined) continue;
+      if (classification.type === "vulnerability_fix" && classification.advisory) {
+        effortSignalCandidates.push({
+          dependency,
+          targetVersion: classification.advisory.fixedVersion ?? dependency.latestVersion ?? null,
+        });
+      } else if (classification.type === "dep_update") {
+        effortSignalCandidates.push({
+          dependency,
+          targetVersion: classification.targetVersion ?? dependency.latestVersion ?? null,
+        });
+      }
+    }
 
     // ADR 0029, Step 5: prefetch BEFORE the transaction opens
     const effortSignalsByKey =
-      sourceRepoByPackage === undefined || vulnCandidates.length === 0
+      sourceRepoByPackage === undefined || effortSignalCandidates.length === 0
         ? new Map<string, EffortSignals>()
         : await this.prefetchEffortSignalsForCandidates(
-            vulnCandidates,
+            effortSignalCandidates,
             sourceRepoByPackage,
             githubToken ?? null,
           );
@@ -226,16 +258,11 @@ export class MissionWriter {
 
       const existingMissions = await this.selectExistingMissions(tx, classificationPairs);
 
-      // Pre-build an O(1) dependency lookup and the per-classification
-      // mission inputs. Doing this in JS once, before any DB writes, is
-      // what turns the original 2N round-trip loop into a constant number
-      // of bulk statements (ADR 0042). The Map replaces an allDeps.find()
-      // per iteration that was O(N) — itself O(N²) for the loop.
-      const depsById = new Map<string, Dependency>();
-      for (const dep of allDeps) {
-        depsById.set(dep.id, dep);
-      }
-
+      // Pre-build the per-classification mission inputs. Doing this in JS
+      // once, before any DB writes, is what turns the original 2N
+      // round-trip loop into a constant number of bulk statements (ADR
+      // 0042). depsById was already built (outside the transaction) for the
+      // prefetch — reused here.
       interface PreparedRow {
         existingMissionId: string | null;
         /** Reopen this existing mission from "resolved" → "open" (ADR 0008 §3). */
@@ -257,11 +284,17 @@ export class MissionWriter {
         const dependency = depsById.get(dependencyId);
         if (!dependency) continue;
 
-        // Build effort signals for vulnerability_fix only
+        // Build effort signals for the mission types that fetched them:
+        // vulnerability_fix (ADR 0029) and dep_update (confidence-cap fix).
+        // Key derivation mirrors the prefetch exactly — advisory fix →
+        // classification target → latest — so the two lookups cannot drift.
         let signals: EffortSignals | undefined;
         if (classification.type === "vulnerability_fix" && classification.advisory) {
           const advTargetVersion = classification.advisory.fixedVersion ?? dependency.latestVersion;
           signals = effortSignalsByKey.get(buildSignalKey(dependency.id, advTargetVersion));
+        } else if (classification.type === "dep_update") {
+          const target = classification.targetVersion ?? dependency.latestVersion;
+          signals = effortSignalsByKey.get(buildSignalKey(dependency.id, target));
         }
 
         const ctx: MissionScoringContext = {
@@ -380,17 +413,16 @@ export class MissionWriter {
    * all through changelog-signals.ts's bounded-concurrency batch fetch.
    */
   private async prefetchEffortSignalsForCandidates(
-    candidateRows: { dependency: Dependency; advisory: Advisory }[],
+    candidates: EffortSignalCandidate[],
     sourceRepoByPackage: Map<string, SourceRepoRef | null>,
     githubToken: string | null,
   ): Promise<Map<string, EffortSignals>> {
-    const requests: EffortSignalRequest[] = candidateRows.map((row) => {
-      const targetVersion = row.advisory.fixedVersion ?? row.dependency.latestVersion;
+    const requests: EffortSignalRequest[] = candidates.map(({ dependency, targetVersion }) => {
       return {
-        key: buildSignalKey(row.dependency.id, targetVersion),
-        sourceRepo: sourceRepoByPackage.get(row.dependency.packageName) ?? null,
-        ecosystem: row.dependency.ecosystem,
-        currentFloor: extractVersionFloor(row.dependency.ecosystem, row.dependency.versionSpec),
+        key: buildSignalKey(dependency.id, targetVersion),
+        sourceRepo: sourceRepoByPackage.get(dependency.packageName) ?? null,
+        ecosystem: dependency.ecosystem,
+        currentFloor: extractVersionFloor(dependency.ecosystem, dependency.versionSpec),
         targetVersion,
       };
     });

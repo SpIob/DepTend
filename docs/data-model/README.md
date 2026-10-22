@@ -119,14 +119,14 @@ Global advisory records from OSV and GHSA. Shared across repos.
 
 Junction table. Produced during ingestion after version range evaluation.
 
-| Column          | Type                   | Notes                                          |
-| --------------- | ---------------------- | ---------------------------------------------- |
-| `id`            | uuid PK                |                                                |
-| `dependency_id` | uuid FK → dependencies | CASCADE on delete                              |
-| `advisory_id`   | uuid FK → advisories   | CASCADE on delete                              |
-| `is_affected`   | boolean                | True if installed version is in affected range |
-| `match_method`  | text                   | `version_spec` or `resolved_version`           |
-| `created_at`    | timestamptz            |                                                |
+| Column          | Type                   | Notes                                                                                                                             |
+| --------------- | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `id`            | uuid PK                |                                                                                                                                   |
+| `dependency_id` | uuid FK → dependencies | CASCADE on delete                                                                                                                 |
+| `advisory_id`   | uuid FK → advisories   | CASCADE on delete                                                                                                                 |
+| `is_affected`   | boolean                | True if installed version is in affected range                                                                                    |
+| `match_method`  | text                   | `version_spec` (name-only OSV query, conservative) or `version_resolved` (query carried the lock-file-resolved version; ADR 0061) |
+| `created_at`    | timestamptz            |                                                                                                                                   |
 
 UNIQUE constraint on `(dependency_id, advisory_id)`.
 

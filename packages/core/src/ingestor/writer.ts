@@ -324,6 +324,10 @@ export class IngestionWriter {
     // All advisories in one round-trip.
     // Conflict on osv_id — update mutable fields. CVSS scores and severity
     // are revised over time; rawData keeps the latest OSV snapshot.
+    // epss_score refreshes from the ADR 0039 enrichment stage each run, but
+    // COALESCEd against the stored value: a run where the EPSS fetch failed
+    // must not null out a previously-stored score (same erosion guard as
+    // the registry-metadata split in upsertDependencies).
     await tx
       .insert(advisories)
       .values(rows)
@@ -332,6 +336,7 @@ export class IngestionWriter {
         set: {
           severity: sql`excluded.severity`,
           cvssScore: sql`excluded.cvss_score`,
+          epssScore: sql`COALESCE(excluded.epss_score, ${advisories.epssScore})`,
           summary: sql`excluded.summary`,
           details: sql`excluded.details`,
           affectedVersions: sql`excluded.affected_versions`,
@@ -360,10 +365,20 @@ export class IngestionWriter {
       return { depCount: 0, depAdvisoryCount: 0 };
     }
 
-    // Build dependency rows, merging registry metadata in
-    const depRows: NewDependency[] = ingestorResult.dependencies.map((dep) => {
+    // Build dependency rows, merging registry metadata in. Rows whose
+    // package has NO registry metadata entry (fetch failed / package unknown
+    // to the registry) are separated from rows WITH metadata: only the
+    // latter may overwrite latest_version / is_deprecated /
+    // deprecation_note, otherwise one transient registry outage would erase
+    // known-good versions and silently clear deprecation flags (the
+    // upsert's SET clause runs unconditionally on conflict). A metadata
+    // entry whose latestVersion is null is the registry genuinely answering
+    // "no version field" — real, checked data that still overwrites.
+    const depRowsWithMeta: NewDependency[] = [];
+    const depRowsWithoutMeta: NewDependency[] = [];
+    for (const dep of ingestorResult.dependencies) {
       const meta = registryResult.metadata.get(dep.package_name);
-      return {
+      const row: NewDependency = {
         repoId,
         // Every dependency in one ingestion run shares the ingestor's own
         // ecosystem — exactly one ingestor "wins" per repo under ADR
@@ -379,33 +394,68 @@ export class IngestionWriter {
         isDeprecated: meta?.isDeprecated ?? false,
         deprecationNote: meta?.deprecationNote ?? null,
       };
-    });
+      if (meta === undefined) {
+        depRowsWithoutMeta.push(row);
+      } else {
+        depRowsWithMeta.push(row);
+      }
+    }
 
-    // Conflict on (repo_id, package_name, dep_type)
-    const upserted = await tx
-      .insert(dependencies)
-      .values(depRows)
-      .onConflictDoUpdate({
-        target: [dependencies.repoId, dependencies.packageName, dependencies.depType],
-        set: {
-          versionSpec: sql`excluded.version_spec`,
-          // resolved_version is updated from lock file on each run
-          resolvedVersion: sql`excluded.resolved_version`,
-          latestVersion: sql`excluded.latest_version`,
-          isDeprecated: sql`excluded.is_deprecated`,
-          deprecationNote: sql`excluded.deprecation_note`,
-          updatedAt: new Date(),
-        },
-      })
-      .returning({
-        id: dependencies.id,
-        packageName: dependencies.packageName,
-        depType: dependencies.depType,
-      });
+    // Conflict on (repo_id, package_name, dep_type). Two upserts — one per
+    // metadata-availability group — because their SET clauses differ; when
+    // every package resolved (the common case) only the first runs.
+    const upsertedRows: { id: string; packageName: string; depType: string }[] = [];
+
+    if (depRowsWithMeta.length > 0) {
+      const upserted = await tx
+        .insert(dependencies)
+        .values(depRowsWithMeta)
+        .onConflictDoUpdate({
+          target: [dependencies.repoId, dependencies.packageName, dependencies.depType],
+          set: {
+            versionSpec: sql`excluded.version_spec`,
+            // resolved_version is updated from lock file on each run
+            resolvedVersion: sql`excluded.resolved_version`,
+            latestVersion: sql`excluded.latest_version`,
+            isDeprecated: sql`excluded.is_deprecated`,
+            deprecationNote: sql`excluded.deprecation_note`,
+            updatedAt: new Date(),
+          },
+        })
+        .returning({
+          id: dependencies.id,
+          packageName: dependencies.packageName,
+          depType: dependencies.depType,
+        });
+      upsertedRows.push(...upserted);
+    }
+
+    if (depRowsWithoutMeta.length > 0) {
+      // Registry metadata absent for these packages this run: refresh the
+      // manifest-derived columns, PRESERVE the previously-fetched registry
+      // columns rather than writing null/false over them.
+      const upserted = await tx
+        .insert(dependencies)
+        .values(depRowsWithoutMeta)
+        .onConflictDoUpdate({
+          target: [dependencies.repoId, dependencies.packageName, dependencies.depType],
+          set: {
+            versionSpec: sql`excluded.version_spec`,
+            resolvedVersion: sql`excluded.resolved_version`,
+            updatedAt: new Date(),
+          },
+        })
+        .returning({
+          id: dependencies.id,
+          packageName: dependencies.packageName,
+          depType: dependencies.depType,
+        });
+      upsertedRows.push(...upserted);
+    }
 
     // "packageName:depType" → dependency UUID
     const depIdMap = new Map<string, string>();
-    for (const row of upserted) {
+    for (const row of upsertedRows) {
       depIdMap.set(`${row.packageName}:${row.depType}`, row.id);
     }
 
@@ -437,6 +487,20 @@ export class IngestionWriter {
           (d) => d.package_name === packageName,
         );
 
+        // Which provenance label applies to this package's links: when the
+        // OSV query carried the lock-file-resolved version, the returned
+        // advisories were matched against the installed version itself
+        // ("version_resolved"); without it, the advisory set is
+        // package-wide under a conservative is_affected=true
+        // ("version_spec"). Deps whose own row lacks a resolved version
+        // under a version-matched package keep the conservative label —
+        // their installed version is unconfirmed.
+        const versionResolved =
+          osvResult.versionMatchedPackages.has(packageName) &&
+          affectedDeps.every(
+            (d) => d.resolved_version !== undefined && d.resolved_version !== null,
+          );
+
         for (const dep of affectedDeps) {
           const dependencyId = depIdMap.get(`${packageName}:${dep.dep_type}`);
           if (dependencyId === undefined) continue;
@@ -448,11 +512,13 @@ export class IngestionWriter {
             depAdvRows.push({
               dependencyId,
               advisoryId,
-              // Phase 1: conservative — any advisory for a package is flagged
-              // as potentially affecting. Precise version-range matching
-              // requires a resolved version (lock file), deferred to Phase 2.
+              // Conservative at the dependency level even when the OSV
+              // query was version-filtered: OSV's version matching already
+              // scopes the advisory set to the installed version, so no
+              // additional range math happens here — but a version-matched
+              // package is still labeled honestly rather than "version_spec".
               isAffected: true,
-              matchMethod: "version_spec",
+              matchMethod: versionResolved ? "version_resolved" : "version_spec",
             });
           }
         }
@@ -474,7 +540,7 @@ export class IngestionWriter {
       }
     }
 
-    return { depCount: upserted.length, depAdvisoryCount };
+    return { depCount: upsertedRows.length, depAdvisoryCount };
   }
 
   // ---------------------------------------------------------------------------

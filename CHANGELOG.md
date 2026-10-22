@@ -1,3 +1,21 @@
+---
+
+**2026-10-22 — Ingestion & scoring audit fixes (ADR 0061)**
+
+Six fixes from the 2026-10-22 `packages/core` audit, one per finding:
+
+### Added
+
+- **EPSS exploitability scoring, actually implemented (ADR 0039 was Accepted but never built):** new `ingestor/epss.ts` — CVE aliases harvested from OSV records, batch-queried against FIRST's free EPSS API after the detail fetches, scores stamped onto advisories before the upsert (fail-soft, warn-and-continue). Impact scorer's existing EPSS boost now receives real data. `scripts/backfill-epss.mjs` backfilled existing rows — production 167/172 advisories now carry an `epss_score` (the 5 gaps are structural: no CVE alias, or pre-EPSS CVE).
+- **CVSS v4.0 base-score support** in `ingestor/cvss.ts`: full port of FIRST's cvss-v4-calculator (macrovector lookup + mean-distance refinement; threat/environmental/supplemental metrics), differentially verified 18/18 against FIRST's own implementation and the official Python `cvss` library. PYSEC-2026 advisories that previously sat at severity `unknown` (impact floor 1.0) now score from their actual vectors (8.9/7.6/6.9).
+- **Stale-`running` recovery:** `resolvePending()` re-queues repos stuck at `ingestionStatus: 'running'` past `STALE_RUNNING_HOURS` (default 2h) — a cancelled/crashed workflow run used to wedge a repo at `running` forever.
+
+### Changed
+
+- **OSV batch queries are version-filtered when a lock file was parsed:** `querybatch` now carries each dependency's lock-file-resolved version (ADR 0038), so a patched install stops matching its package's historical advisories. Matching links are labeled `match_method: "version_resolved"`; lock-less repos keep the conservative name-only behavior.
+- **`dep_update` missions now fetch breaking-change/migration-guide signals** (previously `vulnerability_fix` only), un-capping them from structural `low` confidence.
+- **Registry-metadata erosion guard:** a transient npm/PyPI/Go registry failure no longer overwrites stored `latest_version`/`is_deprecated` with null/false — the upsert splits into with/without-metadata groups with different SET clauses. Same guard on `advisories.epss_score` (COALESCEd against the stored value).
+
 # Changelog
 
 All notable changes to DepTend, condensed to one entry per phase.
