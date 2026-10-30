@@ -70,7 +70,7 @@ export function WithdrawButton({
 
   if (request.kind === "done") {
     return (
-      <p className="text-ink-muted font-mono text-xs">
+      <p className="font-mono text-xs text-ink-muted">
         Submission withdrawn — it no longer counts against the repo cap.
       </p>
     );
@@ -84,12 +84,12 @@ export function WithdrawButton({
     <div className="flex flex-col items-start gap-1">
       {confirming ? (
         <div className="flex items-center gap-2">
-          <span className="text-ink-muted font-mono text-xs">Remove this submission?</span>
+          <span className="font-mono text-xs text-ink-muted">Remove this submission?</span>
           <button
             type="button"
             disabled={pending}
             onClick={() => void withdraw()}
-            className="text-status-error font-mono text-xs underline decoration-dotted underline-offset-2 disabled:opacity-50"
+            className="font-mono text-xs text-status-error underline decoration-dotted underline-offset-2 disabled:opacity-50"
           >
             {pending ? "Removing…" : "Yes, remove it"}
           </button>
@@ -98,7 +98,7 @@ export function WithdrawButton({
             onClick={() => {
               setRequest({ kind: "idle" });
             }}
-            className="text-ink-muted hover:text-ink font-mono text-xs underline decoration-dotted underline-offset-2"
+            className="font-mono text-xs text-ink-muted underline decoration-dotted underline-offset-2 hover:text-ink"
           >
             Cancel
           </button>
@@ -109,14 +109,14 @@ export function WithdrawButton({
           onClick={() => {
             setRequest({ kind: "confirming" });
           }}
-          className="text-ink-muted hover:text-ink font-mono text-xs underline decoration-dotted underline-offset-2"
+          className="font-mono text-xs text-ink-muted underline decoration-dotted underline-offset-2 hover:text-ink"
         >
           You submitted this — remove it?
         </button>
       )}
       <div role="status" aria-live="polite">
         {errorMessage !== null && (
-          <p className="text-status-error text-[10px] leading-tight">{errorMessage}</p>
+          <p className="text-[10px] leading-tight text-status-error">{errorMessage}</p>
         )}
       </div>
     </div>

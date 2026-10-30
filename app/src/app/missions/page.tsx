@@ -31,9 +31,9 @@ export const metadata: Metadata = {
 
 function EmptyState(): React.JSX.Element {
   return (
-    <div className="border-border bg-surface rounded-sm border border-dashed p-10 text-center">
-      <p className="text-ink font-medium">No missions yet.</p>
-      <p className="text-ink-muted mt-1 text-sm">
+    <div className="rounded-sm border border-dashed border-border bg-surface p-10 text-center">
+      <p className="font-medium text-ink">No missions yet.</p>
+      <p className="mt-1 text-sm text-ink-muted">
         Missions appear here once a submitted repo has been ingested and scored.
       </p>
     </div>
@@ -59,7 +59,7 @@ function BoardSkeleton(): React.JSX.Element {
   return (
     <ul className="flex flex-col gap-3" aria-label="Loading missions">
       {(["mission-0", "mission-1", "mission-2", "mission-3"] as const).map((key) => (
-        <li key={key} className="border-border bg-surface h-24 animate-pulse rounded-md border" />
+        <li key={key} className="h-24 animate-pulse rounded-md border border-border bg-surface" />
       ))}
     </ul>
   );
@@ -71,7 +71,7 @@ function HeaderRightSkeleton(): React.JSX.Element {
   // real values stream in. Same height as the resolved content.
   return (
     <>
-      <span className="bg-surface inline-block h-3 w-20 animate-pulse rounded" />
+      <span className="inline-block h-3 w-20 animate-pulse rounded bg-surface" />
     </>
   );
 }
@@ -127,7 +127,7 @@ async function renderAllMissionsPage(
             <span className="text-border" aria-hidden="true">
               /
             </span>
-            <h1 className="text-ink-muted font-mono text-sm">all missions</h1>
+            <h1 className="font-mono text-sm text-ink-muted">all missions</h1>
           </>
         }
         right={
@@ -149,11 +149,11 @@ async function renderAllMissionsPage(
         {/* LCP element. Renders immediately with the initial HTML payload,
             outside the <Suspense> boundary — see reports/perf/2026-09-05/round-3
             for the LCP render-delay root cause this addresses. */}
-        <p className="text-ink-muted max-w-xl text-sm leading-relaxed">
+        <p className="max-w-xl text-sm leading-relaxed text-ink-muted">
           Every open mission across every indexed repo, one list. Looking for one repo?{" "}
           <Link
             href="/"
-            className="text-accent hover:text-ink underline decoration-dotted underline-offset-2"
+            className="text-accent underline decoration-dotted underline-offset-2 hover:text-ink"
           >
             Browse repos
           </Link>{" "}

@@ -73,7 +73,7 @@ export function BookmarkToggle({
         onClick={() => void signInWithGitHub()}
         title={signedOutLabel}
         aria-label={signedOutLabel}
-        className="text-ink-muted hover:text-ink shrink-0 p-0.5 font-mono text-xl leading-none"
+        className="shrink-0 p-0.5 font-mono text-xl leading-none text-ink-muted hover:text-ink"
       >
         ☆
       </button>
@@ -100,7 +100,7 @@ export function BookmarkToggle({
       </button>
       <div role="status" aria-live="polite">
         {errorMessage !== null && (
-          <p className="text-status-error text-[10px] leading-tight">{errorMessage}</p>
+          <p className="text-[10px] leading-tight text-status-error">{errorMessage}</p>
         )}
       </div>
     </div>

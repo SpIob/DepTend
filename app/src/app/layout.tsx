@@ -35,18 +35,18 @@ export default function RootLayout({ children }: { children: React.ReactNode }):
       <body>
         <a
           href="#main"
-          className="focus:bg-accent sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-sm focus:px-3 focus:py-1.5 focus:font-mono focus:text-sm focus:text-white"
+          className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-sm focus:bg-accent focus:px-3 focus:py-1.5 focus:font-mono focus:text-sm focus:text-white"
         >
           Skip to content
         </a>
         <Providers>{children}</Providers>
         <Analytics />
-        <footer className="border-border border-t">
-          <div className="text-ink-muted mx-auto flex max-w-6xl flex-wrap items-center gap-x-3 gap-y-1 px-4 py-6 font-mono text-xs sm:px-6">
-            <span className="text-ink font-semibold">DepTend</span>
+        <footer className="border-t border-border">
+          <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-3 gap-y-1 px-4 py-6 font-mono text-xs text-ink-muted sm:px-6">
+            <span className="font-semibold text-ink">DepTend</span>
             <a
               href="https://github.com/SpIob/DepTend"
-              className="hover:text-ink underline decoration-dotted underline-offset-2"
+              className="underline decoration-dotted underline-offset-2 hover:text-ink"
             >
               open source (MIT)
             </a>
@@ -55,7 +55,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }):
               vulnerability data from{" "}
               <a
                 href="https://osv.dev"
-                className="hover:text-ink underline decoration-dotted underline-offset-2"
+                className="underline decoration-dotted underline-offset-2 hover:text-ink"
               >
                 OSV.dev
               </a>

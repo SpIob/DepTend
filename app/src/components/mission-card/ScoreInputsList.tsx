@@ -9,8 +9,8 @@ export function ScoreInputsList({
 }): React.JSX.Element {
   return (
     <div>
-      <p className="text-ink-muted mb-1 uppercase">{label}</p>
-      <ul className="text-ink flex flex-col gap-0.5">
+      <p className="mb-1 uppercase text-ink-muted">{label}</p>
+      <ul className="flex flex-col gap-0.5 text-ink">
         {items.map((item) => (
           <li key={item.key}>
             {item.key}: {item.value}

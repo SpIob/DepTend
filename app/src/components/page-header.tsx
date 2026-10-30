@@ -22,10 +22,10 @@ export function PageHeader({
   children?: React.ReactNode;
 }): React.JSX.Element {
   return (
-    <header className="border-border flex flex-col gap-5 border-b pb-6">
+    <header className="flex flex-col gap-5 border-b border-border pb-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-2">{left}</div>
-        <div className="text-ink-muted flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-xs">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-xs text-ink-muted">
           {right}
         </div>
       </div>

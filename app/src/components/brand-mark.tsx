@@ -13,8 +13,8 @@ import Link from "next/link";
 export function BrandMark({ href }: { href?: string }): React.JSX.Element {
   const content = (
     <>
-      <span className="bg-accent inline-block h-2.5 w-2.5" aria-hidden="true" />
-      <span className="text-ink font-mono text-xl font-bold tracking-tight">DepTend</span>
+      <span className="inline-block h-2.5 w-2.5 bg-accent" aria-hidden="true" />
+      <span className="font-mono text-xl font-bold tracking-tight text-ink">DepTend</span>
     </>
   );
   if (href === undefined) {

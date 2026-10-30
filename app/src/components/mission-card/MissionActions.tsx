@@ -55,7 +55,7 @@ export function MissionActions({
   const errorMessage = request.kind === "error" ? request.message : null;
   const errorAlert = (
     <div role="alert">
-      {errorMessage !== null && <p className="text-status-error text-xs">{errorMessage}</p>}
+      {errorMessage !== null && <p className="text-xs text-status-error">{errorMessage}</p>}
     </div>
   );
 
@@ -74,7 +74,7 @@ export function MissionActions({
                   claimedAt: new Date(),
                 })
               }
-              className="bg-accent w-fit rounded-md px-2.5 py-1 font-mono text-xs font-medium text-white hover:opacity-90 disabled:opacity-50"
+              className="w-fit rounded-md bg-accent px-2.5 py-1 font-mono text-xs font-medium text-white hover:opacity-90 disabled:opacity-50"
             >
               {pending ? "Claiming…" : "Claim this mission"}
             </button>
@@ -88,7 +88,7 @@ export function MissionActions({
                   claimedAt: null,
                 })
               }
-              className="border-border text-ink-muted hover:text-ink hover:border-ink-muted w-fit rounded-md border px-2.5 py-1 font-mono text-xs disabled:opacity-50"
+              className="w-fit rounded-md border border-border px-2.5 py-1 font-mono text-xs text-ink-muted hover:border-ink-muted hover:text-ink disabled:opacity-50"
             >
               {pending ? "Working…" : "Dismiss"}
             </button>
@@ -99,11 +99,11 @@ export function MissionActions({
 
     case "open-signed-out":
       return (
-        <p className="text-ink-muted text-xs">
+        <p className="text-xs text-ink-muted">
           <button
             type="button"
             onClick={() => void signInWithGitHub()}
-            className="text-accent hover:text-ink underline decoration-dotted underline-offset-2"
+            className="text-accent underline decoration-dotted underline-offset-2 hover:text-ink"
           >
             Sign in with GitHub
           </button>{" "}
@@ -120,7 +120,7 @@ export function MissionActions({
             onClick={() =>
               void callAction("unclaim", { status: "open", claimedBy: null, claimedAt: null })
             }
-            className="border-border text-ink-muted hover:text-ink hover:border-ink-muted w-fit rounded-md border px-2.5 py-1 font-mono text-xs disabled:opacity-50"
+            className="w-fit rounded-md border border-border px-2.5 py-1 font-mono text-xs text-ink-muted hover:border-ink-muted hover:text-ink disabled:opacity-50"
           >
             {pending ? "Releasing…" : "Unclaim"}
           </button>
@@ -130,22 +130,22 @@ export function MissionActions({
 
     case "claimed-by-other":
       return (
-        <p className="text-ink-muted font-mono text-xs">
-          Claimed by <span className="text-ink font-medium">@{claimedBy}</span>
+        <p className="font-mono text-xs text-ink-muted">
+          Claimed by <span className="font-medium text-ink">@{claimedBy}</span>
         </p>
       );
 
     case "dismissed-by-me":
       return (
         <div className="flex flex-col gap-1">
-          <p className="text-ink-muted font-mono text-xs">Dismissed</p>
+          <p className="font-mono text-xs text-ink-muted">Dismissed</p>
           <button
             type="button"
             disabled={pending}
             onClick={() =>
               void callAction("undismiss", { status: "open", claimedBy: null, claimedAt: null })
             }
-            className="border-border text-ink-muted hover:text-ink hover:border-ink-muted w-fit rounded-md border px-2.5 py-1 font-mono text-xs disabled:opacity-50"
+            className="w-fit rounded-md border border-border px-2.5 py-1 font-mono text-xs text-ink-muted hover:border-ink-muted hover:text-ink disabled:opacity-50"
           >
             {pending ? "Restoring…" : "Restore"}
           </button>
@@ -154,6 +154,6 @@ export function MissionActions({
       );
 
     case "dismissed-signed-out":
-      return <p className="text-ink-muted font-mono text-xs">Dismissed</p>;
+      return <p className="font-mono text-xs text-ink-muted">Dismissed</p>;
   }
 }

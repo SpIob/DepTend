@@ -32,13 +32,13 @@ export function MissionScoreDetails({
 
   return (
     <details className="group/score -mx-4 -mb-4 mt-1">
-      <summary className="text-ink-muted hover:text-ink hover:bg-bg border-border/60 flex items-center gap-1.5 border-t px-4 py-3 font-mono text-xs font-medium focus-visible:outline-offset-[-2px]">
+      <summary className="flex items-center gap-1.5 border-t border-border/60 px-4 py-3 font-mono text-xs font-medium text-ink-muted hover:bg-bg hover:text-ink focus-visible:outline-offset-[-2px]">
         <span className="transition-transform group-open/score:rotate-90">▸</span>
         Why this score?
       </summary>
-      <div className="bg-bg border-border/60 flex flex-col gap-4 border-t px-4 py-4 font-mono text-xs">
+      <div className="flex flex-col gap-4 border-t border-border/60 bg-bg px-4 py-4 font-mono text-xs">
         <div>
-          <p className="text-ink-muted mb-1 uppercase">Formula</p>
+          <p className="mb-1 uppercase text-ink-muted">Formula</p>
           <p className="text-ink">
             0.60 × impact ({score.impactScore.toFixed(1)}) + 0.40 × ecosystem value (
             {score.ecosystemValueScore.toFixed(1)}) = {score.compositeScore.toFixed(1)}
@@ -90,7 +90,7 @@ export function MissionScoreDetails({
             >
               Why {CONFIDENCE_TEXT[score.confidence].toLowerCase()}
             </p>
-            <ul className="text-ink flex flex-col gap-0.5">
+            <ul className="flex flex-col gap-0.5 text-ink">
               {score.confidenceNotes.map((note) => (
                 <li key={note}>· {note}</li>
               ))}
@@ -100,7 +100,7 @@ export function MissionScoreDetails({
 
         {advisory !== null && (
           <div>
-            <p className="text-ink-muted mb-1 uppercase">Source</p>
+            <p className="mb-1 uppercase text-ink-muted">Source</p>
             <p className="text-ink">
               {advisory.source.toUpperCase()} advisory{" "}
               <a

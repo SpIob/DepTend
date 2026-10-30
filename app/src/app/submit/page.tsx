@@ -20,7 +20,7 @@ export default async function SubmitPage(): Promise<React.JSX.Element> {
           <>
             <Link
               href="/"
-              className="hover:text-ink underline decoration-dotted underline-offset-2"
+              className="underline decoration-dotted underline-offset-2 hover:text-ink"
             >
               ← All repos
             </Link>
@@ -29,15 +29,15 @@ export default async function SubmitPage(): Promise<React.JSX.Element> {
             </span>
             <Link
               href="/missions"
-              className="hover:text-ink underline decoration-dotted underline-offset-2"
+              className="underline decoration-dotted underline-offset-2 hover:text-ink"
             >
               Browse all missions
             </Link>
           </>
         }
       >
-        <h1 className="text-ink text-2xl font-semibold">Submit a repository</h1>
-        <p className="text-ink-muted max-w-2xl text-sm leading-relaxed">
+        <h1 className="text-2xl font-semibold text-ink">Submit a repository</h1>
+        <p className="max-w-2xl text-sm leading-relaxed text-ink-muted">
           Add a public GitHub repository to DepTend. We'll scan its dependencies against the OSV
           vulnerability database and generate a prioritized list of maintenance missions.
         </p>

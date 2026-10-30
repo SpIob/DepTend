@@ -64,11 +64,11 @@ export function SubmitRepoForm({
 
   if (session?.user === undefined) {
     return (
-      <p className="text-ink-muted text-sm">
+      <p className="text-sm text-ink-muted">
         <button
           type="button"
           onClick={() => void signInWithGitHub()}
-          className="text-accent hover:text-ink underline decoration-dotted underline-offset-2"
+          className="text-accent underline decoration-dotted underline-offset-2 hover:text-ink"
         >
           Sign in with GitHub
         </button>{" "}
@@ -79,7 +79,7 @@ export function SubmitRepoForm({
 
   if (atCap) {
     return (
-      <p className="text-ink-muted font-mono text-xs">
+      <p className="font-mono text-xs text-ink-muted">
         {repoCount}/{maxRepos} repos indexed — cap reached for MVP.
       </p>
     );
@@ -103,19 +103,19 @@ export function SubmitRepoForm({
           }}
           placeholder="https://github.com/owner/repo"
           required
-          className="border-border bg-surface text-ink placeholder:text-ink-muted focus-visible:outline-accent w-full rounded-sm border px-3 py-1.5 font-mono text-sm"
+          className="w-full rounded-sm border border-border bg-surface px-3 py-1.5 font-mono text-sm text-ink placeholder:text-ink-muted focus-visible:outline-accent"
         />
         <div role="status" aria-live="polite">
           {state.kind === "success" && (
-            <p className="text-status-success text-xs">{state.message}</p>
+            <p className="text-xs text-status-success">{state.message}</p>
           )}
-          {state.kind === "error" && <p className="text-status-error text-xs">{state.message}</p>}
+          {state.kind === "error" && <p className="text-xs text-status-error">{state.message}</p>}
         </div>
       </div>
       <button
         type="submit"
         disabled={state.kind === "submitting"}
-        className="bg-accent shrink-0 rounded-sm px-3 py-1.5 font-mono text-sm text-white disabled:opacity-50"
+        className="shrink-0 rounded-sm bg-accent px-3 py-1.5 font-mono text-sm text-white disabled:opacity-50"
       >
         {state.kind === "submitting" ? "Submitting…" : "Submit repo"}
       </button>

@@ -8,7 +8,7 @@ function SearchIcon(): React.JSX.Element {
       stroke="currentColor"
       strokeWidth="1.5"
       aria-hidden="true"
-      className="text-ink-muted pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2"
+      className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-muted"
     >
       <circle cx="6.5" cy="6.5" r="4.5" />
       <path d="M13 13L10 10" strokeLinecap="round" />
@@ -34,7 +34,7 @@ export function MissionSearchInput({
         }}
         placeholder="Search package, repo, or advisory"
         aria-label="Search missions"
-        className="border-border bg-surface text-ink placeholder:text-ink-muted focus-visible:outline-accent w-full rounded-md border py-1.5 pl-8 pr-8 font-mono text-sm"
+        className="w-full rounded-md border border-border bg-surface py-1.5 pl-8 pr-8 font-mono text-sm text-ink placeholder:text-ink-muted focus-visible:outline-accent"
       />
       {value !== "" && (
         <button
@@ -47,7 +47,7 @@ export function MissionSearchInput({
           // both axes (WCAG 2.5.5 24x24 minimum). The surrounding flex
           // keeps it vertically centered against the input's line-height
           // without the absolute-positioned shell of the previous version.
-          className="text-ink-muted hover:text-ink absolute inset-y-0 right-0 flex items-center px-2.5 font-mono text-sm"
+          className="absolute inset-y-0 right-0 flex items-center px-2.5 font-mono text-sm text-ink-muted hover:text-ink"
         >
           ×
         </button>
