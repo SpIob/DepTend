@@ -68,6 +68,7 @@ describe("runScoreRankStep", () => {
       ],
     ]),
     packageAdvisoryMap: new Map([["vulnerable-pkg", ["GHSA-test-1234"]]]),
+    versionMatchedPackages: new Set(),
     warnings: [],
   };
 
@@ -457,6 +458,7 @@ describe("runScoreRankStep", () => {
           ["pkg-low", ["GHSA-low"]],
           ["pkg-high", ["GHSA-high"]],
         ]),
+        versionMatchedPackages: new Set(),
         warnings: [],
       };
 
@@ -581,6 +583,7 @@ describe("runScoreRankStep", () => {
           ["pkg-a", ["GHSA-older-1111"]],
           ["pkg-b", ["GHSA-newer-2222"]],
         ]),
+        versionMatchedPackages: new Set(),
         warnings: [],
       };
 
@@ -849,6 +852,7 @@ describe("runScoreRankStep", () => {
           ],
         ]),
         packageAdvisoryMap: new Map([["lodash", ["GHSA-test-1234"]]]),
+        versionMatchedPackages: new Set(),
         warnings: [],
       };
 
@@ -930,6 +934,7 @@ describe("runScoreRankStep", () => {
           ],
         ]),
         packageAdvisoryMap: new Map([["requests", ["GHSA-pypi-123"]]]),
+        versionMatchedPackages: new Set(),
         warnings: [],
       };
 
@@ -1010,6 +1015,7 @@ describe("runScoreRankStep", () => {
           ],
         ]),
         packageAdvisoryMap: new Map([["github.com/vulnerable/pkg", ["GHSA-go-123"]]]),
+        versionMatchedPackages: new Set(),
         warnings: [],
       };
 
@@ -1058,6 +1064,7 @@ describe("runScoreRankStep", () => {
       const cleanOsvResult: OsvFetchResult = {
         advisories: new Map(),
         packageAdvisoryMap: new Map(),
+        versionMatchedPackages: new Set(),
         warnings: [],
       };
 

@@ -1,3 +1,49 @@
+---
+
+**2026-10-30 — Dependabot npm ecosystem restored & scoped; Dependabot PR review pass (config + docs)**
+
+Nine open Dependabot PRs reviewed against live CI runs and Vercel deploy logs; four closed, four approved, one sent for rebase. No code changes.
+
+### Changed
+
+- **`.github/dependabot.yml`: npm ecosystem entry restored** — git history shows it existed from `25c91290` (2026-08-26, ADR 0036's hygiene pass) until `63f66e48` (2026-09-19) dropped it, after which Dependabot never rebased or re-evaluated the npm PRs it had already opened; they rode stale for six weeks on pre-ADR-0059 branches with no CI gate. The restored entry keeps the `minor-and-patch` group, weekly Monday 06:00 schedule, and limit 5; ignores majors of `next`/`typescript`/`vitest` (each is a deliberate migration on this project, not a merge-and-see bump — drop an ignore entry when one is scheduled); and labels PRs with the existing `dependencies` label (Dependabot fails outright on a nonexistent label). Recorded as the update section in ADR 0058.
+- **PRs #7, #8, #9, #10 closed** with branches deleted (TypeScript 6, Next 16, @types/node 26, vitest 5): none carried a CI run; #8 failed typecheck (14 × TS2554 at the `revalidateTag` call sites) and its Vercel deploy, #7's Vercel deploy failed, #9/#10 predate the four-job CI split. Each closure comment points at the deliberate-migration path.
+- **PRs #4, #5, #18, #19 approved** (checkout v4→v7, setup-node v4→v7, upload-artifact SHA→SHA v7.0.2, action-send-mail v3→v23 — all green, send-mail inputs verified against the v23 action.yml); **#13 left open** pending `@dependabot rebase` (its `format:check` failure is 32 files of `main` drift, not the bumps).
+
+### Fixed
+
+- **AGENTS.md:** §12 gained the dependabot-PR trap (path filters don't cover sub-package manifests; a removed ecosystem entry means never-rebased PRs; missing-label failure shape), and the ADR index's 0058 blurb cross-references the new update section.
+
+---
+
+**2026-10-29 — ADR 0060 flipped to Accepted: Web Analytics live verification (docs-only)**
+
+Live verification landed for ADR 0060 (`vercel-web-analytics`); no code changes.
+
+### Changed
+
+- **ADR 0060: Proposed → Accepted**, evidence attached in its Live verification section: production (running `b9e95e7`, which includes `f9d4b0a`) serves the insights script — `GET /_vercel/insights/script.js` returns 200 and the page injects the per-project path `/_vercel/insights/<hash>/script.js` at hydration; `POST /_vercel/insights/view` returns 400 (endpoint present, not the 404 of a disabled feature); a real-browser check shows the script fetched with `window.va` active; `count_pageviews` reports **11 visitors / 11 pageviews** since enablement (10 strictly after 2026-10-05) across `/`, `/missions`, `/repo/[owner]/[name]`, and the `/api` catch-all — far inside the 50,000/month Hobby allowance.
+- **Correction folded into the ADR:** the injected script tag carries no `nonce` attribute — the earlier "nonce-stamped" wording was wrong; CSP compliance comes from same-origin `script-src 'self'` (ADR 0037), which covers external same-origin scripts without a nonce. No policy change needed or made.
+- **AGENTS.md:** the ADR index now runs through 0061 (0061 shipped Accepted on 2026-10-22 but the index still said "through 0060") and §3's tree line matches.
+
+---
+
+**2026-10-22 — Ingestion & scoring audit fixes (ADR 0061)**
+
+Six fixes from the 2026-10-22 `packages/core` audit, one per finding:
+
+### Added
+
+- **EPSS exploitability scoring, actually implemented (ADR 0039 was Accepted but never built):** new `ingestor/epss.ts` — CVE aliases harvested from OSV records, batch-queried against FIRST's free EPSS API after the detail fetches, scores stamped onto advisories before the upsert (fail-soft, warn-and-continue). Impact scorer's existing EPSS boost now receives real data. `scripts/backfill-epss.mjs` backfilled existing rows — production 167/172 advisories now carry an `epss_score` (the 5 gaps are structural: no CVE alias, or pre-EPSS CVE).
+- **CVSS v4.0 base-score support** in `ingestor/cvss.ts`: full port of FIRST's cvss-v4-calculator (macrovector lookup + mean-distance refinement; threat/environmental/supplemental metrics), differentially verified 18/18 against FIRST's own implementation and the official Python `cvss` library. PYSEC-2026 advisories that previously sat at severity `unknown` (impact floor 1.0) now score from their actual vectors (8.9/7.6/6.9).
+- **Stale-`running` recovery:** `resolvePending()` re-queues repos stuck at `ingestionStatus: 'running'` past `STALE_RUNNING_HOURS` (default 2h) — a cancelled/crashed workflow run used to wedge a repo at `running` forever.
+
+### Changed
+
+- **OSV batch queries are version-filtered when a lock file was parsed:** `querybatch` now carries each dependency's lock-file-resolved version (ADR 0038), so a patched install stops matching its package's historical advisories. Matching links are labeled `match_method: "version_resolved"`; lock-less repos keep the conservative name-only behavior.
+- **`dep_update` missions now fetch breaking-change/migration-guide signals** (previously `vulnerability_fix` only), un-capping them from structural `low` confidence.
+- **Registry-metadata erosion guard:** a transient npm/PyPI/Go registry failure no longer overwrites stored `latest_version`/`is_deprecated` with null/false — the upsert splits into with/without-metadata groups with different SET clauses. Same guard on `advisories.epss_score` (COALESCEd against the stored value).
+
 # Changelog
 
 All notable changes to DepTend, condensed to one entry per phase.
@@ -7,6 +53,27 @@ All notable changes to DepTend, condensed to one entry per phase.
 - No semver; `package.json`'s version has stayed `0.0.1` throughout; a fake version number per entry would misrepresent a project that's never cut a release. Entries are dated by phase-completion date instead.
 - This is a **condensed** summary; major, user- or developer-facing changes only. For full detail, alternatives considered, and retroactive fixes, see the corresponding ADR(s) linked in each entry, or the phase status docs for Phases 0–6.
 - Ordered newest first.
+
+---
+
+**2026-10-22 — Documentation audit: contradiction cleanup (docs-only)**
+
+Repo-wide docs audit against source and git history. No code changes.
+
+### Fixed
+
+- **CHANGELOG corruption repaired (2026-09-16 entry):** the "Fix ingest and weekly perf workflows" header had lost its body — its three Fixed bullets (the `pnpm/action-setup` SHA, the perf `--output-path` duplicate, the deleted `test.yml`) survived only in commit `e244ff3`; restored from git history. The headerless 2026-09-06 DB-query-split entry got its header back, and a stale duplicate of the subscriptions entry's Changed block sitting between them was removed.
+- **README:** the CLI section now says it imports `@deptend/core` (it does, `workspace:*`), replacing the false "independent, cross-verified implementations" claim; the "refined by migration-guide data once that's ingested" effort clause is dropped (the signals ship via ADR 0029, which the README never covered); the data-model tree line names README.md.
+- **AGENTS.md:** ADR index runs through 0060 (with 0056/0057's Proposed status and the shipped-code-vs-missing-verification distinction spelled out); §3 layout tree updated to the real package/workflow/route listings; §5 `GITHUB_TOKEN` row marked set-in-production; §11's confidence rule restated as the pure flag count over the six real flags (was "all four flags"); §12's ledger rule now matches the `deptend-neon-ops` skill ("All ledger fixes are insert-only", not "never INSERT"); §13 stale known-issues cleaned (error-boundary issue marked resolved, GH_INGEST_TOKEN history dated, "six routes" → ten).
+- **`docs/data-model/README.md`:** 0.1.9 row added for ADR 0045's migration `0008` tier index (the table stopped at 0.1.8 while `0008` has shipped since 2026-09-20); the `notification_subscriptions` section no longer claims GitHub-Issue delivery exists — `github_issue_number` is a reserved NULL column, no delivery mechanism is wired up.
+- **ADRs 0007 and 0029:** correction notes added where the Phase-2 text predates ADR 0017/0018's ranking rework and ADR 0032/0038's confidence changes; the original text stays as the historical record.
+- **`.env.example`:** "deptend.dev" header and `GH_REPO` comment updated; the `GITHUB_TOKEN` comment no longer claims it's unset in Vercel (it is set, verified 2026-09-25) and cites ADR 0030 instead of a deleted Roadmap doc.
+- **`IDEA.md` (untracked):** stale Phase-6 snapshot updated (npm+PyPI → three ecosystems, 380 → 1,100+ tests, the confidence limitation restated to its real current cause).
+- **`reports/perf/2026-09-04-prod-vs-dev/score-divergence-root-cause.md`:** stale `deriveConfidence()` line-number pointer replaced with the module path.
+
+### Cleanup
+
+- `.opencode-tasks/` retained and now listed in §3: its five staged tasks were all executed in `f2cbd93` (2026-09-26, PR #17; TASK-01 as the documented diagnosis it specified), and the directory is the audit's paper trail under §12's evidence rule. `.agent-locks/` holds two expired locks (git-ignored; safe to delete locally).
 
 ---
 
@@ -66,7 +133,7 @@ All notable changes to DepTend, condensed to one entry per phase.
 
 - **Dead `drizzle-orm` / `@neondatabase/serverless` entries removed from `app/package.json`** (ADR 0044 Decision 2): zero direct imports in `app/src/` (ADR 0012 keeps all Drizzle query-building in core); both resolve transitively via the `@deptend/core` workspace dependency. No-op at install time (pnpm dedupes), a real change to the manifest contract.
 
-- **Overrides now live in two places, identical sets, lockstep rule applies (ADR 0044 pattern).** `overrides:` was added to `pnpm-workspace.yaml` (pnpm ≥10's settings home) while `pnpm.overrides` stays in root `package.json` (ADR 0036's documented home) — both carrying `postcss ^8.5.23`, `nanoid ^3.3.18`, `sharp ^0.35.4`, `browserslist ^4.28.7`, `baseline-browser-mapping ^2.11.0`. Rationale, from isolation tests on the pinned pnpm 9.15.0: a `pnpm-workspace.yaml`-only install does **not** apply overrides (sharp stayed 0.35.3, browserslist 4.28.5, no `overrides:` written to the lockfile settings), while `package.json#pnpm.overrides` is still read **despite its deprecation WARN** ("The 'pnpm' field in package.json is no longer read by pnpm" — the WARN is cosmetic; the lockfile proves the field is live). Keeping the yaml entry means a future pnpm ≥10 bump (where the WARN becomes real) takes over seamlessly instead of silently dropping all overrides. On that bump, remove `package.json#pnpm` and keep the yaml entry.
+- **Overrides now live in two places, identical sets, lockstep rule applies (ADR 0044 pattern).** `overrides:` was added to `pnpm-workspace.yaml` (pnpm ≥10's settings home) while `pnpm.overrides` stays in root `package.json` (ADR 0036's documented home) — both carrying `postcss ^8.5.23`, `nanoid ^3.3.18`, `sharp ^0.35.4`, `browserslist ^4.28.7`, `baseline-browser-mapping ^2.11.0`. Rationale, from isolation tests on the pinned pnpm 9.15.0: a `pnpm-workspace.yaml`-only install does **not** apply overrides (sharp stayed 0.35.3, browserslist 4.28.5, no `overrides:` written to the lockfile settings), while `package.json#pnpm.overrides` is still applied **despite its deprecation WARN** ("The 'pnpm' field in package.json is no longer read by pnpm" — the WARN is cosmetic; the lockfile's recorded override values prove the field is still applied). Keeping the yaml entry means a future pnpm ≥10 bump (where the WARN becomes real) takes over seamlessly instead of silently dropping all overrides. On that bump, remove `package.json#pnpm` and keep the yaml entry.
 
 ---
 
@@ -132,6 +199,25 @@ All notable changes to DepTend, condensed to one entry per phase.
 
 **2026-09-16 — Fix ingest and weekly perf workflows (no successful scheduled run since 2026-09-06)**
 
+### Fixed
+
+- **`ingest.yml`: invalid `pnpm/action-setup` pin.** The SHA `a7487c7e89a1bdf49e1f3899f51c77a5c6d5b5d1` introduced in the 2026-09-10 hardening commit never resolved to a real ref, so every scheduled ingest from 2026-09-10 through 2026-09-16 died during job setup ("Unable to resolve action"), before the retry loop or the failure-email step could run. Corrected to the real `v4.1.0` commit `a7487c7e89a18df4991f7f222e4898a00d66ddda`, verified against the tag object via the GitHub API.
+- **`perf.yml`: duplicate `--output-path`.** Passing the flag twice (`.json` and `.html`) collapses into an array that Lighthouse rejects with "cannot be written to"; the weekly audit never succeeded since its creation (2026-09-06 and 2026-09-13 failed identically). Now a single `--output-path "reports/perf/${slug}.json"`; with multiple output types Lighthouse strips the extension and writes `${slug}.report.json` + `${slug}.report.html`, which the threshold glob and artifact upload still match.
+- **Deleted `.github/workflows/test.yml`.** Leftover "Hello World" debug workflow from the 2026-09-10 YAML troubleshooting; was running on every push.
+
+### Earlier failures in the same gap, already resolved
+
+- 2026-09-07 ingest: `NpmRegistryFetcher is not defined`, fixed same day in `5d56301`.
+- 2026-09-08 through 2026-09-10 ingest: `GH_INGEST_TOKEN` returned HTTP 401 against public repos (three consecutive runs). Secret regenerated 2026-09-16.
+
+### Noted
+
+- Setup-phase workflow failures (unresolvable action refs) execute zero steps, so the email-on-failure step never fires. This is why the ingest outage produced no alert mail; GitHub's native failed-workflow notifications are the backstop.
+
+---
+
+**2026-09-06 — DB query module split: queries.ts → board-queries.ts + directory-queries.ts + test-utils.ts**
+
 Split the 866-line `packages/core/src/db/queries.ts` into three focused modules plus a shared test utility, reducing complexity and improving navigation. No behavior changes — all 784 core tests and 198 app tests pass.
 
 ### Changed
@@ -156,24 +242,6 @@ Split the 866-line `packages/core/src/db/queries.ts` into three focused modules 
 - Tests: 784 core + 198 app = 982 tests pass
 - Lint: clean for new files
 - Format: clean
-
-### Changed
-
-- **Removed duplicate JS default** in `subscribeToRepo` (line 35) — the DB column already has `ARRAY['new_mission', 'claimed', 'resolved']` as its server-side default; the route validates `eventTypes` before calling core, so the JS default was only hit on empty body and was redundant.
-- **`unsubscribeFromRepo` returns discriminated outcome** (`"unsubscribed" | "not_subscribed"`) so the route can return 404 for "never subscribed" without an extra SELECT — same pattern as `unbookmarkRepo` returning `"not_bookmarked"`.
-- **Added `getSubscribedRepoIds(db, userLogin): Promise<Set<string>>`** — selects only `repo_id` (index-only scan via `idx_notification_subscriptions_user_login`), returns a `Set` for O(1) membership checks. Replaces `getUserSubscriptions` which returned full `NotificationSubscription[]` rows.
-- **Deleted `getUserSubscriptions`** — only caller was `queries.ts` (for `isSubscribed` flag); directory queries now use the more efficient `getSubscribedRepoIds`.
-
-### Updated call sites
-
-- `packages/core/src/db/directory-queries.ts` — `getRepoDirectoryBase` uses `getSubscribedRepoIds`
-- `app/src/app/api/repos/[id]/notifications/unsubscribe/route.ts` — handles new outcome type
-
-### Tests
-
-- All 198 app route tests pass (subscribe + unsubscribe)
-- All 15 `directory-queries.test.ts` tests pass (updated mock fixture to pass repo IDs directly)
-- Typecheck, lint, format clean
 
 ---
 

@@ -157,6 +157,7 @@ describe("buildAdvisories", () => {
         ],
       ]),
       packageAdvisoryMap: new Map(),
+      versionMatchedPackages: new Set(),
       warnings: [],
     };
 

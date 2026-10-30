@@ -95,6 +95,18 @@ Removed custom `yamllint`/`actionlint` steps (tools not available in GitHub-host
 
 ---
 
+## Update — 2026-10-30: Dependabot configuration restored and scoped (docs + config)
+
+The 2026-10-29 docs-audit claim that the open npm PRs "ride on default npm behavior" was wrong: `.github/dependabot.yml` **had** an npm entry from 2026-08-26 (commit `25c91290`, ADR 0036's dependency-hygiene pass, with the same `minor-and-patch` group this update restores), and commit `63f66e48` (2026-09-19, the ingest workflow hardening pass) removed it while touching the file. Dependabot kept updating branches opened under the old config but never re-based or re-evaluated them, which is why four npm PRs (#7, #8, #9, #10 — TypeScript 6, Next 16, @types/node 26, vitest 5) sat stale for six weeks with no CI gate and why the minor-and-patch PR (#13) failed `format:check` against a drifted `main`. The audit pass repeated the file's current state without checking its git history — the exact §0.1 failure mode this repo's docs rules exist for.
+
+The npm entry is restored (2026-10-30) with three scoping decisions:
+
+1. **Major bumps of `next`, `typescript`, and `vitest` are ignored.** The 2026-10-30 review of the four stale PRs showed each is a deliberate migration on this project (next-auth v4 compatibility and the `revalidateTag` signature for Next 16; `types`/`rootDir` default changes for TS 6; a three-major jump across the 477-test suite for vitest 5), not a merge-and-see bump. Ignoring majors keeps Dependabot to minors/patches; drop an ignore entry deliberately when a migration is scheduled.
+2. **Labels use the existing `dependencies` label** — dependabot fails outright on a nonexistent label, and no npm-specific label exists in the repo.
+3. **Schedule and PR limit match the github-actions entry** (weekly Monday 06:00, limit 5).
+
+PRs #7, #8, #9, #10 were closed the same day with their branches deleted; #13 was left open pending a `@dependabot rebase`.
+
 ## References
 
 - 15+ fix commits in Sep 2026 for CI workflow issues (e.g., efe138a, 0c1ae12, 45c028c, aafc964, d44a7c9, af465d1, e9777c1, 4abf47d, 40f9d1b).

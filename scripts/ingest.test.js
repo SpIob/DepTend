@@ -273,6 +273,30 @@ describe("resolvePending", () => {
     const result = await resolvePending(db);
     expect(result).toEqual([]);
   });
+
+  it("logs a re-queue notice when the DB returns stale 'running' rows", async () => {
+    // The mock DB stands in for Postgres having matched the WHERE clause
+    // (running + updated_at older than the cutoff); what this test pins is
+    // resolvePending's contract on top of it: stale-running rows flow
+    // through to the caller AND get a visible re-queue log line.
+    const staleRunning = [
+      { id: "9", ingestionStatus: "running", updatedAt: "2026-10-20T00:00:00Z" },
+    ];
+    const db = createMockDb(staleRunning);
+
+    const result = await resolvePending(db);
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("9");
+    const lines = logLines().join("\n");
+    expect(lines).toContain("stuck at 'running'");
+    expect(lines).toContain("re-queuing");
+  });
+
+  it("does not log a re-queue notice when only pending/failed rows are returned", async () => {
+    const db = createMockDb([{ id: "1", ingestionStatus: "pending" }]);
+    await resolvePending(db);
+    expect(logLines().join("\n")).not.toContain("stuck at 'running'");
+  });
 });
 
 describe("resolveDueRepos", () => {

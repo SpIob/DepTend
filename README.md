@@ -51,7 +51,7 @@ npx deptend . --github-url https://github.com/your-username/your-repo --output m
 
 **`GITHUB_TOKEN`** (env var, optional but recommended) raises the GitHub API rate limit from 60 to 5,000 requests/hour. A fine-grained PAT with public-repo read access is sufficient.
 
-The CLI reuses the exact same scoring and ranking code the dashboard runs: same formula, tie-break rules, and explainability. It doesn't touch a database and doesn't require the dashboard to be running. The CLI and dashboard are independent, cross-verified implementations of the same engine, not a client/server pair.
+The CLI reuses the exact same scoring and ranking code the dashboard runs: same formula, tie-break rules, and explainability. It doesn't touch a database and doesn't require the dashboard to be running. It imports `@deptend/core` — the same package the dashboard runs — so the two cannot drift; there is no second implementation to cross-verify.
 
 **Note on npx:** `@deptend/cli`'s `bin` entry is set up for `npx`-style invocation once published, but hasn't been published to the npm registry yet. Until then, run it from a local clone (see [Local development](#local-development) below), or use `pnpm --filter @deptend/cli exec deptend <args>` / `node cli/dist/index.js <args>` from the repo root after building.
 
@@ -83,7 +83,7 @@ Impact comes from the CVSS score when one's available, or a severity-based estim
 
 Ecosystem value is log-scaled repo stars and open issues, plus downstream dependents when libraries.io can resolve them for the repo's published package.
 
-Effort is the semver bump size needed to reach the fixed version (patch/minor/major maps to trivial/low/.../high), refined by migration-guide data once that's ingested.
+Effort is the semver bump size needed to reach the fixed version (patch/minor/major maps to trivial/low/.../high).
 
 Missions are ranked by `composite_score`, bucketed into fixed-width tiers so near-equal scores don't produce an inconsistent order ([ADR 0017](docs/adr/0017-ranking-tie-break-transitivity-fix.md)). Within a tier, `effort_label` breaks the tie, a deliberate "prefer the quick win" rule. Below that, the tied advisory's own `published_at` (newest first) and finally its `osv_id` guarantee a fully deterministic order regardless of input order or ingestion timing ([ADR 0018](docs/adr/0018-ranking-final-tie-break.md)).
 
@@ -135,7 +135,7 @@ DepTend/
 ├── scripts/          # GitHub Actions cron entry point (real ingestion pipeline)
 ├── docs/
 │   ├── adr/           # One Architecture Decision Record per major technical choice, numbered sequentially
-│   └── data-model/    # Entity reference, kept in sync with packages/core/src/db/schema.ts
+│   └── data-model/    # Entity reference (README.md), kept in sync with packages/core/src/db/schema.ts
 └── .github/workflows/ # ci.yml (lint/typecheck/test), ingest.yml (cron + on-demand ingestion)
 ```
 

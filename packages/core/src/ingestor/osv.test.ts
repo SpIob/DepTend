@@ -22,6 +22,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { OsvFetcher } from "./osv.js";
 import { cvssScoreToSeverity, cvssVectorToBaseScore, mapStringSeverity } from "./cvss.js";
+import { EpssFetcher } from "./epss.js";
 import type { ParsedDependency } from "../ingestor/interface.js";
 
 // ---------------------------------------------------------------------------
@@ -123,7 +124,10 @@ describe("OsvFetcher", () => {
   beforeEach(() => {
     // Zero retry backoff — the delay is production pacing, not logic under
     // test; only WHICH calls get retried is.
-    fetcher = new OsvFetcher(undefined, undefined, undefined, 0);
+    // EPSS enrichment disabled here — these suites stub only the OSV
+    // endpoints; epss.test.ts covers the enrichment stage against its own
+    // stubbed EPSS API, and the wiring test below asserts OsvFetcher calls it.
+    fetcher = new OsvFetcher(undefined, undefined, undefined, 0, undefined, false);
   });
 
   afterEach(() => {
@@ -987,15 +991,264 @@ describe("cvssVectorToBaseScore", () => {
     expect(cvssVectorToBaseScore("CVSS:3.1/AV:X/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H")).toBeNull();
   });
 
-  it("returns null for CVSS v4 vectors (unsupported)", () => {
-    expect(
-      cvssVectorToBaseScore("CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N"),
-    ).toBeNull();
-  });
-
   it("returns null for non-vector input", () => {
     expect(cvssVectorToBaseScore("7.5")).toBeNull();
     expect(cvssVectorToBaseScore("")).toBeNull();
     expect(cvssVectorToBaseScore("not-a-vector")).toBeNull();
+  });
+});
+
+describe("cvssVectorToBaseScore — CVSS v4.0", () => {
+  // Expected values are FIRST's own cvss-v4-calculator output for these
+  // exact vectors (differentially verified 18/18 against the reference
+  // implementation and cross-checked against the official Python `cvss`
+  // library), not hand-derived — same discipline as the v2/v3 table above.
+  // The first three are the CVSS_V4 vectors actually present in production
+  // advisories (PYSEC-2026-*), which the previous behavior discarded to
+  // severity "unknown" / impact floor 1.0.
+  it.each([
+    [
+      "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:N/VI:N/VA:H/SC:N/SI:N/SA:H",
+      8.9,
+      "production vector (PYSEC-2026-1994/1998/4177): availability-only DoS",
+    ],
+    [
+      "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:P/VC:H/VI:H/VA:N/SC:N/SI:N/SA:N",
+      7.6,
+      "production vector (PYSEC-2026-4175): C/I-high, exploit requires interaction",
+    ],
+    [
+      "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:N/VI:N/VA:L/SC:N/SI:N/SA:N",
+      6.9,
+      "production vector (PYSEC-2026-4176): low availability impact only",
+    ],
+    [
+      "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H",
+      10,
+      "full-impact network vector — the classic v4 10.0 shape",
+    ],
+    [
+      "CVSS:4.0/AV:L/AC:L/AT:N/PR:H/UI:N/VC:N/VI:N/VA:N/SC:N/SI:N/SA:N",
+      0,
+      "no-impact shortcut: every impact metric N means zero regardless of AV",
+    ],
+    [
+      "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:N/VA:N/SC:N/SI:L/SA:N",
+      8.7,
+      "confidentiality-only partial impact",
+    ],
+    [
+      "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:L/VI:H/VA:N/SC:L/SI:N/SA:N",
+      8.8,
+      "integrity-only partial impact",
+    ],
+    [
+      "CVSS:4.0/AV:A/AC:H/AT:P/PR:L/UI:P/VC:L/VI:H/VA:L/SC:L/SI:L/SA:L",
+      4.4,
+      "adjacent/high-exploit-complexity dampening",
+    ],
+    [
+      "CVSS:4.0/AV:P/AC:H/AT:P/PR:H/UI:A/VC:L/VI:L/VA:N/SC:H/SI:H/SA:H",
+      2.4,
+      "physical access worst case",
+    ],
+    [
+      "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/MSI:S/MSA:S",
+      10,
+      "environmental safety escalation (MSI:S/MSA:S)",
+    ],
+    [
+      "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/MAV:A/MAC:H",
+      9,
+      "modified base metrics override (MAV:A/MAC:H)",
+    ],
+    [
+      "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:U",
+      9.1,
+      "threat: exploit unlikely lowers the score",
+    ],
+    [
+      "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:P",
+      9.3,
+      "threat: PoC available lowers the score slightly",
+    ],
+    [
+      "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:P/VC:L/VI:H/VA:L/SC:L/SI:L/SA:L/E:P/MVI:L",
+      2,
+      "combined threat + modified-metric override",
+    ],
+  ])("%s → %s (%s)", (vector, expected) => {
+    expect(cvssVectorToBaseScore(vector)).toBe(expected);
+  });
+
+  it("ignores supplemental metrics — they never change the base score", () => {
+    const base = "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N";
+    expect(cvssVectorToBaseScore(`${base}/S:N/AU:N/R:A/V:D/RE:H/U:Green`)).toBe(
+      cvssVectorToBaseScore(base),
+    );
+  });
+
+  it("treats explicit X on threat/environmental metrics as their worst-case default", () => {
+    const base = "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H";
+    expect(cvssVectorToBaseScore(`${base}/E:X/CR:X/IR:X/AR:X`)).toBe(cvssVectorToBaseScore(base));
+  });
+
+  it("returns null for invalid v4 vectors rather than guessing", () => {
+    // Missing base metric
+    expect(cvssVectorToBaseScore("CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H")).toBeNull();
+    // Value not in the metric's allowed set
+    expect(
+      cvssVectorToBaseScore("CVSS:4.0/AV:X/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H"),
+    ).toBeNull();
+    // Unknown metric (typo'd or future) — scoring a different vector than
+    // the record carries would be silently wrong
+    expect(
+      cvssVectorToBaseScore(
+        "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/FOO:N",
+      ),
+    ).toBeNull();
+    // Safety S is an MSI/MSA-only value — a base SI:S is not a legal v4 vector
+    expect(
+      cvssVectorToBaseScore("CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:N/VA:N/SC:N/SI:S/SA:N"),
+    ).toBeNull();
+    // CVSS 4.1+ must not be scored with the v4.0 tables
+    expect(
+      cvssVectorToBaseScore("CVSS:4.1/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H"),
+    ).toBeNull();
+  });
+});
+
+describe("OsvFetcher — version-filtered batch queries (ADR 0038 resolution)", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function depWithVersion(package_name: string, resolved_version: string | null): ParsedDependency {
+    return { package_name, version_spec: "^1.0.0", dep_type: "production", resolved_version };
+  }
+
+  it("carries the resolved version in the batch query and reports versionMatchedPackages", async () => {
+    const batchBody: unknown[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string | URL, init?: RequestInit): Response => {
+        if (init?.method === "POST") {
+          const parsed = JSON.parse(init.body as string) as { queries: unknown[] };
+          batchBody.push(...parsed.queries);
+          return new Response(JSON.stringify({ results: [{ vulns: [] }] }), { status: 200 });
+        }
+        return new Response("not found", { status: 404 });
+      }),
+    );
+
+    const fetcher = new OsvFetcher(undefined, undefined, undefined, 0, undefined, false);
+    const result = await fetcher.fetchAdvisories(
+      [depWithVersion("lodash", "4.17.20"), depWithVersion("left-pad", null)],
+      "npm",
+    );
+
+    expect(batchBody).toEqual([
+      { package: { name: "lodash", ecosystem: "npm" }, version: "4.17.20" },
+      { package: { name: "left-pad", ecosystem: "npm" } },
+    ]);
+    expect(result.versionMatchedPackages).toEqual(new Set(["lodash"]));
+  });
+
+  it("uses name-only queries when no dependency has a resolved version", async () => {
+    const batchBody: unknown[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string | URL, init?: RequestInit): Response => {
+        if (init?.method === "POST") {
+          const parsed = JSON.parse(init.body as string) as { queries: unknown[] };
+          batchBody.push(...parsed.queries);
+          return new Response(JSON.stringify({ results: [{ vulns: [] }] }), { status: 200 });
+        }
+        return new Response("not found", { status: 404 });
+      }),
+    );
+
+    const fetcher = new OsvFetcher(undefined, undefined, undefined, 0, undefined, false);
+    const result = await fetcher.fetchAdvisories(
+      [depWithVersion("lodash", null), dep("left-pad")],
+      "npm",
+    );
+
+    expect(batchBody).toEqual([
+      { package: { name: "lodash", ecosystem: "npm" } },
+      { package: { name: "left-pad", ecosystem: "npm" } },
+    ]);
+    expect(result.versionMatchedPackages.size).toBe(0);
+  });
+
+  it("deduplicates a package's dep_type rows to one resolved version", async () => {
+    const batchBody: unknown[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string | URL, init?: RequestInit): Response => {
+        if (init?.method === "POST") {
+          const parsed = JSON.parse(init.body as string) as { queries: unknown[] };
+          batchBody.push(...parsed.queries);
+          return new Response(JSON.stringify({ results: [{ vulns: [] }] }), { status: 200 });
+        }
+        return new Response("not found", { status: 404 });
+      }),
+    );
+
+    const fetcher = new OsvFetcher(undefined, undefined, undefined, 0, undefined, false);
+    await fetcher.fetchAdvisories(
+      [
+        depWithVersion("lodash", "4.17.20"),
+        { package_name: "lodash", version_spec: "^4.17.0", dep_type: "development" },
+      ],
+      "npm",
+    );
+
+    // One query per unique package (dedup), carrying the first-seen version.
+    expect(batchBody).toEqual([
+      { package: { name: "lodash", ecosystem: "npm" }, version: "4.17.20" },
+    ]);
+  });
+});
+
+describe("OsvFetcher — EPSS enrichment wiring (ADR 0039)", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("calls the EPSS fetcher and stamps epssScore onto returned advisories", async () => {
+    const vuln = makeVuln({ aliases: ["CVE-2024-3094"] });
+    vi.stubGlobal("fetch", mockOsvApiForVulns([[vuln]]));
+
+    const epssFetcher = new EpssFetcher("https://epss.test", 1, 0);
+    const epssSpy = vi
+      .spyOn(epssFetcher, "fetchScores")
+      .mockResolvedValue({ scores: new Map([["CVE-2024-3094", 0.909]]), warnings: [] });
+
+    const fetcher = new OsvFetcher(undefined, undefined, undefined, 0, epssFetcher);
+    const result = await fetcher.fetchAdvisories([dep("lodash")]);
+
+    expect(epssSpy).toHaveBeenCalledTimes(1);
+    expect(epssSpy.mock.calls[0]?.[0]).toEqual(["CVE-2024-3094"]);
+    expect(result.advisories.get("GHSA-xxxx-yyyy-zzzz")?.epssScore).toBeCloseTo(0.909, 6);
+  });
+
+  it("still returns advisories when the EPSS fetcher warns (non-fatal)", async () => {
+    vi.stubGlobal("fetch", mockOsvApiForVulns([[makeVuln({ aliases: ["CVE-2024-3094"] })]]));
+
+    const epssFetcher = new EpssFetcher("https://epss.test", 1, 0);
+    vi.spyOn(epssFetcher, "fetchScores").mockResolvedValue({
+      scores: new Map(),
+      warnings: [
+        "EPSS fetch failed for a batch of 1 CVE(s): 500. Those advisories keep no EPSS score this run.",
+      ],
+    });
+
+    const fetcher = new OsvFetcher(undefined, undefined, undefined, 0, epssFetcher);
+    const result = await fetcher.fetchAdvisories([dep("lodash")]);
+
+    expect(result.advisories.size).toBe(1);
+    expect(result.advisories.get("GHSA-xxxx-yyyy-zzzz")?.epssScore).toBeUndefined();
+    expect(result.warnings.some((w) => w.includes("EPSS"))).toBe(true);
   });
 });

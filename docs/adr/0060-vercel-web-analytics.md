@@ -1,7 +1,7 @@
 # ADR 0060: Vercel Web Analytics
 
 Date: 2026-10-04
-Status: Proposed
+Status: Accepted (live-verified 2026-10-29 — see the Live verification section)
 
 ## Context
 
@@ -88,10 +88,29 @@ Standard gate (§6), run 2026-10-04 after the changes:
 4. `pnpm run lint` (`--max-warnings 0`) — green.
 5. `pnpm exec prettier --check` on touched files — green.
 
-Live verification **pending** (this ADR stays `Proposed` until it lands):
+### Live verification (2026-10-29, deployed site — the flip evidence)
 
-- Merge + deploy, then confirm `deptend.vercel.app` serves the Analytics
-  script (`/_vercel/insights/script.js`) with the request's nonce.
-- Enable Web Analytics for the project (dashboard or
-  `vercel project web-analytics`), visit the site, then confirm events
-  arrive (`count_pageviews` via Vercel MCP or the dashboard).
+The production deployment runs commit `b9e95e7` (ADR 0061), which includes
+the analytics commit `f9d4b0a` (deployed 2026-10-04T01:05:59Z, ~24 s after
+the commit landed). Read-only live checks, all passing:
+
+- `GET /_vercel/insights/script.js` returns **200** `application/javascript`
+  with the real loader body (this path 404s when the feature is disabled for
+  the project). The served page references the per-project variant
+  `/_vercel/insights/<hash>/script.js` — same loader, per-project routing.
+- `POST /_vercel/insights/view` with an empty body returns **400** (endpoint
+  exists, payload invalid) — not the 404 of a disabled feature.
+- Real-browser check of `deptend.vercel.app`: the script tag is injected
+  client-side at hydration into `<head>`, fetched with **200**, and
+  `window.va` is defined with the `vaq` queue active.
+- Events are arriving: `count_pageviews` (Vercel MCP) reports **11 visitors
+  / 11 pageviews** since enablement — 10 strictly after 2026-10-05 — across
+  `/`, `/missions`, `/repo/[owner]/[name]`, and the `/api` catch-all
+  (`/[...slug]`). Far inside the 50,000/month Hobby allowance.
+
+**Correction folded in:** the injected script tag carries **no** `nonce`
+attribute. The Decision section's earlier "nonce-stamped like every other
+inline script" wording (from the local-build check) was wrong about the
+mechanism — CSP compliance comes from `script-src 'self'` covering external
+same-origin scripts, not from a nonce stamp. No policy change was or is
+needed (ADR 0037 unchanged).
