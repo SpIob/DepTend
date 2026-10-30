@@ -168,5 +168,13 @@
     "@types/yarnpkg__lockfile": "^1.1.9",
     "typescript": "^5.5.0",
     "vitest": "^2.0.0"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "^1.1.0",
+    "@renovatebot/pep440": "^5.0.0",
+    "@yarnpkg/lockfile": "^1.0.0",
+    "drizzle-orm": "^0.45.2",
+    "semver": "^7.8.5",
+    "smol-toml": "^1.7.1"
   }
 }

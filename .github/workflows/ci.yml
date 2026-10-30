@@ -24,6 +24,9 @@ on:
       - "tsconfig*.json"
       - "eslint.config.mjs"
 
+permissions:
+  contents: read
+
 jobs:
   lint-and-typecheck:
     name: Lint & Typecheck
@@ -53,12 +56,11 @@ jobs:
       # GitHub Actions validates workflow YAML syntax on push; no extra step needed
 
       - name: Typecheck
+        # pnpm typecheck (root script) already chains core's and cli's
+        # typecheck:tests passes and the scripts typecheck — no extra
+        # per-workspace steps needed here (a duplicate step was removed
+        # 2026-09-26; it re-ran both tsc passes every push).
         run: pnpm typecheck
-
-      - name: Typecheck test files
-        run: |
-          pnpm --filter @deptend/core typecheck:tests
-          pnpm --filter cli typecheck:tests
 
       - name: Typecheck scripts
         run: pnpm --filter scripts typecheck
@@ -95,6 +97,37 @@ jobs:
       - name: Dependency audit (advisory)
         continue-on-error: true
         run: pnpm audit --prod
+
+  build:
+    name: Build (production)
+    runs-on: ubuntu-latest
+    needs: lint-and-typecheck
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared packages
+        run: pnpm --filter @deptend/core build
+
+      # A full `next build` here, not only on Vercel: CI previously verified
+      # lint/typecheck/tests only, so a build-breaking regression in app/
+      # surfaced as a failed Vercel deploy (prod left on the previous commit)
+      # instead of a red CI run. Route modules use the lazy DB singleton, so
+      # no DATABASE_URL is needed at build time.
+      - name: Build app (production)
+        run: pnpm --filter app build
 
   integration-test:
     name: Integration test (ingest fixture repo)

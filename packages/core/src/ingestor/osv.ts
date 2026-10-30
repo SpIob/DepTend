@@ -24,11 +24,12 @@
  *   - Raw OSV response (the full record, not the minimal batch entry)
  *     stored verbatim in advisory.rawData for full auditability and future
  *     re-processing without re-fetching.
- *   - Severity mapped from CVSS v3 score using NIST thresholds where CVSS
+ *   - Severity mapped from CVSS score using NIST thresholds where CVSS
  *     is available (the numeric score is computed from vector strings per
- *     the CVSS spec — many records carry only the vector); falls back to
- *     OSV's own severity enum; defaults to "unknown" when neither is
- *     present.
+ *     the CVSS spec — many records carry only the vector; v4 vectors are
+ *     scored via FIRST's own macrovector algorithm, see cvss.ts); falls
+ *     back to OSV's own severity enum; defaults to "unknown" when neither
+ *     is present.
  *   - fixed_version extracted from the first "fixed" event in a range OSV
  *     considers authoritative for the queried ecosystem's own versioning
  *     scheme: SEMVER-type ranges for npm, and — since PyPI isn't
@@ -56,6 +57,7 @@ import { DEFAULT_RETRY_DELAY_MS } from "./fetch-retry.js";
 import { fetchJson } from "./fetch-json.js";
 import { runBounded } from "./concurrency.js";
 import { cvssScoreToSeverity, cvssVectorToBaseScore, mapStringSeverity } from "./cvss.js";
+import { enrichAdvisoriesWithEpss, EpssFetcher } from "./epss.js";
 
 // ---------------------------------------------------------------------------
 // OSV API constants
@@ -104,6 +106,15 @@ const ACCEPTED_RANGE_TYPES: Record<Ecosystem, OsvRange["type"][]> = {
 
 interface OsvQuery {
   package: { name: string; ecosystem: string };
+  /**
+   * The dependency's lock-file-resolved version, when known (ADR 0038).
+   * OSV's querybatch then returns only advisories that actually affect
+   * THAT version — instead of every advisory ever recorded against the
+   * package, most of which a patched install is no longer exposed to.
+   * Absent version → name-only query (the pre-existing conservative
+   * behavior for repos with no parseable lock file).
+   */
+  version?: string;
 }
 
 interface OsvBatchRequest {
@@ -169,6 +180,14 @@ export interface OsvFetchResult {
    * Used by the DB write layer to populate dependency_advisories.
    */
   packageAdvisoryMap: Map<string, string[]>;
+  /**
+   * Packages whose batch query carried a lock-file-resolved `version`, so
+   * the returned advisory set is version-true rather than package-wide.
+   * The write layer labels these links' match_method "version_resolved"
+   * (the rest stay the conservative "version_spec"); empty when no lock
+   * file was parsed for any dependency.
+   */
+  versionMatchedPackages: Set<string>;
   /** Data-quality warnings to surface in the UI */
   warnings: string[];
 }
@@ -182,6 +201,8 @@ export class OsvFetcher {
   private readonly vulnUrlBase: string;
   private readonly concurrency: number;
   private readonly retryDelayMs: number;
+  private readonly epssFetcher: EpssFetcher;
+  private readonly epssEnabled: boolean;
 
   constructor(
     batchUrl = OSV_BATCH_URL,
@@ -190,12 +211,21 @@ export class OsvFetcher {
     // Flat backoff for the single transient-failure retry (fetch-retry.ts).
     // Tests pass 0; production keeps the default.
     retryDelayMs: number = DEFAULT_RETRY_DELAY_MS,
+    // ADR 0039: EPSS enrichment runs after the detail fetches. Pass an
+    // EpssFetcher to customize (tests point it at a stub; the default is the
+    // free, no-auth FIRST API). `epssEnabled: false` skips the EPSS stage
+    // entirely — for callers that only want the OSV mapping (none today;
+    // kept as the single rollback point for the enrichment step).
+    epssFetcher: EpssFetcher = new EpssFetcher(undefined, undefined, retryDelayMs),
+    epssEnabled = true,
   ) {
     // Injected in tests to point at a mock server
     this.batchUrl = batchUrl;
     this.vulnUrlBase = vulnUrlBase;
     this.concurrency = concurrency;
     this.retryDelayMs = retryDelayMs;
+    this.epssFetcher = epssFetcher;
+    this.epssEnabled = epssEnabled;
   }
 
   /**
@@ -230,12 +260,30 @@ export class OsvFetcher {
     const warnings: string[] = [];
 
     if (dependencies.length === 0) {
-      return { advisories: new Map(), packageAdvisoryMap: new Map(), warnings };
+      return {
+        advisories: new Map(),
+        packageAdvisoryMap: new Map(),
+        versionMatchedPackages: new Set(),
+        warnings,
+      };
     }
 
     // Deduplicate — multiple dep_type rows for the same package_name share
     // the same set of advisories.
     const uniquePackages = [...new Set(dependencies.map((d) => d.package_name))];
+
+    // Lock-file-resolved version per package (first-seen wins; a package's
+    // production/dev rows share one lock-file entry). Present → the batch
+    // query carries `version` so OSV filters to advisories that actually
+    // affect the installed version (ADR 0038 + OSV querybatch contract).
+    const resolvedVersionByPackage = new Map<string, string>();
+    for (const dep of dependencies) {
+      if (dep.resolved_version !== undefined && dep.resolved_version !== null) {
+        if (!resolvedVersionByPackage.has(dep.package_name)) {
+          resolvedVersionByPackage.set(dep.package_name, dep.resolved_version);
+        }
+      }
+    }
 
     if (uniquePackages.length > OSV_BATCH_LIMIT) {
       warnings.push(
@@ -247,13 +295,26 @@ export class OsvFetcher {
     const queried = uniquePackages.slice(0, OSV_BATCH_LIMIT);
 
     // ------------------------------------------------------------------
-    // Stage 1: batch query — returns only {id, modified} per result
+    // Stage 1: batch query — returns only {id, modified} per result.
+    // Packages with a resolved version are queried WITH that version, so
+    // the returned advisory set is version-true (a patched install stops
+    // matching its package's historical advisories). Packages without one
+    // fall back to the name-only query — conservative, unchanged.
     // ------------------------------------------------------------------
     const osvEcosystemName = OSV_ECOSYSTEM_NAMES[ecosystem];
+    const versionMatchedPackages = new Set<string>();
     const requestBody: OsvBatchRequest = {
-      queries: queried.map((name) => ({
-        package: { name, ecosystem: osvEcosystemName },
-      })),
+      queries: queried.map((name) => {
+        const resolvedVersion = resolvedVersionByPackage.get(name);
+        if (resolvedVersion !== undefined) {
+          versionMatchedPackages.add(name);
+          return {
+            package: { name, ecosystem: osvEcosystemName },
+            version: resolvedVersion,
+          };
+        }
+        return { package: { name, ecosystem: osvEcosystemName } };
+      }),
     };
 
     const batchResponse = await fetchJson<OsvBatchResponse>(
@@ -338,7 +399,15 @@ export class OsvFetcher {
       }
     }
 
-    return { advisories, packageAdvisoryMap, warnings };
+    // ADR 0039: enrich with EPSS exploitability scores before returning —
+    // after the detail fetches so aliases are available, before the caller
+    // writes, so epssScore lands in the same upsert. Non-fatal: enrichment
+    // failures warn and leave epssScore null.
+    if (this.epssEnabled) {
+      await enrichAdvisoriesWithEpss(advisories, warnings, this.epssFetcher);
+    }
+
+    return { advisories, packageAdvisoryMap, versionMatchedPackages, warnings };
   }
 
   // ---------------------------------------------------------------------------
@@ -468,21 +537,28 @@ export class OsvFetcher {
   }
 
   /**
-   * Derive severity from CVSS v3 score (preferred) → CVSS v2 → OSV's own
-   * database_specific.severity field → "unknown".
+   * Derive severity from CVSS v4 score (preferred) → CVSS v3 → CVSS v2 →
+   * OSV's own database_specific.severity field → "unknown".
    *
-   * NIST CVSS v3 thresholds:
+   * NIST CVSS v3 thresholds (v4 uses the same qualitative bands):
    *   Critical ≥ 9.0 | High ≥ 7.0 | Medium ≥ 4.0 | Low ≥ 0.1 | None = 0.0
    */
   private extractSeverity(vuln: OsvVulnerability, warnings: string[]): Severity {
-    // 1. Try CVSS v3 numeric score
+    // 1. Try CVSS v4 numeric score
+    const cvss4 = vuln.severity?.find((s) => s.type === "CVSS_V4");
+    if (cvss4) {
+      const score = this.parseCvssNumericScore(cvss4.score);
+      if (score !== null) return cvssScoreToSeverity(score);
+    }
+
+    // 2. Try CVSS v3 numeric score
     const cvss3 = vuln.severity?.find((s) => s.type === "CVSS_V3");
     if (cvss3) {
       const score = this.parseCvssNumericScore(cvss3.score);
       if (score !== null) return cvssScoreToSeverity(score);
     }
 
-    // 2. Try CVSS v2 numeric score
+    // 3. Try CVSS v2 numeric score
     const cvss2 = vuln.severity?.find((s) => s.type === "CVSS_V2");
     if (cvss2) {
       const score = this.parseCvssNumericScore(cvss2.score);
@@ -510,7 +586,7 @@ export class OsvFetcher {
    */
   private extractCvssScore(vuln: OsvVulnerability): number | null {
     for (const sev of vuln.severity ?? []) {
-      if (sev.type === "CVSS_V3" || sev.type === "CVSS_V2") {
+      if (sev.type === "CVSS_V4" || sev.type === "CVSS_V3" || sev.type === "CVSS_V2") {
         const score = this.parseCvssNumericScore(sev.score);
         if (score !== null) return score;
       }

@@ -61,6 +61,11 @@ interface MockDbCalls {
   /** Every value object passed to .set(), in call order, across all update() calls. */
   setCalls: Record<string, unknown>[];
   /**
+   * Every `set` object passed to insert().onConflictDoUpdate({ set }), in
+   * call order — the upsert SET clauses, distinct from update()'s setCalls.
+   */
+  conflictSetCalls: Record<string, unknown>[];
+  /**
    * Every value array passed to .values() on an insert() chain, keyed by
    * the table name insert() was called with, in call order. Not populated
    * for update()/select() chains — .values() isn't meaningfully called on
@@ -115,6 +120,7 @@ function makeMockDb(overrides: {
     selects: [],
     transactionCalled: false,
     setCalls: [],
+    conflictSetCalls: [],
     insertedValues: [],
   };
 
@@ -123,6 +129,7 @@ function makeMockDb(overrides: {
    *   the table name, so .values() can record which table its rows were
    *   meant for. Left undefined for update()/select()/delete() chains.
    */
+  let lastValues: unknown[] | null = null;
   function makeChain(insertTableName?: string): Chain {
     // Route the chain's returning() result by the originating insert
     // table name rather than call order. Inserts are:
@@ -141,9 +148,15 @@ function makeMockDb(overrides: {
         if (insertTableName !== undefined) {
           calls.insertedValues.push({ table: insertTableName, rows });
         }
+        lastValues = rows;
         return chain;
       },
-      onConflictDoUpdate: (): Chain => chain,
+      onConflictDoUpdate: (config?: { set?: Record<string, unknown> }): Chain => {
+        if (config?.set !== undefined) {
+          calls.conflictSetCalls.push(config.set);
+        }
+        return chain;
+      },
       set: (values: Record<string, unknown>): Chain => {
         calls.setCalls.push(values);
         return chain;
@@ -155,7 +168,15 @@ function makeMockDb(overrides: {
           return Promise.resolve(advisoryRows);
         }
         if (insertTableName === getTableName(dependencies)) {
-          return Promise.resolve(depRows);
+          // Real upsert contract: each INSERT ... RETURNING returns only the
+          // rows passed to ITS .values() call. The writer now issues up to
+          // two dependencies upserts per transaction (registry-metadata
+          // split), so filter the configured rows to the inserted
+          // (packageName, depType) pairs instead of returning all of them
+          // for every call.
+          const inserted = (lastValues ?? []) as { packageName: string; depType: string }[];
+          const keys = new Set(inserted.map((r) => `${r.packageName}:${r.depType}`));
+          return Promise.resolve(depRows.filter((r) => keys.has(`${r.packageName}:${r.depType}`)));
         }
         if (insertTableName === getTableName(repos)) {
           return Promise.resolve([repoRow]);
@@ -308,7 +329,14 @@ function makeOsvResult(advisoryCount = 1): OsvFetchResult {
     );
   }
 
-  return { advisories, packageAdvisoryMap, warnings: [] };
+  // No resolved versions in this fixture → name-only queries → nothing
+  // version-matched (same shape the real fetcher returns for lock-less repos).
+  return {
+    advisories,
+    packageAdvisoryMap,
+    versionMatchedPackages: new Set<string>(),
+    warnings: [],
+  };
 }
 
 function makeRegistryResult(packages: string[] = ["pkg-0", "pkg-1"]): NpmRegistryFetchResult {
@@ -667,6 +695,52 @@ describe("IngestionWriter", () => {
       // Should not throw — missing registry metadata is handled gracefully
       const result = await writer.write(input);
       expect(result.dependenciesWritten).toBe(2);
+    });
+
+    it("preserves stored registry columns for packages whose fetch failed this run", async () => {
+      // Registry metadata absent for pkg-1 (transient fetch failure), while
+      // pkg-0 resolved with metadata.
+      const input = makeInput({
+        registryResult: makeRegistryResult(["pkg-0"]), // pkg-1 missing
+      });
+
+      db = makeMockDb({
+        repoRow: { id: "repo-uuid-1" },
+        runRow: { id: "run-uuid-1" },
+        depRows: [
+          { id: "dep-uuid-0", packageName: "pkg-0", depType: "production" },
+          { id: "dep-uuid-1", packageName: "pkg-1", depType: "production" },
+        ],
+        advisoryRows: [{ id: "adv-uuid-0", osvId: "GHSA-test-0000-0000" }],
+      });
+      writer = new IngestionWriter(db as unknown as WriterDb);
+
+      await writer.write(input);
+
+      // Two dependencies upserts should have been issued — one per
+      // metadata-availability group — with DIFFERENT SET clauses.
+      const dependencyUpserts = db._calls.insertedValues.filter(
+        (v) => v.table === getTableName(dependencies),
+      );
+      expect(dependencyUpserts).toHaveLength(2);
+
+      // The two dependencies upserts' SET clauses (in call order: with-meta
+      // first — the writer pushes metadata rows first) must differ: the
+      // without-meta group must NOT touch latest_version /
+      // is_deprecated / deprecation_note — writing them would erase
+      // known-good data on conflict — while still refreshing the
+      // manifest-derived columns.
+      const dependencySetCalls = db._calls.conflictSetCalls.filter((s) => "versionSpec" in s);
+      expect(dependencySetCalls).toHaveLength(2);
+      const withMeta = dependencySetCalls[0];
+      const withoutMeta = dependencySetCalls[1];
+      if (withMeta === undefined || withoutMeta === undefined) return;
+      expect("latestVersion" in withMeta).toBe(true);
+      expect("isDeprecated" in withMeta).toBe(true);
+      expect("latestVersion" in withoutMeta).toBe(false);
+      expect("isDeprecated" in withoutMeta).toBe(false);
+      expect("deprecationNote" in withoutMeta).toBe(false);
+      expect("resolvedVersion" in withoutMeta).toBe(true);
     });
   });
 

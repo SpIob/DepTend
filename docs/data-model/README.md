@@ -119,14 +119,14 @@ Global advisory records from OSV and GHSA. Shared across repos.
 
 Junction table. Produced during ingestion after version range evaluation.
 
-| Column          | Type                   | Notes                                          |
-| --------------- | ---------------------- | ---------------------------------------------- |
-| `id`            | uuid PK                |                                                |
-| `dependency_id` | uuid FK → dependencies | CASCADE on delete                              |
-| `advisory_id`   | uuid FK → advisories   | CASCADE on delete                              |
-| `is_affected`   | boolean                | True if installed version is in affected range |
-| `match_method`  | text                   | `version_spec` or `resolved_version`           |
-| `created_at`    | timestamptz            |                                                |
+| Column          | Type                   | Notes                                                                                                                             |
+| --------------- | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `id`            | uuid PK                |                                                                                                                                   |
+| `dependency_id` | uuid FK → dependencies | CASCADE on delete                                                                                                                 |
+| `advisory_id`   | uuid FK → advisories   | CASCADE on delete                                                                                                                 |
+| `is_affected`   | boolean                | True if installed version is in affected range                                                                                    |
+| `match_method`  | text                   | `version_spec` (name-only OSV query, conservative) or `version_resolved` (query carried the lock-file-resolved version; ADR 0061) |
+| `created_at`    | timestamptz            |                                                                                                                                   |
 
 UNIQUE constraint on `(dependency_id, advisory_id)`.
 
@@ -272,10 +272,12 @@ UNIQUE constraint on `(organization_id, user_login)`.
 
 ### `notification_subscriptions`
 
-User opt-in to be notified about repo events. Delivery is via GitHub Issues on the
-DepTend repo itself (zero-budget, per ADR 0032's standing rule). `event_types` is the
-array the user subscribed to; `github_issue_number` is the open issue DepTend uses
-as the user's "inbox" on its own repo.
+User opt-in to be notified about repo events. `event_types` is the
+array the user subscribed to. The schema reserves `github_issue_number`
+(integer, NULL) for a future GitHub-Issue-based delivery inbox, but no
+delivery mechanism is wired up today: the table stores subscriptions and
+the per-repo subscribe/unsubscribe routes read and write it; nothing
+sends notifications anywhere yet.
 
 | Column                | Type            | Notes                                                                              |
 | --------------------- | --------------- | ---------------------------------------------------------------------------------- |
@@ -319,3 +321,4 @@ UNIQUE constraint on `(user_login, repo_id)`.
 | 0.1.6   | 2026-08-23 | ADR 0034 (migration `0005`): composite index `idx_dependencies_repo_ecosystem (repo_id, ecosystem)` — index-only scan for the directory page's distinct pair; no column or row-type changes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | 0.1.7   | 2026-08-25 | ADR 0035 (migration `0006`): index `idx_missions_dependency_id (dependency_id)` — serves MissionWriter's bulk existing-mission check; no column or row-type changes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | 0.1.8   | 2026-08-28 | ADR 0040 (migration `0007_foamy_chimera`): the consolidated diff of four previously-unregistered hand-written SQL files (`0007`–`0010`) that the prior commit (`a539d8e`) had added without journal entries. Adds: `organizations` + `organization_members` + `notification_subscriptions` tables, `repos.org_id` FK to organizations, `transitive` value to `dep_type`, `advisories.epss_score` column, the `mission_scores.impact_inputs` default refresh with the `epss_score` field, and the four board-query composite indexes (`idx_advisories_severity_id`, `idx_dependencies_ecosystem_id`, `idx_mission_scores_effort_composite`, `idx_missions_status_repo`, `idx_repos_org_id`) |
+| 0.1.9   | 2026-09-20 | ADR 0045 (migration `0008_mission_scores_tier_index`): expression index `idx_mission_scores_composite_tier` on `FLOOR(mission_scores.composite_score / 0.5) DESC` — serves the board's priority ORDER BY; no column or row-type changes                                                                                                                                                                                                                                                                                                                                                                                                                                                    |

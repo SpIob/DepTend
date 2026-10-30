@@ -110,6 +110,44 @@ describe("DefaultImpactScorer", () => {
   });
 
   // -------------------------------------------------------------------------
+  describe("EPSS boost (scoring_version 1.1.0)", () => {
+    it("multiplies the base by 1 + epss * 0.5 when epss_score is finite", () => {
+      const without = scorer.score(
+        baseInputs({ cvss_score: 8.0, dep_type: "production", epss_score: null }),
+      );
+      const withEpss = scorer.score(
+        baseInputs({ cvss_score: 8.0, dep_type: "production", epss_score: 0.4 }),
+      );
+      expect(withEpss.score).toBeCloseTo(8.0 * 1.2, 5);
+      expect(without.score).toBeCloseTo(8.0, 5);
+    });
+
+    it("applies no boost when epss_score is NaN (NaN != null is true)", () => {
+      // Regression: CI run 36219595599 — the property test generated
+      // epssScore: NaN, and the old `!= null` guard multiplied the score
+      // by NaN, poisoning composite_score.
+      const withNaN = scorer.score(
+        baseInputs({ cvss_score: 8.0, dep_type: "production", epss_score: Number.NaN }),
+      );
+      expect(withNaN.score).toBeCloseTo(8.0, 5);
+    });
+
+    it("keeps the score finite and in range for the CI counterexample shape", () => {
+      const result = scorer.score(
+        baseInputs({
+          cvss_score: 0.10000000149011612,
+          severity: "high",
+          dep_type: "production",
+          epss_score: Number.NaN,
+        }),
+      );
+      expect(Number.isNaN(result.score)).toBe(false);
+      expect(result.score).toBeGreaterThanOrEqual(0);
+      expect(result.score).toBeLessThanOrEqual(10);
+    });
+  });
+
+  // -------------------------------------------------------------------------
   describe("clamping", () => {
     it("clamps to 10 when cvss_score is already at the maximum", () => {
       const result = scorer.score(baseInputs({ cvss_score: 10, dep_type: "production" }));

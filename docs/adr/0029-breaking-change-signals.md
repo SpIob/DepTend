@@ -9,6 +9,8 @@
 
 `EffortInputs.has_migration_guide` and `.breaking_change_signals` have been hardcoded (`false` / `[]`) for every mission since Phase 2 (ADR 0007 §5), unconditionally setting `breaking_change_signals_unavailable` in `ConfidenceFlags`. Combined with `downstream_dependents_unavailable` (also unconditional, ADR 0006), every mission has shown `confidence: "low"` since Phase 2, across all three ecosystems; the single oldest, most user-visible gap in the project (`DepTend_v1_0.md` §14, `Roadmap.md` "Next" #1).
 
+> **2026-10-22 status note (context, not a contradiction):** ADR 0032 (shipped) made `downstream_dependents_unavailable` conditional, and ADR 0038's lock-file parsing made `no_lock_file` conditional too, so the unconditional-`"low"` state described above is historical, not current. The notification-delivery mechanism referenced elsewhere (GitHub Issues or otherwise) was never built; `notification_subscriptions.github_issue_number` is a reserved, NULL column.
+
 Grounding against the real repo (`main` @ `4fdf58f`) before proposing anything surfaced two things worth stating up front:
 
 1. **Both scorers already fully support real data for either input.** `EcosystemValueScorer` already has the with/without-`downstream_dependents` weight split; `EffortScorer`'s decision table already branches on `has_migration_guide`/`breaking_change_signals`. Whichever gets sourced needs **zero scorer-logic changes**; this is purely an ingestion-and-plumbing problem.

@@ -537,17 +537,53 @@ export async function ingestRepo(
 // Repo resolution helpers
 // ---------------------------------------------------------------------------
 
-/** Return all repos in DB with status 'pending' or 'failed'. */
+/**
+ * Return all repos in DB with status 'pending' or 'failed', plus any stuck
+ * at 'running' long enough that no ingestion can still be in flight.
+ *
+ * The stale-running sweep exists because ingestionStatus 'running' is set
+ * by the writer's repo upsert BEFORE the pipeline's network stages, and
+ * only a completed write() call moves it off — a workflow run that is
+ * cancelled, OOM-killed, or severed mid-flight leaves the row at 'running'
+ * forever. Nothing else re-picks it: 'pending'/'failed' retry, 'complete'
+ * refreshes, 'skipped' is terminal, but 'running' was a black hole (and
+ * withdrawOwnRepo tells users it "resolves itself shortly" — false for a
+ * dead run). A repo whose run died hours ago is due for exactly the same
+ * retry a 'failed' repo gets.
+ *
+ * The threshold is deliberately hours, not minutes: a genuinely in-flight
+ * repo (cron cap ~150/day, each repo's pipeline taking at most a few
+ * minutes) is never mistaken for dead. Repos updated within the window
+ * are left alone — the running job will close them out.
+ */
 async function resolvePending(db) {
+  const staleRunningHours = intEnv("STALE_RUNNING_HOURS", 2);
+  const staleCutoff = new Date(Date.now() - staleRunningHours * 60 * 60 * 1000);
+
   const rows = await db
     .select()
     .from(schema.repos)
     .where(
-      or(eq(schema.repos.ingestionStatus, "pending"), eq(schema.repos.ingestionStatus, "failed")),
+      or(
+        eq(schema.repos.ingestionStatus, "pending"),
+        eq(schema.repos.ingestionStatus, "failed"),
+        and(
+          eq(schema.repos.ingestionStatus, "running"),
+          or(isNull(schema.repos.updatedAt), lt(schema.repos.updatedAt, staleCutoff)),
+        ),
+      ),
     );
 
   if (rows.length === 0) {
     log("info", "No repos with status 'pending' or 'failed' found in database.");
+  } else {
+    const staleRunning = rows.filter((r) => r.ingestionStatus === "running");
+    if (staleRunning.length > 0) {
+      log(
+        "info",
+        `${staleRunning.length} repo(s) stuck at 'running' for over ${String(staleRunningHours)}h — re-queuing.`,
+      );
+    }
   }
 
   return rows;

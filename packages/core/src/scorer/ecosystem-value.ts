@@ -17,6 +17,7 @@
  */
 
 import type { EcosystemValueInputs } from "../db/json-types.js";
+import { clampScore } from "./impact.js";
 
 // ---------------------------------------------------------------------------
 // Ceilings and weights (scoring_version 1.0.0 — see ADR 0006)
@@ -31,9 +32,10 @@ const WEIGHTS_WITHOUT_DOWNSTREAM = { stars: 0.75, engagement: 0.25 };
 
 /** Log-scale a non-negative count against a soft ceiling, onto a 0–10 range. */
 function logComponent(count: number, ceiling: number): number {
-  const nonNegative = Math.max(count, 0);
-  const scaled = (Math.log10(nonNegative + 1) / Math.log10(ceiling)) * 10;
-  return Math.min(Math.max(scaled, 0), 10);
+  // clampScore maps NaN to 0 — Math.min(Math.max(x, 0), 10) would pass it
+  // through (same poison path the impact scorer hardened; see clampScore).
+  const scaled = (Math.log10(Math.max(count, 0) + 1) / Math.log10(ceiling)) * 10;
+  return clampScore(scaled);
 }
 
 // ---------------------------------------------------------------------------
@@ -64,6 +66,6 @@ export class DefaultEcosystemValueScorer {
         engagementComponent * WEIGHTS_WITHOUT_DOWNSTREAM.engagement;
     }
 
-    return { score: Math.min(Math.max(score, 0), 10), inputs };
+    return { score: clampScore(score), inputs };
   }
 }
