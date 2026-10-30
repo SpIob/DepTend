@@ -2,13 +2,13 @@
 
 **2026-10-30 — Dependabot npm ecosystem restored & scoped; Dependabot PR review pass (config + docs)**
 
-Nine open Dependabot PRs reviewed against live CI runs and Vercel deploy logs; four closed, four approved, one sent for rebase. No code changes.
+Nine open Dependabot PRs reviewed against live CI runs and Vercel deploy logs and fully resolved the same day — outcomes finalized below as the successor PR #20 merged (an earlier draft's "main drift" failure diagnosis was corrected; see the ADR 0058 update section and the correction comment on #13).
 
 ### Changed
 
 - **`.github/dependabot.yml`: npm ecosystem entry restored** — git history shows it existed from `25c91290` (2026-08-26, ADR 0036's hygiene pass) until `63f66e48` (2026-09-19) dropped it, after which Dependabot never rebased or re-evaluated the npm PRs it had already opened; they rode stale for six weeks on pre-ADR-0059 branches with no CI gate. The restored entry keeps the `minor-and-patch` group, weekly Monday 06:00 schedule, and limit 5; ignores majors of `next`/`typescript`/`vitest` (each is a deliberate migration on this project, not a merge-and-see bump — drop an ignore entry when one is scheduled); and labels PRs with the existing `dependencies` label (Dependabot fails outright on a nonexistent label). Recorded as the update section in ADR 0058.
 - **PRs #7, #8, #9, #10 closed** with branches deleted (TypeScript 6, Next 16, @types/node 26, vitest 5): none carried a CI run; #8 failed typecheck (14 × TS2554 at the `revalidateTag` call sites) and its Vercel deploy, #7's Vercel deploy failed, #9/#10 predate the four-job CI split. Each closure comment points at the deliberate-migration path.
-- **PRs #4, #5, #18, #19 approved** (checkout v4→v7, setup-node v4→v7, upload-artifact SHA→SHA v7.0.2, action-send-mail v3→v23 — all green, send-mail inputs verified against the v23 action.yml); **#13 left open** pending `@dependabot rebase` (its `format:check` failure is 32 files of `main` drift, not the bumps).
+- **PRs #4, #5, #18, #19 approved and squash-merged** after re-basing each onto main and re-verifying green: checkout v4→v7 (`40604bc8`), setup-node v4→v7 (`04a4efcf`), upload-artifact SHA→SHA v7.0.2 (`521982bb`), action-send-mail v3→v23 (`bb214812`; inputs verified against the v23 action.yml). **#13 was closed by Dependabot itself** when the config landed; its successor **#20** (20 grouped minor/patch updates: next 15.5.28 within v15, react 19.3.1, typescript-eslint 8.72.1, drizzle-orm 0.45.4, …) was approved and merged (`80163de5`) after committing the `prettier-plugin-tailwindcss` 0.6→0.8 class-ordering reformat (33 files, churn-only) to its branch — that bump, not `main` drift, was what failed `format:check` on #13.
 
 ### Fixed
 
