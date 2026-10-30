@@ -20,7 +20,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Check public endpoints
         # Full smoke contract from the former ci.yml `smoke` job (removed in

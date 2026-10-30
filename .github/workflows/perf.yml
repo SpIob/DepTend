@@ -25,7 +25,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # Install Chromium for Lighthouse. The Playwright-provided
       # chrome-headless-shell binary is the smallest viable download
