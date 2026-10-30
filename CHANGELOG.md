@@ -1,5 +1,21 @@
 ---
 
+**2026-10-30 — Dependabot npm ecosystem restored & scoped; Dependabot PR review pass (config + docs)**
+
+Nine open Dependabot PRs reviewed against live CI runs and Vercel deploy logs; four closed, four approved, one sent for rebase. No code changes.
+
+### Changed
+
+- **`.github/dependabot.yml`: npm ecosystem entry restored** — git history shows it existed from `25c91290` (2026-08-26, ADR 0036's hygiene pass) until `63f66e48` (2026-09-19) dropped it, after which Dependabot never rebased or re-evaluated the npm PRs it had already opened; they rode stale for six weeks on pre-ADR-0059 branches with no CI gate. The restored entry keeps the `minor-and-patch` group, weekly Monday 06:00 schedule, and limit 5; ignores majors of `next`/`typescript`/`vitest` (each is a deliberate migration on this project, not a merge-and-see bump — drop an ignore entry when one is scheduled); and labels PRs with the existing `dependencies` label (Dependabot fails outright on a nonexistent label). Recorded as the update section in ADR 0058.
+- **PRs #7, #8, #9, #10 closed** with branches deleted (TypeScript 6, Next 16, @types/node 26, vitest 5): none carried a CI run; #8 failed typecheck (14 × TS2554 at the `revalidateTag` call sites) and its Vercel deploy, #7's Vercel deploy failed, #9/#10 predate the four-job CI split. Each closure comment points at the deliberate-migration path.
+- **PRs #4, #5, #18, #19 approved** (checkout v4→v7, setup-node v4→v7, upload-artifact SHA→SHA v7.0.2, action-send-mail v3→v23 — all green, send-mail inputs verified against the v23 action.yml); **#13 left open** pending `@dependabot rebase` (its `format:check` failure is 32 files of `main` drift, not the bumps).
+
+### Fixed
+
+- **AGENTS.md:** §12 gained the dependabot-PR trap (path filters don't cover sub-package manifests; a removed ecosystem entry means never-rebased PRs; missing-label failure shape), and the ADR index's 0058 blurb cross-references the new update section.
+
+---
+
 **2026-10-29 — ADR 0060 flipped to Accepted: Web Analytics live verification (docs-only)**
 
 Live verification landed for ADR 0060 (`vercel-web-analytics`); no code changes.
