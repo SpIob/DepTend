@@ -9,7 +9,7 @@ export function AuthStatus(): React.JSX.Element {
   const [busy, setBusy] = useState(false);
 
   if (status === "loading") {
-    return <span className="text-ink-muted font-mono text-xs">…</span>;
+    return <span className="font-mono text-xs text-ink-muted">…</span>;
   }
 
   if (session?.user) {
@@ -23,7 +23,7 @@ export function AuthStatus(): React.JSX.Element {
             setBusy(true);
             void signOut();
           }}
-          className="text-accent hover:text-ink underline decoration-dotted underline-offset-2 disabled:opacity-50"
+          className="text-accent underline decoration-dotted underline-offset-2 hover:text-ink disabled:opacity-50"
         >
           Sign out
         </button>
@@ -39,7 +39,7 @@ export function AuthStatus(): React.JSX.Element {
         setBusy(true);
         void signInWithGitHub();
       }}
-      className="text-accent hover:text-ink font-mono text-xs underline decoration-dotted underline-offset-2 disabled:opacity-50"
+      className="font-mono text-xs text-accent underline decoration-dotted underline-offset-2 hover:text-ink disabled:opacity-50"
     >
       Sign in with GitHub
     </button>

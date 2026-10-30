@@ -153,7 +153,7 @@ export function PaginatedMissionBoard({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="bg-bg border-border sticky top-0 z-10 flex flex-col gap-3 border-b py-3">
+      <div className="sticky top-0 z-10 flex flex-col gap-3 border-b border-border bg-bg py-3">
         <MissionSearchInput value={search} onChange={setSearch} />
         <FilterChips
           initialQuery={initialQuery}
@@ -177,7 +177,7 @@ export function PaginatedMissionBoard({
               );
             }}
             disabled={isPending}
-            className="text-accent hover:text-ink self-start font-mono text-xs underline decoration-dotted underline-offset-2 disabled:opacity-50"
+            className="self-start font-mono text-xs text-accent underline decoration-dotted underline-offset-2 hover:text-ink disabled:opacity-50"
           >
             Clear filters
           </button>
@@ -188,7 +188,7 @@ export function PaginatedMissionBoard({
           {showGroupByRepo && (
             <label
               htmlFor="group-by-repo"
-              className="text-ink-muted flex items-center gap-2 font-mono text-xs"
+              className="flex items-center gap-2 font-mono text-xs text-ink-muted"
             >
               <input
                 id="group-by-repo"
@@ -202,7 +202,7 @@ export function PaginatedMissionBoard({
               Group by repo
             </label>
           )}
-          <label className="text-ink-muted flex items-center gap-2 font-mono text-xs">
+          <label className="flex items-center gap-2 font-mono text-xs text-ink-muted">
             Sort
             <select
               value={initialQuery.sort}
@@ -210,7 +210,7 @@ export function PaginatedMissionBoard({
                 navigate(buildHref({ sort: event.target.value as SortMode }));
               }}
               disabled={isPending}
-              className="border-border bg-surface text-ink rounded-sm border px-2 py-1 font-mono text-xs"
+              className="rounded-sm border border-border bg-surface px-2 py-1 font-mono text-xs text-ink"
             >
               {SORT_MODES.map((mode) => (
                 <option key={mode} value={mode}>
@@ -221,10 +221,10 @@ export function PaginatedMissionBoard({
           </label>
         </div>
         {(isFiltered || pageCount > 1 || isPending) && (
-          <p className="text-ink-muted font-mono text-xs">
+          <p className="font-mono text-xs text-ink-muted">
             {rangeStart.toString()}–{rangeEnd.toString()} of {total.toString()} missions
             {isPending && (
-              <span role="status" className="text-accent ml-3">
+              <span role="status" className="ml-3 text-accent">
                 Updating…
               </span>
             )}
@@ -238,7 +238,7 @@ export function PaginatedMissionBoard({
         <div className="flex flex-col gap-5">
           {groups.map((group) => (
             <div key={group.repoKey} className="flex flex-col gap-3">
-              <h2 className="text-ink-muted border-border border-b pb-1 font-mono text-xs font-semibold uppercase tracking-wide">
+              <h2 className="border-b border-border pb-1 font-mono text-xs font-semibold uppercase tracking-wide text-ink-muted">
                 {group.repoKey}{" "}
                 <span className="normal-case">({group.missions.length.toString()})</span>
               </h2>

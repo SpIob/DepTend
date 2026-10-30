@@ -39,9 +39,9 @@ export async function generateMetadata({
 
 function EmptyState({ note }: { note: string | null }): React.JSX.Element {
   return (
-    <div className="border-border bg-surface rounded-sm border border-dashed p-10 text-center">
-      <p className="text-ink font-medium">No open missions for this repo.</p>
-      <p className="text-ink-muted mt-1 text-sm">
+    <div className="rounded-sm border border-dashed border-border bg-surface p-10 text-center">
+      <p className="font-medium text-ink">No open missions for this repo.</p>
+      <p className="mt-1 text-sm text-ink-muted">
         {note ?? "Either it's in good shape, or it hasn't finished ingesting yet."}
       </p>
     </div>
@@ -98,7 +98,7 @@ export default async function RepoPage({
             <span className="text-border" aria-hidden="true">
               /
             </span>
-            <h1 className="text-ink min-w-0 truncate font-mono text-sm font-semibold">
+            <h1 className="min-w-0 truncate font-mono text-sm font-semibold text-ink">
               {repo.owner}/{repo.name}
             </h1>
             <BookmarkToggle
@@ -112,7 +112,7 @@ export default async function RepoPage({
           <>
             <a
               href={`https://github.com/${repo.owner}/${repo.name}`}
-              className="hover:text-ink underline decoration-dotted underline-offset-2"
+              className="underline decoration-dotted underline-offset-2 hover:text-ink"
             >
               View on GitHub
             </a>
@@ -132,18 +132,18 @@ export default async function RepoPage({
         )}
         {/* Same stats the repo card shows on the directory, mirrored here —
             on their own line so the title row never truncates to fit them. */}
-        <div className="text-ink-muted flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-xs">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-xs text-ink-muted">
           <span>★ {repo.stars.toLocaleString()}</span>
           {repo.lastIngestedAt !== null && (
             <span>Ingested {repo.lastIngestedAt.toLocaleDateString()}</span>
           )}
         </div>
-        <p className="text-ink-muted max-w-xl text-sm leading-relaxed">
+        <p className="max-w-xl text-sm leading-relaxed text-ink-muted">
           {repo.description ?? "Prioritized maintenance missions for this repo."}
         </p>
         <Link
           href="/"
-          className="text-accent hover:text-ink w-fit font-mono text-xs underline decoration-dotted underline-offset-2"
+          className="w-fit font-mono text-xs text-accent underline decoration-dotted underline-offset-2 hover:text-ink"
         >
           ← All repos
         </Link>

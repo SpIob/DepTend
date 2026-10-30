@@ -23,9 +23,9 @@ const MAX_REPOS: number = Number.isFinite(RAW_MAX_REPOS) && RAW_MAX_REPOS > 0 ? 
 
 function EmptyState(): React.JSX.Element {
   return (
-    <div className="border-border bg-surface rounded-sm border border-dashed p-10 text-center">
-      <p className="text-ink font-medium">No repos indexed yet.</p>
-      <p className="text-ink-muted mt-1 text-sm">
+    <div className="rounded-sm border border-dashed border-border bg-surface p-10 text-center">
+      <p className="font-medium text-ink">No repos indexed yet.</p>
+      <p className="mt-1 text-sm text-ink-muted">
         Submit a public GitHub repo above to get started.
       </p>
     </div>
@@ -81,7 +81,7 @@ export default async function RepoDirectoryPage(): Promise<React.JSX.Element> {
             </span>
             <Link
               href="/missions"
-              className="hover:text-ink underline decoration-dotted underline-offset-2"
+              className="underline decoration-dotted underline-offset-2 hover:text-ink"
             >
               Browse all missions
             </Link>
@@ -92,7 +92,7 @@ export default async function RepoDirectoryPage(): Promise<React.JSX.Element> {
           </>
         }
       >
-        <p className="text-ink-muted max-w-2xl text-sm leading-relaxed">
+        <p className="max-w-2xl text-sm leading-relaxed text-ink-muted">
           Every indexed repo, with its highest-priority missions summarized. Open a repo for the
           full ranked list — every score shows its work, expand any mission for the inputs and
           weights behind it.
@@ -121,22 +121,22 @@ export default async function RepoDirectoryPage(): Promise<React.JSX.Element> {
         // strip stays one coherent line.
         <section
           aria-labelledby="skipped-repos-heading"
-          className="border-border bg-surface rounded-sm border border-dashed p-5"
+          className="rounded-sm border border-dashed border-border bg-surface p-5"
         >
           <details className="group/skipped">
-            <summary className="text-ink-muted hover:text-ink flex cursor-pointer items-center gap-2 font-mono text-xs">
+            <summary className="flex cursor-pointer items-center gap-2 font-mono text-xs text-ink-muted hover:text-ink">
               <span
                 aria-hidden="true"
                 className="shrink-0 transition-transform group-open/skipped:rotate-90"
               >
                 ▸
               </span>
-              <span id="skipped-repos-heading" className="text-ink font-medium">
+              <span id="skipped-repos-heading" className="font-medium text-ink">
                 {skippedRepos.length} skipped
               </span>
               <span>(repos with no analyzable manifest)</span>
             </summary>
-            <ul className="text-ink-muted mt-3 flex flex-col gap-1 font-mono text-xs">
+            <ul className="mt-3 flex flex-col gap-1 font-mono text-xs text-ink-muted">
               {skippedRepos.map((repo) => (
                 <li key={`${repo.owner}/${repo.name}`}>
                   <span className="text-ink">

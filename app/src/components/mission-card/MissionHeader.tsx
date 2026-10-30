@@ -18,7 +18,7 @@ export function MissionHeader({ mission }: MissionHeaderProps): React.JSX.Elemen
     <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:gap-2.5">
       <div className="flex items-start gap-2.5">
         <span
-          className="text-ink-muted mt-0.5 shrink-0 font-mono text-xs transition-transform group-open/card:rotate-90"
+          className="mt-0.5 shrink-0 font-mono text-xs text-ink-muted transition-transform group-open/card:rotate-90"
           aria-hidden="true"
         >
           ▸
@@ -28,10 +28,10 @@ export function MissionHeader({ mission }: MissionHeaderProps): React.JSX.Elemen
 
       <span className="flex min-w-0 flex-col gap-0.5 sm:flex-1">
         <span className="flex min-w-0 items-baseline gap-2">
-          <h3 className="text-ink min-w-0 truncate text-sm font-semibold">
+          <h3 className="min-w-0 truncate text-sm font-semibold text-ink">
             {mission.title}
             {osvShortId !== null && (
-              <span className="text-ink-muted ml-1 font-normal">({osvShortId})</span>
+              <span className="ml-1 font-normal text-ink-muted">({osvShortId})</span>
             )}
           </h3>
           {advisory?.fixedVersion != null && <FixedVersionTag version={advisory.fixedVersion} />}
@@ -40,12 +40,12 @@ export function MissionHeader({ mission }: MissionHeaderProps): React.JSX.Elemen
 
       <span className="flex shrink-0 items-center">
         <span
-          className="text-accent font-mono text-xl font-bold"
+          className="font-mono text-xl font-bold text-accent"
           aria-label={`Composite score ${score.compositeScore.toFixed(1)} out of 10`}
         >
           {score.compositeScore.toFixed(1)}
         </span>
-        <span className="text-ink-muted ml-1 font-mono text-xs">/10</span>
+        <span className="ml-1 font-mono text-xs text-ink-muted">/10</span>
       </span>
     </div>
   );

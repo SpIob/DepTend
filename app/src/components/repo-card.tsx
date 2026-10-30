@@ -25,7 +25,7 @@ function MissionCounts({
   counts: RepoWithMissionSummary["missionCounts"];
 }): React.JSX.Element {
   if (counts.total === 0) {
-    return <span className="text-ink-muted font-mono text-xs">No open missions</span>;
+    return <span className="font-mono text-xs text-ink-muted">No open missions</span>;
   }
   const present = SEVERITY_ORDER.filter((severity) => counts[severity] > 0);
   return (
@@ -44,11 +44,11 @@ export function RepoCard({ repo }: { repo: RepoWithMissionSummary }): React.JSX.
   const repoFullName = `${repo.owner}/${repo.name}`;
 
   return (
-    <article className="border-border bg-surface hover:border-ink-muted/50 flex flex-col gap-3 rounded-md border p-4 transition-shadow hover:shadow-md">
+    <article className="flex flex-col gap-3 rounded-md border border-border bg-surface p-4 transition-shadow hover:border-ink-muted/50 hover:shadow-md">
       <div className="flex items-start justify-between gap-2">
         <Link
           href={`/repo/${repo.owner}/${repo.name}`}
-          className="text-ink hover:text-accent min-w-0 truncate text-sm font-semibold"
+          className="min-w-0 truncate text-sm font-semibold text-ink hover:text-accent"
         >
           {repo.owner}/{repo.name}
         </Link>
@@ -69,7 +69,7 @@ export function RepoCard({ repo }: { repo: RepoWithMissionSummary }): React.JSX.
       </div>
 
       {repo.description !== null && repo.description !== "" && (
-        <p className="text-ink-muted line-clamp-2 text-xs leading-relaxed">{repo.description}</p>
+        <p className="line-clamp-2 text-xs leading-relaxed text-ink-muted">{repo.description}</p>
       )}
 
       {repo.ecosystems.length > 0 && (
@@ -81,12 +81,12 @@ export function RepoCard({ repo }: { repo: RepoWithMissionSummary }): React.JSX.
       )}
 
       {statusNote !== null ? (
-        <span className="text-ink-muted font-mono text-xs">{statusNote}</span>
+        <span className="font-mono text-xs text-ink-muted">{statusNote}</span>
       ) : (
         <MissionCounts counts={repo.missionCounts} />
       )}
 
-      <div className="text-ink-muted border-border/60 flex items-center justify-between border-t pt-2 font-mono text-[11px]">
+      <div className="flex items-center justify-between border-t border-border/60 pt-2 font-mono text-[11px] text-ink-muted">
         <span>★ {repo.stars.toLocaleString()}</span>
         {repo.lastIngestedAt !== null && (
           <span>Ingested {repo.lastIngestedAt.toLocaleDateString()}</span>

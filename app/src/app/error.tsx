@@ -31,15 +31,15 @@ export default function ErrorPage({
 
   return (
     <main id="main" className="mx-auto flex max-w-3xl flex-col gap-6 px-4 py-16 sm:px-6 sm:py-24">
-      <div className="border-border bg-surface rounded-md border p-8 text-center">
-        <h1 className="text-ink font-mono text-lg font-bold">Something went wrong</h1>
-        <p className="text-ink-muted mx-auto mt-2 max-w-md text-sm leading-relaxed">
+      <div className="rounded-md border border-border bg-surface p-8 text-center">
+        <h1 className="font-mono text-lg font-bold text-ink">Something went wrong</h1>
+        <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-ink-muted">
           The page failed to load. This is usually temporary — try again, or head back to the
           mission board.
         </p>
         {error.digest !== undefined && (
           <p
-            className="text-ink-muted/70 mt-3 font-mono text-xs"
+            className="mt-3 font-mono text-xs text-ink-muted/70"
             // Tooltip on the digest so users pasting it into a report
             // remember to include it. The role="status" announcement that
             // reads "ref: <digest>" out loud can't explain its purpose
@@ -53,13 +53,13 @@ export default function ErrorPage({
           <button
             type="button"
             onClick={reset}
-            className="bg-accent rounded-md px-3 py-1.5 font-mono text-xs font-medium text-white hover:opacity-90"
+            className="rounded-md bg-accent px-3 py-1.5 font-mono text-xs font-medium text-white hover:opacity-90"
           >
             Try again
           </button>
           <Link
             href="/"
-            className="border-border text-ink-muted hover:text-ink hover:border-ink-muted rounded-md border px-3 py-1.5 font-mono text-xs"
+            className="rounded-md border border-border px-3 py-1.5 font-mono text-xs text-ink-muted hover:border-ink-muted hover:text-ink"
           >
             Browse repos
           </Link>

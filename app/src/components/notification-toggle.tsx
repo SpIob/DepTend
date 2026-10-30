@@ -68,7 +68,7 @@ export function NotificationToggle({
         onClick={() => void signInWithGitHub()}
         title={signedOutLabel}
         aria-label={signedOutLabel}
-        className="text-ink-muted hover:text-ink shrink-0 p-0.5 font-mono text-xs leading-none"
+        className="shrink-0 p-0.5 font-mono text-xs leading-none text-ink-muted hover:text-ink"
       >
         Notify
       </button>
@@ -95,14 +95,14 @@ export function NotificationToggle({
         className={`rounded-md border px-2 py-0.5 font-mono text-[11px] transition-colors disabled:opacity-50 ${
           subscribed
             ? "border-accent bg-accent/10 text-accent"
-            : "border-border text-ink-muted hover:text-ink hover:border-ink-muted"
+            : "border-border text-ink-muted hover:border-ink-muted hover:text-ink"
         }`}
       >
         {pending ? "..." : "Notify"}
       </button>
       <div role="status" aria-live="polite">
         {errorMessage !== null && (
-          <p className="text-status-error text-[10px] leading-tight">{errorMessage}</p>
+          <p className="text-[10px] leading-tight text-status-error">{errorMessage}</p>
         )}
       </div>
     </div>

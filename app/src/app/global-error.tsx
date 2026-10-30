@@ -20,14 +20,14 @@ export default function GlobalErrorPage({
           id="main"
           className="mx-auto flex max-w-3xl flex-col gap-6 px-4 py-16 sm:px-6 sm:py-24"
         >
-          <div className="border-border bg-surface rounded-md border p-8 text-center">
-            <h1 className="text-ink font-mono text-lg font-bold">Something went wrong</h1>
-            <p className="text-ink-muted mx-auto mt-2 max-w-md text-sm leading-relaxed">
+          <div className="rounded-md border border-border bg-surface p-8 text-center">
+            <h1 className="font-mono text-lg font-bold text-ink">Something went wrong</h1>
+            <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-ink-muted">
               The application failed to start. A reload usually fixes this.
             </p>
             {error.digest !== undefined && (
               <p
-                className="text-ink-muted/70 mt-3 font-mono text-xs"
+                className="mt-3 font-mono text-xs text-ink-muted/70"
                 title="Include this if you report an issue"
               >
                 ref: {error.digest}
@@ -36,7 +36,7 @@ export default function GlobalErrorPage({
             <button
               type="button"
               onClick={reset}
-              className="bg-accent mt-6 rounded-md px-3 py-1.5 font-mono text-xs font-medium text-white hover:opacity-90"
+              className="mt-6 rounded-md bg-accent px-3 py-1.5 font-mono text-xs font-medium text-white hover:opacity-90"
             >
               Reload
             </button>

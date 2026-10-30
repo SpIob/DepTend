@@ -8,12 +8,12 @@
   }
 
   body {
-    @apply bg-bg text-ink font-sans antialiased;
+    @apply bg-bg font-sans text-ink antialiased;
   }
 
   /* Visible keyboard focus everywhere — no invisible-focus dark patterns. */
   :focus-visible {
-    @apply outline-accent outline-2 outline-offset-2;
+    @apply outline-2 outline-offset-2 outline-accent;
   }
 
   details > summary {

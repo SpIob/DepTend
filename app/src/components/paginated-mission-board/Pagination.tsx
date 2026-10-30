@@ -26,16 +26,16 @@ export function Pagination({
             navigate(buildHref({ page: page - 1 }));
           }}
           disabled={isPending}
-          className="border-border text-ink-muted hover:text-ink hover:border-ink-muted rounded-md border px-3 py-1.5 font-mono text-xs disabled:opacity-50"
+          className="rounded-md border border-border px-3 py-1.5 font-mono text-xs text-ink-muted hover:border-ink-muted hover:text-ink disabled:opacity-50"
         >
           ← Previous
         </button>
       ) : (
-        <span className="border-border text-ink-muted/50 rounded-md border px-3 py-1.5 font-mono text-xs">
+        <span className="rounded-md border border-border px-3 py-1.5 font-mono text-xs text-ink-muted/50">
           ← Previous
         </span>
       )}
-      <span className="text-ink-muted font-mono text-xs">
+      <span className="font-mono text-xs text-ink-muted">
         Page {page.toString()} of {pageCount.toString()}
       </span>
       {page < pageCount ? (
@@ -45,12 +45,12 @@ export function Pagination({
             navigate(buildHref({ page: page + 1 }));
           }}
           disabled={isPending}
-          className="border-border text-ink-muted hover:text-ink hover:border-ink-muted rounded-md border px-3 py-1.5 font-mono text-xs disabled:opacity-50"
+          className="rounded-md border border-border px-3 py-1.5 font-mono text-xs text-ink-muted hover:border-ink-muted hover:text-ink disabled:opacity-50"
         >
           Next →
         </button>
       ) : (
-        <span className="border-border text-ink-muted/50 rounded-md border px-3 py-1.5 font-mono text-xs">
+        <span className="rounded-md border border-border px-3 py-1.5 font-mono text-xs text-ink-muted/50">
           Next →
         </span>
       )}

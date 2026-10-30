@@ -46,9 +46,9 @@ function FilterChip({
 
 function EmptyFilterState(): React.JSX.Element {
   return (
-    <div className="border-border bg-surface rounded-sm border border-dashed p-10 text-center">
-      <p className="text-ink font-medium">No missions match these filters.</p>
-      <p className="text-ink-muted mt-1 text-sm">Try clearing or loosening a filter above.</p>
+    <div className="rounded-sm border border-dashed border-border bg-surface p-10 text-center">
+      <p className="font-medium text-ink">No missions match these filters.</p>
+      <p className="mt-1 text-sm text-ink-muted">Try clearing or loosening a filter above.</p>
     </div>
   );
 }
@@ -74,7 +74,7 @@ function FilterRow<Option extends string>({
 }): React.JSX.Element {
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <span className="text-ink-muted w-20 shrink-0 font-mono text-xs uppercase tracking-wide">
+      <span className="w-20 shrink-0 font-mono text-xs uppercase tracking-wide text-ink-muted">
         {label}
       </span>
       {options.map((option) => (
