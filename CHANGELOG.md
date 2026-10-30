@@ -1,5 +1,21 @@
 ---
 
+**2026-10-31 — Status-check pass: hygiene fixes (CI pins, dead overrides, repo bookkeeping) (config + CI)**
+
+A full status check (verification gate, CI runs, production URL probes, production-branch Neon reads) came back green across the board; the fixes below are the hygiene items it surfaced.
+
+### Changed
+
+- **`.github/workflows/ci.yml`:** the `build` job's `actions/checkout` and `actions/setup-node` pins raised from v4 to v7 — the 2026-10-30 dependabot wave (#4, #5, #18, #19) updated the other three jobs and `ingest.yml`, but the build job kept its v4 pins.
+- **`package.json`:** the dead `pnpm.overrides` block removed — pnpm ≥9.15 no longer reads the `pnpm` field in `package.json` (it warns on every command); the identical five overrides live in `pnpm-workspace.yaml` and remain authoritative.
+- **AGENTS.md is now untracked (local-only, per Mico):** `git rm --cached AGENTS.md` + a `.gitignore` entry — the file must never be committed again. It remains on disk with all local edits (including the ADR 0056 sync) intact; git no longer tracks it, and this push removes the stale remote copy. Earlier CHANGELOG bullets describing AGENTS.md syncs were written while the file was still tracked; from 2026-10-31 on, AGENTS.md changes stay local-only and are never part of a commit.
+
+### Housekeeping
+
+- **All 6 stashes dropped** after per-stash inspection: stash@{0} (AGENTS.md MCP section, superseded by the local-only policy), stash@{1} and stash@{3} (lint-staged auto-backups of `caa972c` and `f14ed64`), stash@{4} ("tmp-final" — its migration-journal diff is byte-identical to shipped migration `0008_mission_scores_tier_index`), and stash@{2}/{5} (2026-09-05 / 2026-08-29 WIP snapshots from the audit and perf passes whose outcomes shipped — ADRs 0054/0055 flipped, `57acc03` in history — and which sat two months past any plausible recovery window).
+
+---
+
 **2026-10-30 — ADR 0056 flipped to Accepted: Upstash Redis rate limiter live-verified in production (config + docs)**
 
 Upstash credentials configured everywhere the ADR requires them (Vercel prod/preview/development, GitHub Actions secrets, both `.env.local` copies), a forced production redeploy served the fresh env, and the limiter was live-verified against production with a real authenticated session — evidence in `reports/adr-0056-verification/2026-10-30/evidence.md`.

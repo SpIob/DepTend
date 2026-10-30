@@ -47,3 +47,6 @@ coverage/
 
 # Agent locks
 .agent-locks/
+
+# Agent-local docs — never commit (Mico, 2026-10-31)
+AGENTS.md
