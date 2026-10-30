@@ -1,6 +1,6 @@
 # ADR 0057: Mission writer advisory lock
 
-**Status:** Proposed (flipped back from Accepted 2026-09-23: the cited concurrent-run verification has no attached evidence — EXPLAIN output, run log, or duplicate-count artifact — and the change is not yet deployed. Live verification pending per AGENTS.md §10.)
+**Status:** Accepted (live-verified 2026-10-29 against dev Neon — evidence attached in the Verification section and in `reports/adr-0057-verification/2026-10-29-concurrent-writer-probe/`. The 2026-09-23 flip-back's "not yet deployed" clause is obsolete: the lock has been serving in production deploys since 2026-09-27.)
 **Date:** 2026-09-20
 
 ---
@@ -60,8 +60,8 @@ The lock is acquired at the very start of the transaction, before any reads, ens
 
 - All `MissionWriter` unit tests pass (25 tests).
 - Updated test expectations: `missionsBulkUpdateExecuted` counter now includes the advisory lock call (expect 2 instead of 1 for tests with existing missions).
-- Integration test: simulated concurrent `generateMissionsForRepo` calls for same repo — no duplicate missions created. **(2026-09-23: uncorroborated — no run log or duplicate-count artifact attached; see status.)**
-- Load test: 10 concurrent ingestion runs for same repo — exactly one set of missions created. **(2026-09-23: uncorroborated — no load-test output attached; see status.)**
+- Lock mechanics probed live (2026-10-29, two concurrent `@neondatabase/serverless` sessions, no data changes): same-key acquire blocks and dies on `statement_timeout` (57014 after 4084 ms), different-key acquire is unaffected (41 ms — per-repo granularity), the lock auto-releases on ROLLBACK (re-acquire 40 ms), and a no-timeout acquirer waited 1245 ms and then proceeded when the holder rolled back — the exact semantics the writer relies on.
+- Integration + load test, corroborated 2026-10-29 against dev Neon with the real built writer (neon-serverless, `scripts/ingest.js` wiring): the `deptend-pypi-test-fixture`'s 8 missions were cleared, then 10 concurrent `generateMissionsForRepo()` calls ran via `Promise.all` — zero writer errors, one writer `created=8`, the other nine `created=0, updated=8`, `sumCreated = 8`; post-state exactly 8 mission rows with 8 distinct `(dependency_id, advisory_id, mission_type)` triples and 8 `mission_scores` rows; dev totals restored to 310; sequential re-run afterwards `created=0, updated=8, resolved=0` (re-run safety, ADR 0008 §2). Evidence: `reports/adr-0057-verification/2026-10-29-concurrent-writer-probe/` (both probes + captured results).
 
 ---
 
