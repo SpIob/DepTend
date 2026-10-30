@@ -216,6 +216,7 @@ describe("Chaos/Resilience Tests", () => {
           ],
         ]),
         packageAdvisoryMap: new Map([["pkg-0", ["GHSA-test"]]]),
+        versionMatchedPackages: new Set(),
         warnings: [],
       };
       const registryResult: RegistryFetchResult = {
@@ -267,6 +268,7 @@ describe("Chaos/Resilience Tests", () => {
           ],
         ]),
         packageAdvisoryMap: new Map([["pkg-0", ["GHSA-test"]]]),
+        versionMatchedPackages: new Set(),
         warnings: [],
       };
       const registryResult: RegistryFetchResult = {
@@ -318,6 +320,7 @@ describe("Chaos/Resilience Tests", () => {
           ],
         ]),
         packageAdvisoryMap: new Map([["pkg-0", ["GHSA-test"]]]),
+        versionMatchedPackages: new Set(),
         warnings: [],
       };
       const registryResult: RegistryFetchResult = {
@@ -371,6 +374,7 @@ describe("Chaos/Resilience Tests", () => {
           ],
         ]),
         packageAdvisoryMap: new Map([["pkg-0", ["GHSA-test"]]]),
+        versionMatchedPackages: new Set(),
         warnings: [],
       };
       const registryResult: RegistryFetchResult = {

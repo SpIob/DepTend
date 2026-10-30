@@ -103,11 +103,14 @@ jobs:
             echo "::error::DATABASE_URL malformed"
             exit 1
           fi
-          # 6. Validate DATABASE_URL connectivity using Node.js (neon-http driver)
+          # 6. Validate DATABASE_URL connectivity using Node.js (neon-http driver).
+          # sql.query(), not sql(): @neondatabase/serverless >=1.0 removed the
+          # conventional-call API — sql('SELECT 1') throws at runtime and killed
+          # the 2026-09-24 08:57 UTC cron (run 35978272261) before ingestion.
           node -e "
             const { neon } = require('@neondatabase/serverless');
             const sql = neon(process.env.DATABASE_URL);
-            sql('SELECT 1').then(() => console.log('DB connection OK')).catch(e => { console.error('DB connection failed:', e.message); process.exit(1); });
+            sql.query('SELECT 1').then(() => console.log('DB connection OK')).catch(e => { console.error('DB connection failed:', e.message); process.exit(1); });
           " || exit 1
           # 7. Validate OSV API reachable
           curl -sf https://api.osv.dev/v1/vulns/CVE-2021-44228 >/dev/null || {
@@ -122,7 +125,13 @@ jobs:
           echo "Pre-flight checks passed"
 
       - name: Send test email (manual trigger only)
-        if: github.event_name == 'workflow_dispatch' && inputs.send_test_email == 'true'
+        # inputs.send_test_email is a typed workflow_dispatch boolean, so at
+        # an `if:` it arrives as a Boolean; comparing it to the STRING 'true'
+        # coerces true→1 and 'true'→NaN, and every NaN comparison is false —
+        # the step could never run with the old condition, even checked.
+        # (The == 'true' string-compare pattern belongs to the
+        # github.event.inputs.* context, which stores 'true'/'false' strings.)
+        if: github.event_name == 'workflow_dispatch' && inputs.send_test_email == true
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: smtp.gmail.com
@@ -214,9 +223,24 @@ jobs:
           runs=$(gh api repos/${{ github.repository }}/actions/workflows/ingest.yml/runs \
             --jq '.workflow_runs[:5] | map(select(.conclusion != null)) | .[:3] | map(.conclusion) | join(",")')
           if [[ "$runs" == "failure,failure,failure" ]]; then
+            # gh issue create fails OUTRIGHT when a label doesn't exist (no
+            # auto-create, no issue created), and the old `|| true` on the
+            # create swallowed that failure — a real 3-consecutive-failure
+            # event would have produced NO issue, silently (neither label
+            # existed in the repo). Both labels are now created idempotently
+            # in the same step so the issue create can't no-op, and the
+            # create itself is no longer swallowed: if it still fails, the
+            # error is visible in the run log.
+            gh label create "ops:ingest-failure" \
+              --color "D93F0B" \
+              --description "Ingestion workflow failure (circuit breaker)" \
+              || true  # label already exists
+            gh label create "blocker" \
+              --color "B60205" \
+              --description "Requires operator attention / blocks a release" \
+              || true  # label already exists
             gh issue create \
               --title "⚠️ Ingest workflow: 3 consecutive failures" \
               --body "The scheduled ingestion workflow has failed 3 times in a row. Latest run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
-              --label "ops:ingest-failure,blocker" \
-              || true  # Don't fail workflow if issue creation fails
+              --label "ops:ingest-failure,blocker"
           fi

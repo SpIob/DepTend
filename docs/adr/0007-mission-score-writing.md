@@ -58,6 +58,12 @@ Per ADR 0006: 0 flags → `high`, 1 flag → `medium`, 2+ flags → `low`, compu
 
 ### 7. Tie-break ranking, implemented
 
+> **2026-10-22 correction note:** this section predates ADR 0017/0018. Ranking now buckets
+> near-equal scores into fixed-width tiers (making "tied" a transitive equivalence class),
+> then breaks ties by `effort_label`, the advisory's `published_at`, and `osv_id` — not by
+> epsilon comparison or `created_at`. This ADR's original text is kept as the Phase 2
+> record; the live spec is ADR 0017 + ADR 0018.
+
 ADR 0006 specified the rule; `rankMissions()` implements it: sort by `composite_score` descending, and where two scores are within **0.5** of each other, break the tie by `effort_label` ascending (`trivial < low < medium < high`), then `created_at` ascending. Noted as an implementation detail: epsilon-based "tied" comparisons aren't strictly transitive (A≈B and B≈C doesn't guarantee A≈C), which can occasionally make comparator-based sorts behave oddly across long chains of near-equal scores. Given the 3-repo MVP cap keeps mission lists small, this isn't worth the extra complexity of clustering ties before sorting; flagged here in case that assumption stops holding after the repo cap is revisited (Section on MVP repo cap, Project Instructions).
 
 ## Consequence for the future DB-writer step
