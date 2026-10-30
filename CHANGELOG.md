@@ -1,5 +1,17 @@
 ---
 
+**2026-10-29 — ADR 0060 flipped to Accepted: Web Analytics live verification (docs-only)**
+
+Live verification landed for ADR 0060 (`vercel-web-analytics`); no code changes.
+
+### Changed
+
+- **ADR 0060: Proposed → Accepted**, evidence attached in its Live verification section: production (running `b9e95e7`, which includes `f9d4b0a`) serves the insights script — `GET /_vercel/insights/script.js` returns 200 and the page injects the per-project path `/_vercel/insights/<hash>/script.js` at hydration; `POST /_vercel/insights/view` returns 400 (endpoint present, not the 404 of a disabled feature); a real-browser check shows the script fetched with `window.va` active; `count_pageviews` reports **11 visitors / 11 pageviews** since enablement (10 strictly after 2026-10-05) across `/`, `/missions`, `/repo/[owner]/[name]`, and the `/api` catch-all — far inside the 50,000/month Hobby allowance.
+- **Correction folded into the ADR:** the injected script tag carries no `nonce` attribute — the earlier "nonce-stamped" wording was wrong; CSP compliance comes from same-origin `script-src 'self'` (ADR 0037), which covers external same-origin scripts without a nonce. No policy change needed or made.
+- **AGENTS.md:** the ADR index now runs through 0061 (0061 shipped Accepted on 2026-10-22 but the index still said "through 0060") and §3's tree line matches.
+
+---
+
 **2026-10-22 — Ingestion & scoring audit fixes (ADR 0061)**
 
 Six fixes from the 2026-10-22 `packages/core` audit, one per finding:
