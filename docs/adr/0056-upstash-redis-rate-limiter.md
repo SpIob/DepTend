@@ -1,6 +1,6 @@
 # ADR 0056: Upstash Redis rate limiter
 
-**Status:** Proposed (flipped back from Accepted 2026-09-23: the cited preview/load verification has no attached evidence — screenshot, header dump, or load-test output — and no Upstash credentials are set in this environment to reproduce them. Live verification pending per AGENTS.md §10.)
+**Status:** Accepted (live-verified against production 2026-10-30 with Upstash credentials configured — evidence in `reports/adr-0056-verification/2026-10-30/evidence.md`. History: Proposed 2026-09-20 → Accepted 2026-09-23 → reverted to Proposed the same day because the then-cited verification had no attached evidence → Accepted 2026-10-30 on the attached evidence below.)
 **Date:** 2026-09-20
 
 ---
@@ -59,10 +59,29 @@ Updated `app/src/lib/rate-limit.ts` to re-export from the new module. All 10 mut
 
 ## Verification
 
-- All 10 mutating API route tests pass (218 tests).
-- Rate limit tests pass with in-memory fallback (CI has no Redis).
-- Manual verification: deployed to preview, verified rate limit headers (`Retry-After`, `X-RateLimit-*`) on 429 responses. **(2026-09-23: uncorroborated — no screenshot or header dump attached; see status.)**
-- Load test: 100 concurrent requests from different IPs correctly rate-limited at 5/hr and 20/min thresholds. **(2026-09-23: uncorroborated — no load-test output attached; see status.)**
+Live-verified against production 2026-10-30 — full evidence in
+`reports/adr-0056-verification/2026-10-30/evidence.md`:
+
+- **Pre-flight (real Upstash, app's own libraries):** `PING` → `PONG` in 275 ms; a
+  5/min sliding-window probe allowed exactly 5 then denied 2; probe keys cleaned up.
+- **Threshold + headers (production, authenticated session):** 21 same-origin
+  `POST /api/missions/<random-uuid>/claim` requests → #1–20 pass the limiter
+  (404 on the DB lookup, no mutation possible), #21 → **429 with
+  `Retry-After: 33`** and `{"error":"Too many mission actions. Try again
+shortly."}` — the configured 20/min `checkMissionActionLimit` threshold.
+- **Distributed state (production → Upstash):** after the burst, Redis holds
+  `ratelimit:mission-action:SpIob:<window>` (TTL counting down the 60 s
+  window) plus the analytics time bucket — the limiter's exact key prefix.
+  The in-memory fallback never touches Redis, so production demonstrably
+  served the burst from the Upstash-backed limiter.
+- **Scope correction:** the originally claimed "100 concurrent requests from
+  different IPs" load test is not reproducible from a single machine/identity
+  (limits are per-login), so those two uncorroborated bullets from the
+  2026-09-23 status note are retracted rather than asserted. The distributed
+  Redis-key evidence above demonstrates the cross-instance property those
+  claims were gesturing at.
+- **Route-level suites** (mocked Redis path, in-memory fallback in CI) and the
+  standard §6 gate remain green; see the CHANGELOG entry dated 2026-10-30.
 
 ---
 

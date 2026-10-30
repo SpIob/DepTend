@@ -1,5 +1,22 @@
 ---
 
+**2026-10-30 — ADR 0056 flipped to Accepted: Upstash Redis rate limiter live-verified in production (config + docs)**
+
+Upstash credentials configured everywhere the ADR requires them (Vercel prod/preview/development, GitHub Actions secrets, both `.env.local` copies), a forced production redeploy served the fresh env, and the limiter was live-verified against production with a real authenticated session — evidence in `reports/adr-0056-verification/2026-10-30/evidence.md`.
+
+### Changed
+
+- **Vercel:** `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` added on production/preview/development (verified via Vercel MCP); forced redeploy `dpl_BGxL6XoKLAG2WY7nGeJ3e5PT9Zjx` (commit `e0a667eb`) READY so running functions pick them up.
+- **GitHub Actions:** both `UPSTASH_*` secrets created (verified via `gh secret list`).
+- **Pre-flight against the real Upstash** with the app's exact `@upstash/redis`/`@upstash/ratelimit` versions: `PONG` in 275 ms; 5/min sliding-window probe allowed exactly 5 then denied 2; probe keys cleaned up. Redis confirmed empty (`dbsize 0`) before the live run — the limiter only initializes on the first authenticated mutating request.
+
+### Fixed
+
+- **ADR 0056: Proposed → Accepted** with an evidence-backed Verification section: 21 same-origin authenticated POSTs to a mission-action route (random UUID → no mutation possible) → #1–20 pass the gate (404 on lookup), #21 → **429 with `Retry-After: 33`** at the configured 20/min threshold; post-burst Redis scan shows `ratelimit:mission-action:SpIob:<window>` counting down its 60 s TTL — proof production runs the Upstash-backed limiter, not the in-memory fallback. The two uncorroborated 2026-09-23 verification bullets ("verified rate limit headers on preview", "100 concurrent requests from different IPs") are retracted in the ADR: the header claim was never evidenced, and a per-login limit is not reproducible with distinct IPs from one machine/identity. Per §0.1/§10, claims are now scoped to what was actually demonstrated.
+- **AGENTS.md:** §2's ADR 0056 status bullet and the ADR index blurb updated to Accepted; §5's env-var table gained the two `UPSTASH_*` rows.
+
+---
+
 **2026-10-30 — Dependabot npm ecosystem restored & scoped; Dependabot PR review pass (config + docs)**
 
 Nine open Dependabot PRs reviewed against live CI runs and Vercel deploy logs and fully resolved the same day — outcomes finalized below as the successor PR #20 merged (an earlier draft's "main drift" failure diagnosis was corrected; see the ADR 0058 update section and the correction comment on #13).
