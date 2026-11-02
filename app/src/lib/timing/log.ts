@@ -19,7 +19,7 @@
  * request id is a random UUID, not a session token.
  */
 
-import { readEntries } from "./store";
+import { currentRequestId, deleteStore, readEntries } from "./store";
 
 /**
  * Log the per-segment timing data for the current request to stdout.
@@ -37,7 +37,16 @@ import { readEntries } from "./store";
  * If no request scope is active (e.g., a background job), this is a
  * no-op.
  */
-export function logTimingsForRequest(path: string, totalMs: number, reqId: string): void {
+export async function logTimingsForRequest(
+  path: string,
+  totalMs: number,
+  reqId: string | null,
+): Promise<void> {
+  if (reqId === null) {
+    // No request id (e.g. background job, or the page render ran before
+    // middleware). Nothing to read or clean up.
+    return;
+  }
   // Skip in production unless explicitly enabled. The default is dev-only
   // because per-request stdout logs are noisy in prod; production should
   // pipe this data to a metrics endpoint (Datadog, OTel, etc.) instead.
@@ -47,6 +56,13 @@ export function logTimingsForRequest(path: string, totalMs: number, reqId: strin
   const isDev = process.env.NODE_ENV !== "production";
   const forceEnabled = process.env.DEPTEND_TIMING_LOG === "1";
   if (!isDev && !forceEnabled) {
+    // Production default: no read, no log. The request is over, so its
+    // store must not linger either — this delete is what bounds prod
+    // growth (the deferred one below only runs on the logging path).
+    // A straggler Suspense fetch that completes after this point will
+    // re-create the store on write; MAX_STORED_REQUESTS is the flood
+    // guard for that race.
+    deleteStore(reqId);
     return;
   }
   // First pass: log what's available right after the page render
@@ -60,7 +76,25 @@ export function logTimingsForRequest(path: string, totalMs: number, reqId: strin
   // in the log.
   setImmediate(() => {
     flushLog(path, totalMs, reqId, "full");
+    // The "full" pass is the last read of this request's store. Without
+    // this delete, every request that recorded timings persists its store
+    // entry in the module-level Map for the process lifetime (2026-11-02
+    // perf audit); see store.ts MAX_STORED_REQUESTS for the other guard.
+    deleteStore(reqId);
   });
+}
+
+/**
+ * Resolve the request id from the current request scope and run
+ * logTimingsForRequest. Convenience wrapper for pages that don't
+ * otherwise need the request id: `await logRequestTimings("/", 12)` —
+ * await is required because currentRequestId() reads next/headers.
+ * (logTimingsForRequest's flush is still scheduled, not awaited; the
+ * "full" pass lands after the page's outer render returns, same as the
+ * explicit-reqId form.)
+ */
+export async function logRequestTimings(path: string, totalMs: number): Promise<void> {
+  await logTimingsForRequest(path, totalMs, await currentRequestId());
 }
 
 function flushLog(path: string, totalMs: number, reqId: string, pass: "page-done" | "full"): void {

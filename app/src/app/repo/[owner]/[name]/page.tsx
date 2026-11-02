@@ -23,6 +23,7 @@ import { EcosystemBadge } from "@/components/ecosystem-badge";
 import { BrandMark } from "@/components/brand-mark";
 import { PageHeader } from "@/components/page-header";
 import { ingestionStatusNote } from "@/lib/ingestion-status";
+import { logRequestTimings } from "@/lib/timing/log";
 
 export const dynamic = "force-dynamic";
 
@@ -64,6 +65,7 @@ export default async function RepoPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }): Promise<React.JSX.Element> {
   const { owner, name } = await params;
+  const pageStartedAt = Date.now();
   const repo = await getRepoByOwnerAndName(owner, name);
   if (repo === null) {
     notFound();
@@ -88,6 +90,10 @@ export default async function RepoPage({
   ]);
 
   const statusNote = ingestionStatusNote(repo.ingestionStatus);
+  // Per-request timing (ADR 0052 follow-up): measures the session + board +
+  // bookmarks + ecosystems fetches above, not the render. Same shape as
+  // /missions's logger.
+  await logRequestTimings(`/repo/${owner}/${name}`, Date.now() - pageStartedAt);
 
   return (
     <main id="main" className="mx-auto flex max-w-3xl flex-col gap-8 px-4 py-8 sm:px-6 sm:py-12">

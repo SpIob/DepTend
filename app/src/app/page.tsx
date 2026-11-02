@@ -7,6 +7,7 @@ import { SubmitRepoForm } from "@/components/submit-repo-form";
 import { RepoCard } from "@/components/repo-card";
 import { BrandMark } from "@/components/brand-mark";
 import { PageHeader } from "@/components/page-header";
+import { logRequestTimings } from "@/lib/timing/log";
 import type { RepoWithMissionSummary } from "@deptend/core";
 
 // This page reads live data from Neon on every request — repo/mission
@@ -54,6 +55,7 @@ function compareRepos(a: RepoWithMissionSummary, b: RepoWithMissionSummary): num
  * one repo's mission count instead of the whole board's.
  */
 export default async function RepoDirectoryPage(): Promise<React.JSX.Element> {
+  const pageStartedAt = Date.now();
   const session = await getServerSession(authOptions);
   const login = session?.user?.login;
 
@@ -66,6 +68,9 @@ export default async function RepoDirectoryPage(): Promise<React.JSX.Element> {
   // would just recompute what's already sitting in `repos`.
   const indexedCount = repos.filter((repo) => repo.ingestionStatus === "complete").length;
   const sorted = [...repos].sort(compareRepos);
+  // Per-request timing (ADR 0052 follow-up): the fetch pair above dominates
+  // totalMs; the render is not measured. Same shape as /missions's logger.
+  await logRequestTimings("/", Date.now() - pageStartedAt);
 
   return (
     <main id="main" className="mx-auto flex max-w-6xl flex-col gap-8 px-4 py-8 sm:px-6 sm:py-12">

@@ -1,6 +1,5 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import { headers } from "next/headers";
 import { Suspense } from "react";
 import {
   getRepoDirectorySummary,
@@ -18,8 +17,7 @@ import {
 import { AuthStatus } from "@/components/auth-status";
 import { BrandMark } from "@/components/brand-mark";
 import { PageHeader } from "@/components/page-header";
-import { REQUEST_ID_HEADER } from "@/lib/timing/store";
-import { logTimingsForRequest } from "@/lib/timing/log";
+import { logRequestTimings } from "@/lib/timing/log";
 import type { MissionBoardQuery } from "@/lib/mission-board-query";
 
 // Live data on every request, same reasoning as the repo directory (page.tsx).
@@ -104,11 +102,12 @@ export default async function AllMissionsPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }): Promise<React.JSX.Element> {
-  const reqId = (await headers()).get(REQUEST_ID_HEADER) ?? "no-req-id";
   const startedAt = Date.now();
   const result = await renderAllMissionsPage(searchParams);
   const totalMs = Date.now() - startedAt;
-  logTimingsForRequest("/missions", totalMs, reqId);
+  // Per-request timing (ADR 0052 follow-up): the request id resolves from
+  // the current scope, so all four page loggers share one call shape.
+  await logRequestTimings("/missions", totalMs);
   return result;
 }
 

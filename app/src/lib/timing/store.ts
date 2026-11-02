@@ -54,13 +54,46 @@ export async function currentRequestId(): Promise<string | null> {
 // Test-only export for direct store manipulation
 export const stores = new Map<string, TimingStore>();
 
+/**
+ * Upper bound on distinct request stores held in this process. All four
+ * page loggers (/, /missions, /org/[org], /repo/[owner]/[name]) read
+ * entries back, but every one of them is dev-only (logTimingsForRequest's
+ * production guard) — in production entries are written on every page
+ * render and never read, so without these guards a store entry would live
+ * for the process lifetime, one Map entry per request (found in the
+ * 2026-11-02 perf audit). Two guards keep it bounded: the timing logger
+ * deletes a request's store after its final read (or on its production
+ * early return), and this cap evicts the oldest-inserted store when a new
+ * one would exceed it (Map iteration order is insertion order). Worst
+ * case, a flood sacrifices timing observability only — never app
+ * behavior. Same scale rationale as rate-limit-redis.ts's
+ * MAX_FALLBACK_KEYS.
+ */
+export const MAX_STORED_REQUESTS = 10_000;
+
 export function getOrCreateStore(requestId: string): TimingStore {
   let s = stores.get(requestId);
   if (s === undefined) {
+    if (stores.size >= MAX_STORED_REQUESTS) {
+      const oldest = stores.keys().next();
+      if (!oldest.done) {
+        stores.delete(oldest.value);
+      }
+    }
     s = { entries: [] };
     stores.set(requestId, s);
   }
   return s;
+}
+
+/**
+ * Drop one request's store after its final read. Called by the timing
+ * logger's last flush pass; a no-op for ids without a store. Without
+ * this, every recorded request persists in the Map until the cap evicts
+ * it (see MAX_STORED_REQUESTS).
+ */
+export function deleteStore(requestId: string): void {
+  stores.delete(requestId);
 }
 
 /**

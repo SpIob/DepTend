@@ -1,5 +1,24 @@
 ---
 
+**2026-11-02 — Production perf audit: bounded the per-request timing store (app)**
+
+A production performance audit (Lighthouse run 41291155920 + live probes + Neon/region checks) found the read path healthy (all four audited pages 99–100 perf, warm LCP ≤ 922 ms, brotli, sin1 co-located with Neon) but one real defect: the per-request timing store (`app/src/lib/timing/store.ts`, ADR 0052 follow-up) grew without bound — `withTiming` records on every page, the only production consumer (`/missions`'s dev-only logger) reads nothing, and nothing ever deleted a request's entry.
+
+### Changed
+
+- **`app/src/lib/timing/store.ts`:** `getOrCreateStore()` now caps the module-level Map at `MAX_STORED_REQUESTS` (10,000) with oldest-inserted eviction — same pattern as `rate-limit-redis.ts`'s `MAX_FALLBACK_KEYS` — and a new `deleteStore()` supports explicit cleanup.
+- **`app/src/lib/timing/log.ts`:** `logTimingsForRequest()` deletes the request's store after its final read in both terminal paths — the production early-return (the path that never reads; this is what bounds production) and the deferred `"full"` flush pass.
+- **`app/src/lib/timing/store.eviction.test.ts`** (new): 6 tests covering cap eviction, update-without-eviction, delete no-op safety, and both terminal paths.
+- **`docs/adr/0062-timing-store-bounded.md`** (new, Proposed): decision, alternatives (stop-recording-in-prod rejected — `DEPTEND_TIMING_LOG=1` depends on collection; TTL sweep rejected — more code, no benefit), and the live-verification requirement to flip to Accepted.
+
+### Backlog pass (same day, part 2)
+
+- **Per-segment timing completed for every read page (ADR 0052 follow-up):** `/`, `/org/[org]`, and `/repo/[owner]/[name]` now call the new `logRequestTimings()` wrapper (`app/src/lib/timing/log.ts`, request id resolved from the request scope); `/missions` was migrated off its explicit-reqId call so all four pages share one call shape. Validated against real infrastructure — production build + `DEPTEND_TIMING_LOG=1` + live Neon emitted full segment lines on all four pages (e.g. `/repo/…/deptend-go-test-fixture`: `repos:by-owner-name` 38.1 ms, `cache:missions:miss/db` 189.4 ms, `revive` 9.3 ms; `/` cold-start: `cache:repos:db` 5636.3 ms — Neon compute wake, previously invisible). Production telemetry stays off by default; set `DEPTEND_TIMING_LOG=1` in Vercel env to enable.
+- **`pg_stat_statements` installed on the production Neon branch** (`CREATE EXTENSION` via Neon MCP, user-approved decision point; verified live: 83 statements tracked, `list_slow_queries` now returns real data — top entries are Neon-internal, no app-query red flags). Closes the audit's slow-query-harness gap; still absent on the dev branch.
+- Per-repo pagination (backlog item 1) deliberately **not** built: bounded at 59 missions/repo against the `limit: 1000` ceiling; flagged for revisit if a large-repo ingestion ever lands.
+
+---
+
 **2026-10-31 — Status-check pass: hygiene fixes (CI pins, dead overrides, repo bookkeeping) (config + CI)**
 
 A full status check (verification gate, CI runs, production URL probes, production-branch Neon reads) came back green across the board; the fixes below are the hygiene items it surfaced.
@@ -7,7 +26,7 @@ A full status check (verification gate, CI runs, production URL probes, producti
 ### Changed
 
 - **`.github/workflows/ci.yml`:** the `build` job's `actions/checkout` and `actions/setup-node` pins raised from v4 to v7 — the 2026-10-30 dependabot wave (#4, #5, #18, #19) updated the other three jobs and `ingest.yml`, but the build job kept its v4 pins.
-- **`package.json`:** the `pnpm.overrides` block was removed as a dead-config cleanup, then **restored in the same pass** — pnpm 9.15.0 (pinned via `packageManager`) still *reads* the field (with a deprecation warning) even though it no longer silently honors `pnpm-workspace.yaml`'s `overrides:` key in this version, so removing the block made every `pnpm install --frozen-lockfile` fail with `ERR_PNPM_LOCKFILE_CONFIG_MISMATCH` (reproduced locally and in CI run 41146463217 before the restore). The block is version-load-bearing while `packageManager` pins 9.15.0; revisit only with a pnpm 10 migration. (A previous session's note claiming pnpm ≥9.15 ignores the field entirely was wrong — corrected 2026-10-31.)
+- **`package.json`:** the `pnpm.overrides` block was removed as a dead-config cleanup, then **restored in the same pass** — pnpm 9.15.0 (pinned via `packageManager`) still _reads_ the field (with a deprecation warning) even though it no longer silently honors `pnpm-workspace.yaml`'s `overrides:` key in this version, so removing the block made every `pnpm install --frozen-lockfile` fail with `ERR_PNPM_LOCKFILE_CONFIG_MISMATCH` (reproduced locally and in CI run 41146463217 before the restore). The block is version-load-bearing while `packageManager` pins 9.15.0; revisit only with a pnpm 10 migration. (A previous session's note claiming pnpm ≥9.15 ignores the field entirely was wrong — corrected 2026-10-31.)
 - **AGENTS.md is now untracked (local-only, per Mico):** `git rm --cached AGENTS.md` + a `.gitignore` entry — the file must never be committed again. It remains on disk with all local edits (including the ADR 0056 sync) intact; git no longer tracks it, and this push removes the stale remote copy. Earlier CHANGELOG bullets describing AGENTS.md syncs were written while the file was still tracked; from 2026-10-31 on, AGENTS.md changes stay local-only and are never part of a commit.
 
 ### Housekeeping
