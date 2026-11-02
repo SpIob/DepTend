@@ -1,6 +1,6 @@
 # ADR 0062: Bound the per-request timing store (production memory growth fix)
 
-**Status:** Proposed
+**Status:** Accepted (flipped 2026-11-02, same-day live verification)
 **Date:** 2026-11-02
 **Related:** ADR 0052 (Server-Timing header), ADR 0056 (rate limiter, whose fallback Map set the eviction pattern)
 
@@ -96,6 +96,21 @@ production early-return delete plus the cap still bound the store.
 `pg_stat_statements` was also installed on the production Neon branch the
 same day (user-approved decision point; the slow-query harness item from
 the audit backlog), so app-query latency is now observable DB-side too.
+
+### Accepted — live verification (2026-11-02)
+
+Shipped in `0980558` and deployed as production `dpl_71aWwSmd1i1KBcsc2W9eVWWfmLDb`
+(READY). Post-deploy live check against `deptend.vercel.app`:
+
+- All four pages HTTP 200 with unchanged payloads (byte sizes identical to
+  the audit's pre-deploy probes), `Server-Timing: total;dur=0.2–2.6` (the
+  middleware-phase header, unchanged behavior).
+- 30-request burst across `/` and `/missions`: 30/30 × HTTP 200, zero
+  failures — pages keep serving normally with the eviction + delete guards
+  in place. The 8-test unit suite (`store.eviction.test.ts`) carries the
+  behavioral proof of the bounds themselves; real production can't be
+  introspected for Map size on Vercel Hobby, so serving behavior plus the
+  unit contract is the honest evidence available.
 
 ## Verification
 

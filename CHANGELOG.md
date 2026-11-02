@@ -9,7 +9,7 @@ A production performance audit (Lighthouse run 41291155920 + live probes + Neon/
 - **`app/src/lib/timing/store.ts`:** `getOrCreateStore()` now caps the module-level Map at `MAX_STORED_REQUESTS` (10,000) with oldest-inserted eviction — same pattern as `rate-limit-redis.ts`'s `MAX_FALLBACK_KEYS` — and a new `deleteStore()` supports explicit cleanup.
 - **`app/src/lib/timing/log.ts`:** `logTimingsForRequest()` deletes the request's store after its final read in both terminal paths — the production early-return (the path that never reads; this is what bounds production) and the deferred `"full"` flush pass.
 - **`app/src/lib/timing/store.eviction.test.ts`** (new): 6 tests covering cap eviction, update-without-eviction, delete no-op safety, and both terminal paths.
-- **`docs/adr/0062-timing-store-bounded.md`** (new, Proposed): decision, alternatives (stop-recording-in-prod rejected — `DEPTEND_TIMING_LOG=1` depends on collection; TTL sweep rejected — more code, no benefit), and the live-verification requirement to flip to Accepted.
+- **`docs/adr/0062-timing-store-bounded.md`** (new): decision, alternatives (stop-recording-in-prod rejected — `DEPTEND_TIMING_LOG=1` depends on collection; TTL sweep rejected — more code, no benefit). **Accepted 2026-11-02** — shipped in `0980558`, deployed as `dpl_71aWwSmd1i1KBcsc2W9eVWWfmLDb`, post-deploy live check green (all four pages 200 with unchanged payloads, 30/30 burst across `/` + `/missions`).
 
 ### Backlog pass (same day, part 2)
 
