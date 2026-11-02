@@ -21,7 +21,7 @@
     "postinstall": "pnpm --filter @deptend/core build"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0",
+    "@types/node": "^26.6.6",
     "@typescript-eslint/eslint-plugin": "^8.72.1",
     "@typescript-eslint/parser": "^8.72.1",
     "dotenv": "^17.4.2",
