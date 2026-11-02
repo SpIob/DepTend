@@ -58,7 +58,7 @@
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.2.0",
-    "@renovatebot/pep440": "^5.0.1",
+    "@renovatebot/pep440": "^6.0.0",
     "@yarnpkg/lockfile": "^1.0.0",
     "drizzle-orm": "^0.45.4",
     "semver": "^7.8.5",
