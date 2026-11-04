@@ -27,6 +27,10 @@ const config: Config = {
           npm: "#7C5CBF",
           pypi: "#2F855A",
           go: "#0E7C86",
+          // Plum — a fourth hue family, distinct from npm/pypi/go's
+          // purple/green/teal AND from the severity scale (red/orange/
+          // amber/blue/gray), per this palette's own rule above.
+          cargo: "#8E4585",
         },
         // Form/request feedback — its own tokens, not the severity palette:
         // "critical" means advisory severity on this site, and an error

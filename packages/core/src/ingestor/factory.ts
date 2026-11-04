@@ -18,7 +18,7 @@ export interface ManifestResult {
 }
 
 export interface HttpIngestorConfig {
-  ecosystem: "npm" | "pypi" | "go";
+  ecosystem: "npm" | "pypi" | "go" | "cargo";
   manifestFiles: string[];
   lockFileNames: readonly string[];
   /** Receives all manifest results (in manifestFiles order) + lock file info */
@@ -32,7 +32,7 @@ export interface HttpIngestorConfig {
 }
 
 export interface LocalIngestorConfig {
-  ecosystem: "npm" | "pypi" | "go";
+  ecosystem: "npm" | "pypi" | "go" | "cargo";
   manifestFiles: string[];
   lockFileNames: readonly string[];
   /** Receives all manifest results (in manifestFiles order) + lock file info */

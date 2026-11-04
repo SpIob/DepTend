@@ -86,6 +86,10 @@ const OSV_ECOSYSTEM_NAMES: Record<Ecosystem, string> = {
   npm: "npm",
   pypi: "PyPI",
   go: "Go",
+  // ADR 0063: our internal enum value is "cargo"; OSV's identifier for the
+  // Rust registry is "crates.io" (live-confirmed against both the batch and
+  // detail endpoints). Same deliberate namespace split as pypi → "PyPI".
+  cargo: "crates.io",
 };
 
 /**
@@ -98,6 +102,9 @@ const ACCEPTED_RANGE_TYPES: Record<Ecosystem, OsvRange["type"][]> = {
   npm: ["SEMVER"],
   pypi: ["SEMVER", "ECOSYSTEM"],
   go: ["SEMVER"],
+  // ADR 0063: Rust is toolchain-enforced SemVer, and OSV's Rust records
+  // carry SEMVER-type ranges only (live-confirmed on RUSTSEC-2020-0071).
+  cargo: ["SEMVER"],
 };
 
 // ---------------------------------------------------------------------------

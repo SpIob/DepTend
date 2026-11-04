@@ -83,9 +83,9 @@ export interface SubclassOptions {
   registryLabel: string;
   /**
    * Field name on the parsed response body that holds the version
-   * string. Lowercase ("version") for npm + PyPI, capitalized
+   * string. Lowercase ("version") for npm + PyPI + crates.io, capitalized
    * ("Version") for Go's module proxy — Go's wire format uses
-   * PascalCase, the other two use JSON's typical camelCase.
+   * PascalCase, the others use JSON's typical camelCase.
    */
   versionFieldName: "version" | "Version";
 }
@@ -158,6 +158,15 @@ export abstract class RegistryFetcher {
   protected abstract buildPackageUrl(packageName: string): string;
 
   /**
+   * Request headers for this registry's API, or undefined for none
+   * (npm/PyPI/Go need none). Crates.io requires a descriptive User-Agent
+   * by documented policy, so it overrides this to supply one.
+   */
+  protected buildRequestHeaders(): Record<string, string> | undefined {
+    return undefined;
+  }
+
+  /**
    * Pre-resolve source repo from the package name itself, before the
    * fetch. Default: nothing (npm/PyPI derive it from the response). Go
    * overrides to compute it from the module path.
@@ -194,7 +203,9 @@ export abstract class RegistryFetcher {
 
     let response: Response;
     try {
-      response = await fetchWithRetry(url, undefined, this.fetchRetryOptions);
+      const headers = this.buildRequestHeaders();
+      const init: RequestInit = { ...(headers !== undefined && { headers }) };
+      response = await fetchWithRetry(url, init, this.fetchRetryOptions);
     } catch (err) {
       return this.failedResult(
         packageName,

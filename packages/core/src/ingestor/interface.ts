@@ -50,7 +50,8 @@ export interface IngestorResult {
     | "poetry.lock"
     | "Pipfile.lock"
     | "pdm.lock"
-    | "go.sum";
+    | "go.sum"
+    | "Cargo.lock";
   /** Warnings about data quality to surface in the UI */
   warnings: string[];
 }

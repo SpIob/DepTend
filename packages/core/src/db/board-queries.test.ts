@@ -162,8 +162,10 @@ describe("getBoardMissionsWithScoresPage filters", () => {
     }
 
     // One FILTER column per known enum value plus the total:
-    // 5 severities + 3 ecosystems + 4 efforts + 4 missionTypes + 1 total.
-    expect(tally.sql.match(/filter \(where/g)).toHaveLength(17);
+    // 5 severities + 4 ecosystems + 4 efforts + 4 missionTypes + 1 total.
+    expect(
+      tally.sql.match(/filter \(\n?where/g) ?? tally.sql.match(/filter \(where/g),
+    ).toHaveLength(18);
 
     // Each facet bucket is an equality against its own expression — the
     // facet answers "how many rows are this severity under the other
@@ -174,7 +176,7 @@ describe("getBoardMissionsWithScoresPage filters", () => {
     ).toHaveLength(5);
     expect(
       selectList.match(/coalesce\("dependencies"\."ecosystem"::text[^)]*\) = /gi),
-    ).toHaveLength(3);
+    ).toHaveLength(4);
   });
 
   it("ships the narrow advisory projection — no raw OSV blob or long-form fields", async () => {

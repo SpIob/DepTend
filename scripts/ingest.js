@@ -74,6 +74,7 @@ import * as schema from "../packages/core/dist/db/schema.js";
 import { NpmIngestor } from "../packages/core/dist/ingestor/npm.js";
 import { PyPIIngestor } from "../packages/core/dist/ingestor/pypi.js";
 import { GoIngestor } from "../packages/core/dist/ingestor/go.js";
+import { CargoIngestor } from "../packages/core/dist/ingestor/cargo.js";
 import { detectEcosystem } from "../packages/core/dist/pipeline/ecosystem-detection.js";
 import { OsvFetcher } from "../packages/core/dist/ingestor/osv.js";
 import { IngestionWriter } from "../packages/core/dist/ingestor/writer.js";
@@ -186,6 +187,7 @@ async function main() {
   const npmIngestor = new NpmIngestor();
   const pypiIngestor = new PyPIIngestor();
   const goIngestor = new GoIngestor();
+  const cargoIngestor = new CargoIngestor();
   const osvFetcher = new OsvFetcher();
 
   let failCount = 0;
@@ -204,6 +206,7 @@ async function main() {
         npmIngestor,
         pypiIngestor,
         goIngestor,
+        cargoIngestor,
         osvFetcher,
         githubToken ?? null,
         librariesIoApiKey,
@@ -246,6 +249,7 @@ async function main() {
  * @param {import("../packages/core/dist/ingestor/npm.js").NpmIngestor} npmIngestor
  * @param {import("../packages/core/dist/ingestor/pypi.js").PyPIIngestor} pypiIngestor
  * @param {import("../packages/core/dist/ingestor/go.js").GoIngestor} goIngestor
+ * @param {import("../packages/core/dist/ingestor/cargo.js").CargoIngestor} cargoIngestor
  * @param {import("../packages/core/dist/ingestor/osv.js").OsvFetcher} osvFetcher
  * @param {string | null} githubToken
  * @param {string | null} librariesIoApiKey
@@ -260,6 +264,7 @@ export async function ingestRepo(
   npmIngestor,
   pypiIngestor,
   goIngestor,
+  cargoIngestor,
   osvFetcher,
   githubToken,
   librariesIoApiKey,
@@ -335,9 +340,13 @@ export async function ingestRepo(
     const rawBase = buildRawContentBase(owner, name, repoInput.defaultBranch);
 
     // 3. Detect ecosystem + parse dependencies. Ordered probing (ADR
-    // 0022, extended in ADR 0024): npm first, then PyPI, then Go.
+    // 0022, extended in ADR 0024 and ADR 0063): npm first, then PyPI,
+    // then Go, then cargo.
     log("info", `[${label}] Detecting ecosystem and parsing dependencies`);
-    const ingestorResult = await detectEcosystem([npmIngestor, pypiIngestor, goIngestor], rawBase);
+    const ingestorResult = await detectEcosystem(
+      [npmIngestor, pypiIngestor, goIngestor, cargoIngestor],
+      rawBase,
+    );
     logWarnings(label, ingestorResult.warnings);
 
     log(

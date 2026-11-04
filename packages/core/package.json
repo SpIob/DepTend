@@ -83,6 +83,22 @@
       "import": "./dist/ingestor/go.js",
       "types": "./dist/ingestor/go.d.ts"
     },
+    "./ingestor/cargo.js": {
+      "import": "./dist/ingestor/cargo.js",
+      "types": "./dist/ingestor/cargo.d.ts"
+    },
+    "./ingestor/cargo-parse.js": {
+      "import": "./dist/ingestor/cargo-parse.js",
+      "types": "./dist/ingestor/cargo-parse.d.ts"
+    },
+    "./ingestor/local-cargo.js": {
+      "import": "./dist/ingestor/local-cargo.js",
+      "types": "./dist/ingestor/local-cargo.d.ts"
+    },
+    "./ingestor/cargo-registry.js": {
+      "import": "./dist/ingestor/cargo-registry.js",
+      "types": "./dist/ingestor/cargo-registry.d.ts"
+    },
     "./ingestor/manifest-check.js": {
       "import": "./dist/ingestor/manifest-check.js",
       "types": "./dist/ingestor/manifest-check.d.ts"

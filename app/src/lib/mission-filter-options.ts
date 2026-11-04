@@ -22,12 +22,13 @@ export const SEVERITY_LABELS: Record<Severity, string> = {
   unknown: "Unknown",
 };
 
-export const ECOSYSTEM_OPTIONS: readonly Ecosystem[] = ["npm", "pypi", "go"];
+export const ECOSYSTEM_OPTIONS: readonly Ecosystem[] = ["npm", "pypi", "go", "cargo"];
 
 export const ECOSYSTEM_LABELS: Record<Ecosystem, string> = {
   npm: "npm",
   pypi: "PyPI",
   go: "Go",
+  cargo: "Cargo",
 };
 
 export const EFFORT_OPTIONS: readonly EffortLabel[] = ["trivial", "low", "medium", "high"];

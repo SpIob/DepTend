@@ -101,6 +101,8 @@ const RELEASE_TAG_PARSER: Record<Ecosystem, (candidate: string) => string | null
   // shared across both ecosystems.
   npm: (candidate) => semver.valid(candidate),
   go: (candidate) => semver.valid(candidate),
+  // Cargo too — Rust versions are toolchain-enforced SemVer (ADR 0063).
+  cargo: (candidate) => semver.valid(candidate),
 };
 
 function parseReleaseTag(ecosystem: Ecosystem, tag: string): string | null {
@@ -112,6 +114,7 @@ const VERSION_COMPARATOR: Record<Ecosystem, (a: string, b: string) => number> = 
   pypi: pep440Compare,
   npm: semver.compare,
   go: semver.compare,
+  cargo: semver.compare,
 };
 
 function compareVersions(ecosystem: Ecosystem, a: string, b: string): number {

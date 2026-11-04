@@ -25,6 +25,7 @@ const ECOSYSTEM_LABELS: Record<Ecosystem, string> = {
   npm: "npm",
   pypi: "PyPI",
   go: "Go",
+  cargo: "Cargo",
 };
 
 function capitalize(value: string): string {

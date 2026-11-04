@@ -212,6 +212,7 @@ export function tallyRow(overrides: Partial<Record<string, number>> = {}): unkno
     ecosystem_npm: 0,
     ecosystem_pypi: 0,
     ecosystem_go: 0,
+    ecosystem_cargo: 0,
     effort_trivial: 0,
     effort_low: 0,
     effort_medium: 0,

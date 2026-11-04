@@ -16,6 +16,12 @@ export { PyPIRegistryFetcher, type PyPIRegistryFetchResult } from "../ingestor/p
 
 export { GoRegistryFetcher, type GoRegistryFetchResult } from "../ingestor/go-registry.js";
 
+export {
+  CratesRegistryFetcher,
+  CRATES_CONCURRENCY,
+  type CargoRegistryFetchResult,
+} from "../ingestor/cargo-registry.js";
+
 export type { PackageMetadata, RegistryFetchResult } from "../ingestor/registry-base.js";
 
 import type { Ecosystem } from "../db/schema.js";
@@ -23,6 +29,7 @@ import type { RegistryFetcher } from "../ingestor/registry-base.js";
 import { NpmRegistryFetcher } from "../ingestor/registry.js";
 import { PyPIRegistryFetcher } from "../ingestor/pypi-registry.js";
 import { GoRegistryFetcher } from "../ingestor/go-registry.js";
+import { CratesRegistryFetcher } from "../ingestor/cargo-registry.js";
 
 /**
  * Common shape all three registry fetchers already share structurally —
@@ -38,9 +45,14 @@ type RegistryFetcherLike = RegistryFetcher;
  * this was a `ecosystem === "pypi" ? new PyPIRegistryFetcher() : new
  * NpmRegistryFetcher()` ternary before Phase 7, the CLI-side mirror of
  * the identical gap fixed in scripts/ingest.js.)
+ *
+ * The crates.io fetcher is constructed at CRATES_CONCURRENCY (1) — the
+ * ADR 0063 mitigation for crates.io's ~1 req/s fair-use policy. The other
+ * three keep their class defaults (10).
  */
 export const REGISTRY_FETCHERS_BY_ECOSYSTEM: Record<Ecosystem, RegistryFetcherLike> = {
   npm: new NpmRegistryFetcher(),
   pypi: new PyPIRegistryFetcher(),
   go: new GoRegistryFetcher(),
+  cargo: new CratesRegistryFetcher(),
 };

@@ -18,6 +18,7 @@ import { parseGoSumContent } from "./go-sum-parse.js";
 import { parsePoetryLockContent } from "./poetry-lock-parse.js";
 import { parsePipfileLockContent } from "./pipfile-lock-parse.js";
 import { parsePdmLockContent } from "./pdm-lock-parse.js";
+import { parseCargoLockContent } from "./cargo-lock-parse.js";
 
 /** Result of parsing a lock file */
 export interface LockFileParseResult {
@@ -35,7 +36,8 @@ export interface LockFileParseResult {
     | "poetry.lock"
     | "Pipfile.lock"
     | "pdm.lock"
-    | "go.sum";
+    | "go.sum"
+    | "Cargo.lock";
 }
 
 /** Lock file parser function type */
@@ -49,6 +51,7 @@ export const LOCK_PARSERS: Record<string, LockFileParser> = {
   "poetry.lock": parsePoetryLockContent,
   "Pipfile.lock": parsePipfileLockContent,
   "pdm.lock": parsePdmLockContent,
+  "Cargo.lock": parseCargoLockContent,
   // "pnpm-lock.yaml": parsePnpmLockContent, // not yet implemented
 };
 

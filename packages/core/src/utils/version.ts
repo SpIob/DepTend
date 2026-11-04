@@ -31,6 +31,7 @@ const VERSION_PARSER: Record<Ecosystem, VersionParseFn> = {
   npm: (candidate) => semver.valid(candidate),
   pypi: (candidate) => pep440Valid(candidate),
   go: (candidate) => semver.valid(candidate),
+  cargo: (candidate) => semver.valid(candidate),
 };
 
 /**
@@ -45,6 +46,7 @@ const VERSION_COMPARATOR: Record<Ecosystem, VersionCompareFn> = {
   npm: semver.compare,
   pypi: pep440Compare,
   go: semver.compare,
+  cargo: semver.compare,
 };
 
 /**
@@ -115,6 +117,9 @@ const FLOOR_EXTRACTORS: Record<Ecosystem, (spec: string) => string | null> = {
   npm: npmFloorExtractor,
   pypi: pypiFloorExtractor,
   go: goFloorExtractor,
+  // Cargo requirement strings are semver-compatible — same floor rule as
+  // npm (ADR 0063, Decision 3).
+  cargo: npmFloorExtractor,
 };
 
 // ---------------------------------------------------------------------------
@@ -207,6 +212,7 @@ export function inferBumpSize(
   switch (ecosystem) {
     case "npm":
     case "go":
+    case "cargo":
       return inferSemverBump(currentFloor, targetVersion);
     case "pypi":
       return inferPep440Bump(currentFloor, targetVersion);

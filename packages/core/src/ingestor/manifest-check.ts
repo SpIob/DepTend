@@ -41,6 +41,7 @@ import { detectEcosystem } from "./detect.js";
 import { NpmIngestor } from "./npm.js";
 import { PyPIIngestor } from "./pypi.js";
 import { GoIngestor } from "./go.js";
+import { CargoIngestor } from "./cargo.js";
 import type { Ecosystem } from "../db/schema.js";
 
 export type ManifestCheckResult =
@@ -111,6 +112,7 @@ export async function checkSubmittableRepo(
       new NpmIngestor(REQUEST_CONTEXT_TRANSPORT),
       new PyPIIngestor(REQUEST_CONTEXT_TRANSPORT),
       new GoIngestor(REQUEST_CONTEXT_TRANSPORT),
+      new CargoIngestor(REQUEST_CONTEXT_TRANSPORT),
     ],
     rawBase,
   );

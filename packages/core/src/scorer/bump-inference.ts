@@ -220,6 +220,7 @@ export function inferPep440Bump(
 const FLOOR_EXTRACTION_BY_ECOSYSTEM: Record<Ecosystem, (versionSpec: string) => string | null> = {
   npm: extractSemverFloor,
   go: extractSemverFloor,
+  cargo: extractSemverFloor,
   pypi: extractPep440Floor,
 };
 
@@ -237,14 +238,28 @@ export function extractVersionFloor(ecosystem: Ecosystem, versionSpec: string): 
   return FLOOR_EXTRACTION_BY_ECOSYSTEM[ecosystem](versionSpec);
 }
 
+/**
+ * Record<Ecosystem, ...>, not an if/else — the exact ADR 0024 Context #1
+ * trap this file's own two-way ternary once was (cargo would have silently
+ * run inferPep440Bump() on a semver string). Rust is toolchain-enforced
+ * SemVer (ADR 0063, Decision 3), so cargo joins npm/go on
+ * inferSemverBump unchanged.
+ */
+const BUMP_INFERENCE_BY_ECOSYSTEM: Record<
+  Ecosystem,
+  (versionSpec: string, targetVersion: string | null, currentVersion?: string | null) => SemverBump
+> = {
+  npm: inferSemverBump,
+  go: inferSemverBump,
+  cargo: inferSemverBump,
+  pypi: inferPep440Bump,
+};
+
 export function inferBumpForEcosystem(
   ecosystem: Ecosystem,
   versionSpec: string,
   targetVersion: string | null,
   currentVersion?: string | null,
 ): SemverBump {
-  if (ecosystem === "npm" || ecosystem === "go") {
-    return inferSemverBump(versionSpec, targetVersion, currentVersion);
-  }
-  return inferPep440Bump(versionSpec, targetVersion, currentVersion);
+  return BUMP_INFERENCE_BY_ECOSYSTEM[ecosystem](versionSpec, targetVersion, currentVersion);
 }

@@ -1,5 +1,28 @@
 ---
 
+**2026-11-02 — Cargo (crates.io) ecosystem implemented (ADR 0063)**
+
+### Added
+
+- **Rust/Cargo as the fourth ecosystem, per [ADR 0063](docs/adr/0063-cargo-ecosystem.md):** detection order is now npm → PyPI → Go → cargo across `scripts/ingest.js`, `cli/src/pipeline/detect-step.ts`, and the submission pre-check. New modules in `packages/core/src/ingestor/`: `cargo-parse.ts` (root `Cargo.toml` — the three standard dependency tables, inline-table + workspace-inherited + git/path shapes, `[target]`/`[patch]` inert), `cargo-lock-parse.ts` (`Cargo.lock` via smol-toml, all names into `transitivePackages` for `mergeManifestWithLock` to diff against the manifest — the go.sum division of labor), `cargo.ts`/`local-cargo.ts` (factory-based HTTP + filesystem ingestors), `cargo-registry.ts` (`CratesRegistryFetcher` over `crates.io/api/v1/crates/<name>`, User-Agent required, **concurrency 1** per crates.io's ~1 req/s policy — the ADR's flagged decision point; a hard pacer is the follow-up if a real repo trips a 429). OSV gains `cargo → "crates.io"` + SEMVER-only ranges (live-confirmed on RUSTSEC-2020-0071). `Cargo.lock` added to the shared parser registry; `Cargo` label/color added to the UI (filter options, badge, Tailwind palette `#8E4585`).
+- **Migration `0009_ambitious_wendell_vaughn`** (`ALTER TYPE ecosystem ADD VALUE 'cargo'`, plus a byte-identical drop/recreate of `idx_mission_scores_composite_tier` — snapshot-normalization no-op, see the ADR's as-built note 2). **Applied to both Neon branches 2026-11-02** (dev `br-cool-grass`, then production `br-square-hill`) with ledger rows inserted under the exact file hash; post-migration `enum_range` = `{npm, pypi, go, cargo}` and identical tier-index definitions verified on both; the dev↔production schema diff is empty apart from production's pre-existing `pg_stat_statements`. Pre-migration restore point on dev: branch `dev-restore-point-pre-0009` (`br-spring-leaf-aomwmc2f`).
+
+### Changed
+
+- **Two pre-existing non-compile-enforced ecosystem dispatches converted to exhaustive `Record<Ecosystem, …>` maps** (the ADR 0024 trap class): `scorer/mission-type-detector.ts`'s `isVersionBehind()` if/else and `scorer/bump-inference.ts`'s `inferBumpForEcosystem()` if/else. `cargo` would silently have run PEP-440 logic on semver strings before this.
+- `registry-base.ts` gained a `buildRequestHeaders()` hook (default undefined; crates.io overrides for its required User-Agent) — first registry fetcher needing request headers.
+- Enum-width-fixture updates: `db/test-utils.ts` `tallyRow()` gains the `ecosystem_cargo` slot; `board-queries.test.ts` tally assertions 17→18 FILTER columns, 3→4 ecosystem equalities; CLI `detect-step.test.ts` all-probes-fail assertions include cargo.
+
+---
+
+**2026-11-02 — Cargo (crates.io) ecosystem plan (docs)**
+
+### Added
+
+- **`docs/adr/0063-cargo-ecosystem.md`** (new): full plan for Rust/Cargo as the fourth ecosystem, **Proposed** — grounded in three live-verified facts (OSV crates.io records carry SEMVER-type ranges — confirmed on RUSTSEC-2020-0071; batch/detail endpoints accept the `crates.io` identifier; the crates.io API serves `max_version` + `repository` with only a `User-Agent` header). Zero new dependencies: `smol-toml` parses both `Cargo.toml` and `Cargo.lock`, `inferSemverBump()` is reused unchanged. One flagged decision point: crates.io's ~1 req/s fair-use policy — mitigated by constructing `CratesRegistryFetcher` at concurrency 1 (fail-soft by the existing writer erosion guard); a hard pacer is the follow-up if a real repo trips a 429. Two pre-existing non-compile-enforced ecosystem dispatches found during grounding (`mission-type-detector.ts:103-108`, `bump-inference.ts:246-249` — the ADR 0024 trap class) convert to exhaustive dispatch as part of the work. Migration `0009` (`ALTER TYPE ecosystem ADD VALUE 'cargo'`) planned dev-first. No implementation yet; detection order becomes npm → PyPI → Go → cargo.
+
+---
+
 **2026-11-02 — Production perf audit: bounded the per-request timing store (app)**
 
 A production performance audit (Lighthouse run 41291155920 + live probes + Neon/region checks) found the read path healthy (all four audited pages 99–100 perf, warm LCP ≤ 922 ms, brotli, sin1 co-located with Neon) but one real defect: the per-request timing store (`app/src/lib/timing/store.ts`, ADR 0052 follow-up) grew without bound — `withTiming` records on every page, the only production consumer (`/missions`'s dev-only logger) reads nothing, and nothing ever deleted a request's entry.

@@ -76,7 +76,7 @@ The set is reconciled against the manifest on every successful ingestion: rows f
 | ------------------ | --------------- | ------------------------------------------------------------- |
 | `id`               | uuid PK         |                                                               |
 | `repo_id`          | uuid FK → repos | CASCADE on delete                                             |
-| `ecosystem`        | enum            | `npm \| pypi \| go`                                           |
+| `ecosystem`        | enum            | `npm \| pypi \| go \| cargo`                                  |
 | `package_name`     | text            | e.g. `lodash`                                                 |
 | `version_spec`     | text            | Range from package.json, e.g. `^4.17.0`                       |
 | `resolved_version` | text?           | From lock file (ADR 0038); NULL when absent or unparseable    |
@@ -98,7 +98,7 @@ Global advisory records from OSV and GHSA. Shared across repos.
 | `id`                | uuid PK       |                                                                                                      |
 | `osv_id`            | text UNIQUE   | e.g. `GHSA-p6mc-r536-x9xx`                                                                           |
 | `source`            | enum          | `osv \| ghsa`                                                                                        |
-| `ecosystem`         | enum          | `npm \| pypi \| go`                                                                                  |
+| `ecosystem`         | enum          | `npm \| pypi \| go \| cargo`                                                                         |
 | `package_name`      | text          |                                                                                                      |
 | `severity`          | enum          | `critical \| high \| medium \| low \| unknown`                                                       |
 | `cvss_score`        | numeric(4,1)? | 0.0–10.0; NULL when not provided                                                                     |
@@ -298,7 +298,7 @@ UNIQUE constraint on `(user_login, repo_id)`.
 | ------------------ | ----------------------------------------------------------------- |
 | `ingestion_status` | `pending`, `running`, `complete`, `failed`, `skipped`             |
 | `dep_type`         | `production`, `development`, `peer`, `optional`, `transitive`     |
-| `ecosystem`        | `npm`, `pypi`, `go`                                               |
+| `ecosystem`        | `npm`, `pypi`, `go`, `cargo`                                      |
 | `advisory_source`  | `osv`, `ghsa`                                                     |
 | `severity`         | `critical`, `high`, `medium`, `low`, `unknown`                    |
 | `mission_type`     | `vulnerability_fix`, `dep_update`, `maintenance`, `license_issue` |
@@ -322,3 +322,4 @@ UNIQUE constraint on `(user_login, repo_id)`.
 | 0.1.7   | 2026-08-25 | ADR 0035 (migration `0006`): index `idx_missions_dependency_id (dependency_id)` — serves MissionWriter's bulk existing-mission check; no column or row-type changes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | 0.1.8   | 2026-08-28 | ADR 0040 (migration `0007_foamy_chimera`): the consolidated diff of four previously-unregistered hand-written SQL files (`0007`–`0010`) that the prior commit (`a539d8e`) had added without journal entries. Adds: `organizations` + `organization_members` + `notification_subscriptions` tables, `repos.org_id` FK to organizations, `transitive` value to `dep_type`, `advisories.epss_score` column, the `mission_scores.impact_inputs` default refresh with the `epss_score` field, and the four board-query composite indexes (`idx_advisories_severity_id`, `idx_dependencies_ecosystem_id`, `idx_mission_scores_effort_composite`, `idx_missions_status_repo`, `idx_repos_org_id`) |
 | 0.1.9   | 2026-09-20 | ADR 0045 (migration `0008_mission_scores_tier_index`): expression index `idx_mission_scores_composite_tier` on `FLOOR(mission_scores.composite_score / 0.5) DESC` — serves the board's priority ORDER BY; no column or row-type changes                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| 0.1.10  | 2026-11-02 | ADR 0063 (migration `0009_ambitious_wendell_vaughn`): `'cargo'` added to `ecosystem`, same pattern as 0.1.3/0.1.4; the migration also recreates `idx_mission_scores_composite_tier` byte-identically (schema.ts ↔ live-catalog drift repair on the dev branch)                                                                                                                                                                                                                                                                                                                                                                                                                             |

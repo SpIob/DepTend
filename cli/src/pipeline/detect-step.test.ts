@@ -193,9 +193,9 @@ describe("runDetectStep", () => {
       expect(result.dependencies).toHaveLength(0);
       // When all probes fail, returns one of the attempt results
       // (order depends on parallel settlement timing)
-      expect(["npm", "pypi", "go"]).toContain(result.ecosystem);
+      expect(["npm", "pypi", "go", "cargo"]).toContain(result.ecosystem);
       expect(result.manifest_resolved).toBe(false);
-      expect(result.warnings.length).toBeGreaterThanOrEqual(3); // npm + PyPI + Go warnings
+      expect(result.warnings.length).toBeGreaterThanOrEqual(3); // npm…
       expect(result.warnings.some((w) => w.includes("No package.json found"))).toBe(true);
       expect(result.warnings.some((w) => w.includes("No usable pyproject.toml"))).toBe(true);
     });
@@ -213,8 +213,8 @@ describe("runDetectStep", () => {
       const result = await runDetectStep(repo.path);
 
       // Local ingestors only search the root directory
-      // All probes fail (no manifests at root), so ecosystem depends on settlement order
-      expect(["npm", "pypi", "go"]).toContain(result.ecosystem);
+      // All probes fail (no manifests at root), so ecosystem depends …
+      expect(["npm", "pypi", "go", "cargo"]).toContain(result.ecosystem);
       expect(result.dependencies).toHaveLength(0);
     });
   });

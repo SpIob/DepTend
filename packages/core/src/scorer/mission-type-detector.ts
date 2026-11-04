@@ -11,7 +11,7 @@
  * - license_issue: license incompatibility (requires license detection)
  */
 
-import type { Dependency, Advisory, MissionType } from "../db/schema.js";
+import type { Dependency, Advisory, MissionType, Ecosystem } from "../db/schema.js";
 import semver from "semver";
 import { compare as pep440Compare } from "@renovatebot/pep440";
 import { extractVersionFloor } from "./bump-inference.js";
@@ -98,17 +98,34 @@ export function classifyMissionType(
   return null;
 }
 
-function isVersionBehind(current: string, target: string, ecosystem: string): boolean {
+/** semver-coerce comparison — npm, Go, and Cargo (toolchain-enforced SemVer, ADR 0063). */
+function isSemverBehind(current: string, target: string): boolean {
+  const currentCoerced = semver.coerce(current);
+  const targetCoerced = semver.coerce(target);
+  if (!currentCoerced || !targetCoerced) return false;
+  return semver.compare(currentCoerced.version, targetCoerced.version) < 0;
+}
+
+/** PEP 440 comparison — PyPI. pep440Compare expects raw version strings. */
+function isPep440Behind(current: string, target: string): boolean {
+  return pep440Compare(current, target) < 0;
+}
+
+/**
+ * Record<Ecosystem, ...>, not an if/else — the exact ADR 0024 Context #1
+ * trap this function's two-way branch once was (cargo would have silently
+ * fallen into the pypi path).
+ */
+const VERSION_BEHIND_COMPARATOR: Record<Ecosystem, (current: string, target: string) => boolean> = {
+  npm: isSemverBehind,
+  go: isSemverBehind,
+  cargo: isSemverBehind,
+  pypi: isPep440Behind,
+};
+
+function isVersionBehind(current: string, target: string, ecosystem: Ecosystem): boolean {
   try {
-    if (ecosystem === "npm" || ecosystem === "go") {
-      const currentCoerced = semver.coerce(current);
-      const targetCoerced = semver.coerce(target);
-      if (!currentCoerced || !targetCoerced) return false;
-      return semver.compare(currentCoerced.version, targetCoerced.version) < 0;
-    } else if (ecosystem === "pypi") {
-      // pep440Compare expects raw version strings, not parsed objects
-      return pep440Compare(current, target) < 0;
-    }
+    return VERSION_BEHIND_COMPARATOR[ecosystem](current, target);
   } catch {
     // If comparison fails, assume not behind
   }
