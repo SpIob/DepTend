@@ -20,7 +20,7 @@ const { limitFn } = vi.hoisted(() => ({
 
 vi.mock("@upstash/ratelimit", () => {
   class Ratelimit {
-    static slidingWindow(maxTokens: number, window: string): { maxTokens: number; window: string } {
+    static slidingWindow(maxTokens: number, window: string) {
       return { maxTokens, window };
     }
     limit = limitFn;
@@ -37,7 +37,7 @@ const FIXED_NOW = new Date("2026-07-28T00:00:00.000Z");
 const REDIS_URL = "https://example.upstash.io";
 const REDIS_TOKEN = "test-token";
 
-let savedEnv: Partial<Record<(typeof ENV_KEYS)[number], string>>;
+let savedEnv: Record<string, string> = {};
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -66,7 +66,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-async function importFresh(): Promise<typeof import("./rate-limit-redis")> {
+async function importFresh() {
   vi.resetModules();
   return import("./rate-limit-redis");
 }
@@ -223,5 +223,76 @@ describe("in-memory fallback still blocks over-limit keys (existing behavior)", 
     expect(limitFn).not.toHaveBeenCalled();
 
     warnSpy.mockRestore();
+  });
+});
+
+describe("Ratelimit constructor config (analytics hygiene)", () => {
+  let capturedConfig: { analytics: boolean; prefix: string } | null = null;
+
+  beforeEach(() => {
+    capturedConfig = null;
+  });
+
+  it("constructs Ratelimit with analytics:false and correct prefix", async () => {
+    // Fresh mock that captures the constructor config
+    vi.resetModules();
+    vi.doMock("@upstash/ratelimit", () => {
+      class Ratelimit {
+        static slidingWindow(maxTokens: number, window: string) {
+          return { maxTokens, window };
+        }
+        constructor(config: { analytics: boolean; prefix: string }) {
+          capturedConfig = config;
+        }
+        limit = limitFn;
+      }
+      return { Ratelimit };
+    });
+    vi.doMock("@upstash/redis", () => {
+      return { Redis: vi.fn() };
+    });
+
+    process.env.UPSTASH_REDIS_REST_URL = "https://example.upstash.io";
+    process.env.UPSTASH_REDIS_REST_TOKEN = "test-token";
+    limitFn.mockResolvedValue({ success: true, reset: Date.now() + 60_000 });
+
+    const { checkRepoSubmissionLimit } = await import("./rate-limit-redis");
+    await checkRepoSubmissionLimit("config-test-user");
+
+    expect(capturedConfig).not.toBeNull();
+    const config = capturedConfig as { analytics: boolean; prefix: string };
+    expect(config.analytics).toBe(false);
+    expect(config.prefix).toBe("ratelimit:repo-submission");
+  });
+
+  it("constructs Ratelimit with correct mission-action prefix", async () => {
+    vi.resetModules();
+    vi.doMock("@upstash/ratelimit", () => {
+      class Ratelimit {
+        static slidingWindow(maxTokens: number, window: string) {
+          return { maxTokens, window };
+        }
+        constructor(config: { analytics: boolean; prefix: string }) {
+          capturedConfig = config;
+        }
+        limit = limitFn;
+      }
+      return { Ratelimit };
+    });
+    vi.doMock("@upstash/redis", () => {
+      return { Redis: vi.fn() };
+    });
+
+    process.env.UPSTASH_REDIS_REST_URL = "https://example.upstash.io";
+    process.env.UPSTASH_REDIS_REST_TOKEN = "test-token";
+    limitFn.mockResolvedValue({ success: true, reset: Date.now() + 60_000 });
+
+    const { checkMissionActionLimit } = await import("./rate-limit-redis");
+    await checkMissionActionLimit("config-test-user");
+
+    expect(capturedConfig).not.toBeNull();
+    const config = capturedConfig as { analytics: boolean; prefix: string };
+    expect(config.analytics).toBe(false);
+    expect(config.prefix).toBe("ratelimit:mission-action");
   });
 });

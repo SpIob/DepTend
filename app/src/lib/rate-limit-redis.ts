@@ -168,7 +168,7 @@ function getLimiter(kind: LimiterKind): Limiter {
       redis,
       limiter: Ratelimit.slidingWindow(config.limit, config.window),
       prefix: `ratelimit:${kind}`,
-      analytics: true,
+      analytics: false,
     });
 
     console.warn(`[rate-limit] Upstash Redis rate limiter initialized (kind=${kind})`);

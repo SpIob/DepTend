@@ -1,5 +1,49 @@
 ---
 
+**2026-11-15 — CLI packaged for npm: bundled, zero-dependency artifact (ADR 0065)**
+
+### Added
+
+- **`docs/adr/0065-cli-bundled-for-npm-distribution.md`** (new): full decision record — the reproduced install-404, the four alternatives with their measured failure modes (`bundledDependencies` rejected by pnpm's isolated node-linker; forced via npm it ships `core` but not core's transitive deps, so the CLI still dies on `drizzle-orm`; publishing `@deptend/core` publicly; a bespoke specifier-rewrite), and the three load-bearing build details.
+- **Packaging metadata on `cli/package.json`** ahead of first publish: `files: ["dist"]`, `publishConfig.access: public`, `repository` (with `directory: "cli"`), `homepage`, 11 registry `keywords`, and a `prepublishOnly` build hook.
+
+### Changed
+
+- **`cli/package.json` — the CLI is bundled for distribution, per [ADR 0065](docs/adr/0065-cli-bundled-for-npm-distribution.md).** The build moves from `tsc` emit to a single esbuild invocation (`rm -rf dist && esbuild src/index.ts --bundle --platform=node --format=esm --target=node20 --outfile=dist/index.js`), which inlines `@deptend/core` and its dependencies into one 621.6 kB `dist/index.js`. `@deptend/core` moves from `dependencies` to `devDependencies` — it is now a build-time input, not something a consumer resolves. **The published manifest declares no runtime dependencies at all**, so installing the CLI resolves nothing from the registry. `esbuild` (^0.28.2) is a new CLI `devDependency`; it was already present transitively, so no change to `pnpm-workspace.yaml` or the pnpm overrides block. A `createRequire` banner is required because `@yarnpkg/lockfile` is CommonJS and calls `require("path")` dynamically — without it the ESM bundle dies on `Error: Dynamic require of "path" is not supported`. Type checking is unchanged (the separate `tsc --noEmit` gate remains), and the CLI's test suites still run against `src/`.
+- **`cli/package.json` `bin.deptend` now points at the bundle**, and `dist/` is removed before every build. The previous `tsc` build left 60 files in `dist/`; with `files: ["dist"]` the publish would have carried 59 stale modules plus a sourcemap describing code no longer in the package.
+
+### Fixed
+
+- **Publishing `@deptend/cli` would have shipped a broken package to every user, silently.** `pnpm pack` rewrote its `workspace:*` dependency to `@deptend/core@0.0.1` — private and never published — so `npm install` of the produced tarball failed with `404 '@deptend/core@0.0.1' could not be found` and every `npx @deptend/cli` invocation would have died at install. Reproduced end to end before the fix, and re-verified after: the tarball now installs as `added 1 package … in 761ms` with zero registry dependency resolution, `--help` renders, and a full analysis against a real npm fixture with a live `--github-url` produced 12 ranked missions with scores, effort labels, and confidence flags, exit 0. Only Node builtins remain as bare imports in the bundle. *(No user was ever exposed — this was caught before first publish.)*
+- **README documented `npx deptend`, which cannot resolve.** The package is `@deptend/cli`, so `npx deptend` looks for a package by that name and finds nothing. Corrected to `npx @deptend/cli` throughout, and the "not yet published to the npm registry" note replaced with the real invocation.
+
+### Known follow-ups (documented in ADR 0065, not fixed here)
+
+- `core/src/pipeline/parse-github-url.ts` imports `core/src/db/repos.ts`, dragging `drizzle-orm` into a local-first, no-DB CLI's runtime graph purely to reach a URL-string parser. Extracting the pure parser would drop the ORM from the bundle entirely. Deferred: it touches `core`, which the dashboard also consumes.
+- `cli/src/index.ts:131` reads `GITHUB_TOKEN`, but the shared `GITHUB_TOKEN_WARNING` constant it prints tells users to set `GH_INGEST_TOKEN`. A CLI user following the warning sets a variable the CLI never reads.
+
+---
+
+**2026-11-15 — Upstash rate-limit DB liveness + analytics hygiene (ADR 0064)**
+
+### Added
+
+- **Upstash DB keepalive + health check** (`scripts/upstash-health.mjs`, `.github/workflows/health-check.yml`): every 6 hours the workflow runs a PING + SET + GET round-trip against the rate-limit database. Prevents free-tier archival after ≥30 idle days (Upstash policy) and fails loudly (email alert) if the DB is unreachable, archived, or credentials are invalid — catching the silent fail-open security regression that an archived DB causes (ADR 0056). Activity: ~360 commands/month (well within 500K free tier). Script runnable locally with `node --env-file=.env.local scripts/upstash-health.mjs`.
+- **Upstash health unit tests** (`scripts/upstash-health.test.js`): 9 cases exhaustively covering the `HealthResult` union (ok, 401, 500/404, network error, SET failure, GET mismatch, timeout, missing creds) plus a secret-leak guard asserting the token never appears in any error output.
+- **Rate-limiter analytics hygiene test** (`app/src/lib/rate-limit-redis.test.ts`): two new cases asserting the Ratelimit constructor receives `analytics: false` and the correct prefix (`ratelimit:repo-submission`, `ratelimit:mission-action`).
+
+### Changed
+
+- **`app/src/lib/rate-limit-redis.ts`**: `analytics: true` → `analytics: false`. Empirical justification: the events ZSET had `TTL = -1` (never expires), retained per-login identifiers forever with no consumer in the repo, and cost an extra Redis command per check. With `analytics: false` only the transient window key (60s TTL) is written. The orphaned analytics key from the 2026-10-30 verification was deleted live (DBSIZE 1 → 0).
+- **`app/vitest.setup.ts` (new) + `app/vitest.config.ts`**: the app test suites are now hermetic — the setup file deletes `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` from `process.env` before any test module loads, so the suites always exercise the in-memory limiter (the documented CI contract). Found during this audit: vitest inherits the ambient shell environment, so on a machine with the credentials exported (a sourced `.env.local`, direnv, `--env-file`) the route suites and `rate-limit.test.ts` silently wrote real keys to the **production** rate-limit database — 20 `ratelimit:repo-submission:user-*` keys (1 h TTL) appeared in the live DB after one local `vitest run`, consuming shared free-tier commands and leaving cross-run state that can flake the per-login budget assertions. Those keys were deleted. Tests that need the Redis path set the variables themselves per test (`rate-limit-redis.test.ts`), so this changes nothing for them.
+
+### Documentation
+
+- **`docs/adr/0064-upstash-liveness-and-rate-limiter-hygiene.md`** (new): full decision record with empirical evidence table, live-verification summary, and rollback plan.
+- **`reports/upstash-db-audit/2026-11-15/`** (new): probe outputs, DBSIZE snapshots, analytics key contents, health script happy/sad path runs.
+
+---
+
 **2026-11-02 — Cargo (crates.io) ecosystem implemented (ADR 0063)**
 
 ### Added

@@ -49,6 +49,20 @@ jobs:
           done
           echo "All health checks passed"
 
+      - name: Check Upstash rate-limit database
+        # Free-tier databases are archived after >=30 idle days (Upstash policy).
+        # The rate limiter ONLY hits Redis on authenticated mutating requests,
+        # which are rare on a small project. An archived DB causes all limit()
+        # calls to throw, and the deliberate fail-open path (ADR 0056) silently
+        # disables all rate limits — a security regression that goes unnoticed.
+        # This step keeps the DB active (PING + SET + GET = activity) and
+        # fails the workflow (triggering the email step) if the DB is
+        # unreachable, archived, or the credentials are invalid.
+        env:
+          UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
+          UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
+        run: node scripts/upstash-health.mjs
+
       - name: Email on failure
         if: failure()
         uses: dawidd6/action-send-mail@v23
@@ -64,4 +78,4 @@ jobs:
             Workflow: Health Check
             Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
             Timestamp: ${{ github.event.workflow_run.created_at || github.event.head_commit.timestamp || 'manual trigger' }}
-            Failed endpoints: /, /missions, /org/SpIob, /repo/SpIob/deptend-go-test-fixture
+            Failed endpoints: /, /missions, /org/SpIob, /repo/SpIob/deptend-go-test-fixture, Upstash rate-limit DB
