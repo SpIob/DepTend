@@ -42,11 +42,31 @@ coverage/
 # Vercel
 .vercel/
 
-# opencode CLI local state (skills, plugin cache, package-lock)
-.opencode/
+# opencode CLI local state — plugin cache, the manifests opencode generates for
+# it, and the .gitignore opencode writes alongside them.
+#
+# Deliberately NOT a blanket `.opencode/` ignore. `.opencode/agents/**` and
+# `.opencode/skills/**` are this repo's hand-authored agent and skill
+# definitions — they encode DepTend-specific conventions that exist nowhere
+# else and are committed on purpose. opencode discovers them straight from the
+# working tree, so an untracked copy means a fresh clone, CI, or another
+# machine silently runs with none of them (and AGENTS.md §0.6's "load
+# .opencode/skills/actually-code" becomes unsatisfiable). Keep these patterns
+# narrow and per-file; re-verify with
+# `git check-ignore -v .opencode/agents/*.md .opencode/skills/*/SKILL.md`.
+.opencode/node_modules/
+.opencode/package.json
+.opencode/package-lock.json
+.opencode/bun.lock
+.opencode/.gitignore
 
 # Agent locks
 .agent-locks/
 
 # Agent-local docs — never commit (Mico, 2026-10-31)
 AGENTS.md
+GROWTH_PLAN.md
+TRAFFIC_GROWTH_PLAN.md
+
+# npm pack/publish artifacts
+*.tgz
