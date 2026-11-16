@@ -22,6 +22,21 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    # Shared by the Lighthouse step and the assert step: the assert derives
+    # the expected page slugs from PAGES itself instead of trusting the
+    # reports listing (phantom-file guard, see the assert step).
+    env:
+      # The four URLs from the 2026-08-30 perf test series. Same set
+      # the smoke contract in health-check.yml checks for 200 + non-404
+      # body; this job additionally quantifies the cold-cache LCP / TBT /
+      # CLS and uploads the JSON so a future regression on read-path perf
+      # is catchable from the artifacts.
+      PAGES: "/, /missions, /org/SpIob, /repo/SpIob/deptend-go-test-fixture"
+      # Median-of-3 measurement passes per page (2026-11-16): the weekly
+      # single-run series swung 317-522 ms on /missions with no app-code
+      # change — runner<->function flight variance — see
+      # reports/perf/2026-11-16-missions-lcp-audit/.
+      PASSES: "3"
 
     steps:
       - name: Checkout
@@ -59,12 +74,6 @@ jobs:
 
       - name: Run Lighthouse against public pages
         env:
-          # The four URLs from the 2026-08-30 perf test series. Same set
-          # the smoke contract in health-check.yml checks for 200 + non-404
-          # body; this job additionally quantifies the cold-cache LCP / TBT /
-          # CLS and uploads the JSON so a future regression on read-path perf
-          # is catchable from the artifacts.
-          PAGES: "/, /missions, /org/SpIob, /repo/SpIob/deptend-go-test-fixture"
           # Routed through env: (same pattern as ingest.yml) so a hostile
           # workflow_dispatch `pages` value can't break out of the string
           # into arbitrary command execution.
@@ -80,32 +89,42 @@ jobs:
           else
             IFS=',' read -ra PATHS <<< "${PAGES//, /,}"
           fi
-          # Each page gets a fresh user-data-dir so the browser's HTTP
-          # cache doesn't pollute the cold measurement. Single-run
-          # (no warm repeats) for the weekly audit; deeper cold/warm
-          # comparison lives in reports/perf/2026-08-30/.
-          # Single --output-path: the CLI collapses a repeated flag into an
-          # array and aborts with "cannot be written to" (both scheduled runs
-          # so far, 2026-09-06 and 2026-09-13, failed this way). With multiple
-          # --output types, lighthouse strips the extension and writes
-          # ${slug}.report.json + ${slug}.report.html — the assertion step's
-          # *.report.json glob and the artifact upload both still match.
+          # Each page is measured PASSES times (default 3), each pass with a
+          # fresh user-data-dir so the browser's HTTP cache doesn't pollute
+          # the cold measurement. Median-of-3 (2026-11-16): the weekly series
+          # swung 317-522 ms on /missions across five single-run audits with
+          # no app-code change — iad runner <-> sin1 function flight variance
+          # (reports/perf/2026-11-16-missions-lcp-audit/). A single run can
+          # read as either a regression or a trend; the median of three cold
+          # passes absorbs isolated delivery spikes, and a genuine regression
+          # reproduces in all passes. Deeper cold/warm comparison lives in
+          # reports/perf/2026-08-30/.
+          # Single --output-path per pass: the CLI collapses a repeated flag
+          # into an array and aborts with "cannot be written to" (both
+          # scheduled runs so far, 2026-09-06 and 2026-09-13, failed this
+          # way). With multiple --output types, lighthouse strips the
+          # extension and writes ${slug}-r${pass}.report.json +
+          # ${slug}-r${pass}.report.html — the assertion step groups by the
+          # slug with the -rN suffix stripped, and the artifact upload still
+          # matches.
           for path in "${PATHS[@]}"; do
             slug=$(echo "$path" | tr '/' '_' | sed 's/^_//; s/_$//; s/__/_/g')
             if [[ -z "$slug" ]]; then slug="root"; fi
-            userdir="/tmp/lh-cold-$slug-$$"
-            echo "::group::Lighthouse $path"
-            npx --yes lighthouse \
-              "https://deptend.vercel.app${path}" \
-              --quiet \
-              --output json --output html \
-              --output-path "reports/perf/${slug}.json" \
-              --only-categories=performance \
-              --form-factor=desktop \
-              --screenEmulation.disabled \
-              --throttling-method=provided \
-              --chrome-flags="--headless=new --no-sandbox --disable-gpu --user-data-dir=${userdir} --disable-cache --disk-cache-size=1"
-            echo "::endgroup::"
+            for pass in $(seq 1 "$PASSES"); do
+              userdir="/tmp/lh-cold-$slug-r$pass-$$"
+              echo "::group::Lighthouse $path (pass $pass/$PASSES)"
+              npx --yes lighthouse \
+                "https://deptend.vercel.app${path}" \
+                --quiet \
+                --output json --output html \
+                --output-path "reports/perf/${slug}-r${pass}.json" \
+                --only-categories=performance \
+                --form-factor=desktop \
+                --screenEmulation.disabled \
+                --throttling-method=provided \
+                --chrome-flags="--headless=new --no-sandbox --disable-gpu --user-data-dir=${userdir} --disable-cache --disk-cache-size=1"
+              echo "::endgroup::"
+            done
           done
 
       - name: Assert LCP and perf score thresholds
@@ -118,33 +137,85 @@ jobs:
         run: |
           set -euo pipefail
           failures=0
-          # Assert ONLY on the run's own *.report.json outputs. A bare
-          # reports/perf/*.json glob also matched local-root.json and
-          # local-root-warm.json (stale local-measurement artifacts committed
-          # in f2cbd93 as TASK-01 evidence), producing 2 phantom FAIL lines per
-          # run — audit #11 (2026-09-27) failed "3 pages" when only 1 was a
-          # fresh measurement. The *.report.json suffix is what the Lighthouse
-          # run in the step above writes (both --output types collapse to it).
+          # Derive the expected page slugs from PAGES/INPUT_PAGES — the same
+          # derivation the Lighthouse step above uses — instead of trusting
+          # the reports listing. A bare reports/perf/*.json glob once matched
+          # stale local-measurement artifacts committed at the directory top
+          # level (local-root{,-warm}.json, f2cbd93), producing phantom FAIL
+          # lines — audit #11 (2026-09-27) failed "3 pages" when only 1 was a
+          # fresh measurement. Expected-slug derivation plus the inverse guard
+          # below make any unexpected *.report.json a loud failure instead.
+          if [[ -n "$INPUT_PAGES" ]]; then
+            IFS=',' read -ra PATHS <<< "$INPUT_PAGES"
+          else
+            IFS=',' read -ra PATHS <<< "${PAGES//, /,}"
+          fi
+          expected=()
+          for path in "${PATHS[@]}"; do
+            slug=$(echo "$path" | tr '/' '_' | sed 's/^_//; s/_$//; s/__/_/g')
+            if [[ -z "$slug" ]]; then slug="root"; fi
+            expected+=("$slug")
+          done
           shopt -s nullglob
           reports=(reports/perf/*.report.json)
           if (( ${#reports[@]} == 0 )); then
             echo "FAIL: no *.report.json outputs — the Lighthouse step above did not produce any"
             exit 1
           fi
-          for json in "${reports[@]}"; do
-            lcp=$(jq -r '.audits["largest-contentful-paint"].numericValue' "$json")
-            score=$(jq -r '.categories.performance.score * 100 | floor' "$json")
-            slug=$(basename "$json" .report.json)
-            echo "${slug}: LCP=${lcp}ms score=${score}"
+          # Median per page over the PASSES measurement runs (2026-11-16).
+          # Files are named <slug>-r<N>.report.json. None of the current
+          # slugs (root, missions, org_SpIob, repo_...) can themselves end
+          # in -r<digit>.
+          # Median position of an odd pass count: 3 -> 2, 5 -> 3.
+          mid=$(( (PASSES + 1) / 2 ))
+          for page in "${expected[@]}"; do
+            passfiles=(reports/perf/${page}-r*.report.json)
+            if (( ${#passfiles[@]} != PASSES )); then
+              echo "FAIL: ${page} has ${#passfiles[@]} pass report(s), expected ${PASSES}:"
+              for f in "${passfiles[@]:-}"; do echo "  $f"; done
+              failures=$((failures + 1))
+              continue
+            fi
+            lcp=$(for i in $(seq 1 "$PASSES"); do
+              jq -r '.audits["largest-contentful-paint"].numericValue' "reports/perf/${page}-r${i}.report.json"
+            done | sort -n | sed -n "${mid}p")
+            score=$(for i in $(seq 1 "$PASSES"); do
+              jq -r '.categories.performance.score * 100 | floor' "reports/perf/${page}-r${i}.report.json"
+            done | sort -n | sed -n "${mid}p")
+            echo "${page}: LCP median=${lcp}ms score=${score} (median of ${PASSES} passes)"
             # LCP threshold: 2500 ms (was 1500 ms — 1.5× worst cold LCP
             # in 2026-08-30 baseline which was / at 1121 ms)
             if (( $(echo "$lcp > 2500" | bc -l) )); then
-              echo "FAIL: ${slug} LCP ${lcp}ms exceeds 2500 ms threshold"
+              echo "FAIL: ${page} LCP ${lcp}ms exceeds 2500 ms threshold"
               failures=$((failures + 1))
             fi
             # Perf score threshold: 80 (was 90)
             if (( score < 80 )); then
-              echo "FAIL: ${slug} perf score ${score} below 80 threshold"
+              echo "FAIL: ${page} perf score ${score} below 80 threshold"
+              failures=$((failures + 1))
+            fi
+          done
+          # Inverse guard: every produced report must belong to an audited
+          # page pass with the <page>-r<N> shape (phantom-file protection).
+          for json in "${reports[@]}"; do
+            base=$(basename "$json" .report.json)
+            case "$base" in
+              *-r[0-9]*) ;;
+              *)
+                echo "FAIL: unexpected report name ${base}.report.json (expected <page>-r<N>.report.json)"
+                failures=$((failures + 1))
+                continue
+                ;;
+            esac
+            page="${base%-r[0-9]*}"
+            known=0
+            for e in "${expected[@]}"; do
+              if [[ "$e" == "$page" ]]; then
+                known=1
+              fi
+            done
+            if (( ! known )); then
+              echo "FAIL: report ${base}.report.json does not belong to an audited page (${page})"
               failures=$((failures + 1))
             fi
           done

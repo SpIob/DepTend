@@ -1,5 +1,18 @@
 ---
 
+**2026-11-16 — /missions LCP "regression" investigated: single-run audit noise; weekly audit now measures median-of-3**
+
+### Investigated
+
+- **Kanban task "Fix LCP regression on /missions page" closed as a measurement defect, not an app one.** The weekly Lighthouse series for `/missions` (317 → 463 → 465 ms across 11-01 → 11-15) is single-run iad-runner ↔ sin1-function flight variance, not a code regression: the series was never monotonic (10-04 measured 522 ms — worse than the "regressed" weeks), every client-side metric improved over the same window (TBT 121 → 0 ms, bootup 251 → 55 ms), the document payload *shrank* while stream end *grew*, and `git diff 325eb3d..HEAD` touches `/missions`' render path only with the dev-only `logRequestTimings()` wiring. Live browser measurement against prod (element-attributed LCP, Singapore vantage): the LCP element is the static header `<p>` of the 2026-09-05 round-3 Suspense refactor, painting from the first HTML flush at byte ~3.3 KB of the stream — FCP == LCP in every pass, warm LCP 256-344 ms. Full evidence in `reports/perf/2026-11-16-missions-lcp-audit/`.
+- **The only real >1 s LCP path is the documented Hobby cold start** (measured live: cold-function pass FCP/LCP 1,268 ms vs 256-344 ms warm; curl first-hit TTFB 2.10 s vs 0.23 s warm). Keeping the function warm for real users would need an external DB-free ~5-min pinger — surfaced as a decision point, not built (GitHub Actions cron is too unreliable at 5-min granularity; keep-alive must not touch Neon, whose 190 free compute-hours/month cannot cover 24/7).
+
+### Changed
+
+- **`.github/workflows/perf.yml`**: the weekly audit now runs **3 cold passes per page** (fresh `--user-data-dir` each) and asserts on the per-page **median** LCP and performance score; thresholds unchanged (2500 ms / 80). The assert step derives the expected page slugs from `PAGES` itself and fails loudly on missing/extra/misnamed reports (inverse guard), replacing the file-listing-trust logic. Verified locally against the real 11-15 artifacts: green on unmodified data, a single 3000 ms spike is absorbed by the median, two spiked passes trip the threshold, and phantom/stale report shapes fail. PAGES/PASSES moved to job-level env so both steps share one source of truth.
+
+---
+
 **2026-11-16 — `@deptend/cli` published to npm; the entry gate that silently no-oped (ADR 0067)**
 
 ### Fixed

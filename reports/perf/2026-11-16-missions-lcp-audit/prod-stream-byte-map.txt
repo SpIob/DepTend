@@ -1,0 +1,13 @@
+Byte offsets of key markers in the streamed /missions document
+Source: curl https://deptend.vercel.app/missions (no Accept-Encoding -> 433,271 raw bytes), 2026-11-16, warm
+Confirms stream order: LCP element ships in the first ~3.3 KB; the board's 50 <article>s stream at ~193 KB.
+
+total bytes: 433271
+<title>                         : [5854]
+stylesheet link                 : [135]
+Every open mission (LCP <p>)    : [3332, 16597]      (HTML + RSC flight copy)
+Loading missions (skeleton)     : [3641, 16977]
+first <article                  : [192824, 197591, 202342]
+$RC( swaps                      : [5829, 7002, 19890, 433232]
+Sign in with GitHub             : (in shell)
+repos indexed                   : (in shell)

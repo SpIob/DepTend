@@ -1,0 +1,46 @@
+{
+  "method": "ego-browser Chromium, Page.addScriptToEvaluateOnNewDocument instrumentation: buffered PerformanceObserver('largest-contentful-paint') with element attribution + paint + board-swap MutationObserver; Network.setCacheDisabled + setBypassServiceWorker; CDP-driven navigation to https://deptend.vercel.app/missions",
+  "vantage": "Singapore (same region as the sin1 Vercel function and Neon ap-southeast-1)",
+  "date": "2026-11-16",
+  "passes": [
+    {
+      "pass": "A-first (server/Neon cache unknown, function cold-suspected)",
+      "ttfb_ms": 36,
+      "docEnd_ms": 1042,
+      "board_swap_ms": 1242,
+      "first_paint_ms": 1268,
+      "fcp_ms": 1268,
+      "lcp_ms": 1268,
+      "lcp_size_px2": 21804,
+      "lcp_element": "P.max-w-xl 'Every open mission across every indexed...'"
+    },
+    {
+      "pass": "B-immediate (function warm, query cache HIT)",
+      "ttfb_ms": 45,
+      "docEnd_ms": 269,
+      "board_swap_ms": 281,
+      "first_paint_ms": 304,
+      "fcp_ms": 304,
+      "lcp_ms": 304,
+      "lcp_size_px2": 21804,
+      "lcp_element": "P.max-w-xl"
+    },
+    {
+      "pass": "C-after-75s-idle (query cache TTL expired, function warm, Neon warm)",
+      "ttfb_ms": 40,
+      "docEnd_ms": 274,
+      "board_swap_ms": 264,
+      "first_paint_ms": 256,
+      "fcp_ms": 256,
+      "lcp_ms": 256,
+      "lcp_size_px2": 21804,
+      "lcp_element": "P.max-w-xl"
+    }
+  ],
+  "notes": [
+    "FCP == LCP in every pass; the LCP element is always the static header <p> rendered outside the Suspense boundary (2026-09-05 round-3 architecture).",
+    "Pass A: edge-optimistic TTFB 36ms but first body byte ~1s later (suspended isolate boot); FCP waited for the full stream — the 1,268ms cold LCP is function boot, not page render.",
+    "Pass C: FCP 256ms preceded the board swap (264ms) — first paint happens mid-stream once CSS is in; the 60s query-cache TTL expiry did not delay the LCP element.",
+    "Mission-card <li> geometry measured 720x50 (36,000 px^2) vs the <p>'s 21,804 px^2; the streamed cards never became the LCP candidate (painted in the same frame batch as the <p> / after the LCP freeze on swap-frame timing), so the header text is the stable LCP element in practice."
+  ]
+}
