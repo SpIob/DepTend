@@ -25,8 +25,8 @@
  *
  * Environment variables:
  *   GITHUB_TOKEN     Optional but recommended — raises the GitHub API rate
- *                     limit from 60 to 5,000 requests/hour. Same variable
- *                     scripts/ingest.js uses.
+ *                     limit from 60 to 5,000 requests/hour. CI pipelines may
+ *                     also set GH_INGEST_TOKEN (used by the scheduled ingestion).
  *
  * Exit codes:
  *   0  Analysis completed successfully.
@@ -35,7 +35,6 @@
 
 import { fileURLToPath } from "node:url";
 import { parseGithubUrl } from "@deptend/core/pipeline/parse-github-url.js";
-import { GITHUB_TOKEN_WARNING } from "@deptend/core/pipeline/github-token-warning.js";
 import { analyze } from "./analyze.js";
 import { writeOutput } from "./output.js";
 
@@ -128,9 +127,12 @@ async function main(): Promise<void> {
     );
   }
 
-  const githubToken = process.env.GITHUB_TOKEN ?? null;
+  const githubToken = process.env.GITHUB_TOKEN ?? process.env.GH_INGEST_TOKEN ?? null;
   if (githubToken === null) {
-    console.warn(GITHUB_TOKEN_WARNING);
+    console.warn(
+      "GITHUB_TOKEN is not set. GitHub API calls will be unauthenticated " +
+        "(60 req/hr limit). Set GITHUB_TOKEN (or GH_INGEST_TOKEN in CI) to raise the limit to 5,000 req/hr.",
+    );
   }
 
   const result = await analyze({

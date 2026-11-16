@@ -1,12 +1,16 @@
 /**
  * repos.ts unit tests
  *
- * Two things under test: parseGithubUrl() (pure, extensive input-shape
- * coverage) and submitRepo() (mocked DB — same chainable-stub strategy as
- * scorer/writer.test.ts and ingestor/writer.test.ts, sized down to this
- * file's actual call shape: at most three select() calls in a fixed
- * order — existence check, cap count, optional race recheck — and one
- * insert().values().onConflictDoNothing().returning()).
+ * submitRepo(), getRepoByOwnerAndName(), and withdrawOwnRepo(), all against a
+ * mocked DB — same chainable-stub strategy as scorer/writer.test.ts and
+ * ingestor/writer.test.ts, sized down to this file's actual call shape: at most
+ * three select() calls in a fixed order — existence check, cap count, optional
+ * race recheck — and one insert().values().onConflictDoNothing().returning()).
+ *
+ * parseGithubUrl()'s pure input-shape coverage moved to
+ * ../pipeline/parse-github-url.test.ts along with the implementation, which left
+ * the data layer so that importing it no longer pulls drizzle-orm into
+ * consumers' module graphs (ADR 0066).
  *
  * submitRepo's count query (`db.select({count}).from(repos)`) is awaited
  * directly with no .where()/.limit() — unlike the existence/race-recheck
@@ -15,7 +19,7 @@
  */
 
 import { describe, expect, it, vi } from "vitest";
-import { getRepoByOwnerAndName, parseGithubUrl, submitRepo, withdrawOwnRepo } from "./repos.js";
+import { getRepoByOwnerAndName, submitRepo, withdrawOwnRepo } from "./repos.js";
 import type { Repo } from "./schema.js";
 
 type WithdrawRepoDb = Parameters<typeof withdrawOwnRepo>[0];
@@ -117,70 +121,6 @@ const BASE_PARAMS: Parameters<typeof submitRepo>[1] = {
   submittedBy: "octocat",
   maxRepos: 3,
 };
-
-// ---------------------------------------------------------------------------
-// parseGithubUrl
-// ---------------------------------------------------------------------------
-
-describe("parseGithubUrl", () => {
-  it.each([
-    "https://github.com/owner/repo",
-    "http://github.com/owner/repo",
-    "github.com/owner/repo",
-    "https://www.github.com/owner/repo",
-    "https://github.com/owner/repo/",
-    "https://github.com/owner/repo.git",
-    "www.github.com/owner/repo.git/",
-  ])("accepts %s and normalizes it to https://github.com/owner/repo", (input) => {
-    expect(parseGithubUrl(input)).toEqual({
-      githubUrl: "https://github.com/owner/repo",
-      owner: "owner",
-      name: "repo",
-    });
-  });
-
-  it("trims leading/trailing whitespace before parsing", () => {
-    expect(parseGithubUrl("  https://github.com/owner/repo  ")).toEqual({
-      githubUrl: "https://github.com/owner/repo",
-      owner: "owner",
-      name: "repo",
-    });
-  });
-
-  it("accepts owner/repo names with hyphens, underscores, dots, and digits", () => {
-    expect(parseGithubUrl("https://github.com/my-org2/my_repo.js")).toEqual({
-      githubUrl: "https://github.com/my-org2/my_repo.js",
-      owner: "my-org2",
-      name: "my_repo.js",
-    });
-  });
-
-  it("accepts single-character owner and repo names", () => {
-    expect(parseGithubUrl("https://github.com/a/b")).toEqual({
-      githubUrl: "https://github.com/a/b",
-      owner: "a",
-      name: "b",
-    });
-  });
-
-  it.each([
-    ["https://gitlab.com/owner/repo", "non-GitHub host (gitlab.com)"],
-    ["https://bitbucket.org/owner/repo", "non-GitHub host (bitbucket.org)"],
-    [
-      "https://raw.githubusercontent.com/owner/repo/main/x",
-      "GitHub subdomain, not github.com itself",
-    ],
-    ["https://github.com/owner", "missing repo name"],
-    ["https://github.com/", "missing owner and repo"],
-    ["", "empty string"],
-    ["   ", "whitespace only"],
-    ["not a url at all", "garbage input"],
-    ["https://github.com/-owner/repo", "owner starting with a hyphen"],
-    ["https://github.com/owner-/repo", "owner ending with a hyphen"],
-  ])("rejects %s (%s)", (input) => {
-    expect(parseGithubUrl(input)).toBeNull();
-  });
-});
 
 // ---------------------------------------------------------------------------
 // submitRepo
