@@ -1,5 +1,28 @@
 ---
 
+**2026-11-16 — `@deptend/cli` published to npm; the entry gate that silently no-oped (ADR 0067)**
+
+### Fixed
+
+- **`@deptend/cli@0.1.1` — the packaged CLI exited 0 having printed nothing.** The module-entry gate compared `process.argv[1]` (the `node_modules/.bin/deptend` symlink) against `import.meta.url` (the real file behind it) unresolved, so `main()` never ran under the package's normal invocation. `npx @deptend/cli --help` produced 0 bytes with exit 0 while every source-level check stayed green. Fixed by realpath-resolving both sides (ADR 0067).
+
+### Added
+
+- **`docs/adr/0067-cli-entry-gate-bin-symlink.md`** (new): the defect as reproduced against the published package, why ADR 0065's tarball verification passed anyway (it exercised the artifact's real path, never the bin shim), and the symlink-resolving gate.
+- **`cli/src/index.test.ts`**: `isEntryPoint` regression block (5 cases) built on a real temp-dir symlink. The symlink case fails against the 0.1.0 implementation and passes against the fix — verified both ways, not assumed.
+
+### Changed
+
+- **`cli/src/index.ts`**: the inline `isMainModule` const is now the exported, unit-testable `isEntryPoint(entryPath, moduleUrl)` — `realpathSync` on both sides, and an unresolvable path returns `false` rather than throwing at module load.
+- **`cli/package.json`**: `0.1.0` → `0.1.1` (fix) → `0.1.2` (gate extraction + regression test), so the published artifact and `main` do not diverge.
+
+### Published
+
+- `@deptend/cli` 0.1.0 and 0.1.1 to the public npm registry under the `@deptend` organization scope; `latest` = 0.1.1 at time of writing, with 0.1.2 packed and awaiting a maintainer 2FA publish.
+- Live verification, all from the **published** package, not `src/`: `npx @deptend/cli@0.1.0 --help` → exit 0 with 0 bytes; `@0.1.1 --help` → 512 bytes of usage; a full analysis run through `npx` against live OSV/npm/GitHub → 7 ranked missions written, exit 0, with live GitHub repo metadata in the output.
+
+---
+
 **2026-11-16 — Dependabot major-bump ignores + fast-check v4 migration**
 
 ### Changed

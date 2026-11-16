@@ -33,6 +33,7 @@
  *   1  Invalid arguments, or the analysis failed.
  */
 
+import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { parseGithubUrl } from "@deptend/core/pipeline/parse-github-url.js";
 import { analyze } from "./analyze.js";
@@ -146,15 +147,31 @@ async function main(): Promise<void> {
 }
 
 /**
- * Runs main() only when this file is the process entry point (i.e. when
- * invoked via `node dist/index.js` / the `deptend` bin), not when imported
- * for testing. Same gate pattern scripts/ingest.js uses for its
- * exportable ingestRepo() (AGENTS.md §13).
+ * True when this module is the process entry point (i.e. invoked via
+ * `node dist/index.js` / the `deptend` bin), false when imported for testing.
+ * Same gate pattern scripts/ingest.js uses for its exportable ingestRepo()
+ * (AGENTS.md §13).
+ *
+ * Both sides are realpath-resolved before comparison, and that is load-bearing.
+ * An installed package is reached through a `node_modules/.bin/deptend` symlink,
+ * so `process.argv[1]` is the symlink path while `import.meta.url` is the real
+ * file behind it. Comparing them unresolved makes this gate false under the
+ * package's normal invocation, and the CLI then exits 0 having printed nothing —
+ * the silent no-op that shipped in 0.1.0 and was fixed in 0.1.1 (ADR 0067).
+ * A path that cannot be resolved is not the entry point.
  */
-const isMainModule =
-  process.argv[1] !== undefined &&
-  fileURLToPath(import.meta.url) === fileURLToPath(`file://${process.argv[1]}`);
-if (isMainModule) {
+export function isEntryPoint(entryPath: string | undefined, moduleUrl: string): boolean {
+  if (entryPath === undefined) {
+    return false;
+  }
+  try {
+    return realpathSync(fileURLToPath(moduleUrl)) === realpathSync(entryPath);
+  } catch {
+    return false;
+  }
+}
+
+if (isEntryPoint(process.argv[1], import.meta.url)) {
   main().catch((err: unknown) => {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`Error: ${message}`);
