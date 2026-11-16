@@ -130,8 +130,16 @@ describe("Property-based tests", () => {
         maxLength: 5,
       }),
       fixedVersion: fc.constantFrom("1.0.1", "2.0.0", "1.1.0"), // Ensure fixed version exists
-      publishedAt: fc.date({ min: new Date("2020-01-01"), max: new Date("2026-12-31") }), // Ensure date exists
-      modifiedAt: fc.date({ min: new Date("2020-01-01"), max: new Date("2026-12-31") }), // Ensure date exists
+      publishedAt: fc.date({
+        min: new Date("2020-01-01"),
+        max: new Date("2026-12-31"),
+        noInvalidDate: true,
+      }), // Ensure date exists
+      modifiedAt: fc.date({
+        min: new Date("2020-01-01"),
+        max: new Date("2026-12-31"),
+        noInvalidDate: true,
+      }), // Ensure date exists
       rawData: fc.object(),
     });
 
@@ -425,8 +433,13 @@ describe("Property-based tests", () => {
                   publishedAt: fc.date({
                     min: new Date("2020-01-01"),
                     max: new Date("2026-12-31"),
+                    noInvalidDate: true,
                   }),
-                  modifiedAt: fc.date({ min: new Date("2020-01-01"), max: new Date("2026-12-31") }),
+                  modifiedAt: fc.date({
+                    min: new Date("2020-01-01"),
+                    max: new Date("2026-12-31"),
+                    noInvalidDate: true,
+                  }),
                   rawData: fc.object(),
                 }),
               ),
@@ -552,8 +565,13 @@ describe("Property-based tests", () => {
                   publishedAt: fc.date({
                     min: new Date("2020-01-01"),
                     max: new Date("2026-12-31"),
+                    noInvalidDate: true,
                   }),
-                  modifiedAt: fc.date({ min: new Date("2020-01-01"), max: new Date("2026-12-31") }),
+                  modifiedAt: fc.date({
+                    min: new Date("2020-01-01"),
+                    max: new Date("2026-12-31"),
+                    noInvalidDate: true,
+                  }),
                   rawData: fc.object(),
                 }),
               ),
@@ -683,8 +701,13 @@ describe("Property-based tests", () => {
                   publishedAt: fc.date({
                     min: new Date("2020-01-01"),
                     max: new Date("2026-12-31"),
+                    noInvalidDate: true,
                   }),
-                  modifiedAt: fc.date({ min: new Date("2020-01-01"), max: new Date("2026-12-31") }),
+                  modifiedAt: fc.date({
+                    min: new Date("2020-01-01"),
+                    max: new Date("2026-12-31"),
+                    noInvalidDate: true,
+                  }),
                   rawData: fc.object(),
                 }),
               ),
@@ -762,7 +785,11 @@ describe("Property-based tests", () => {
           fc.array(
             fc.record({
               osvId: fc.string({ minLength: 1, maxLength: 20 }),
-              publishedAt: fc.date({ min: new Date("2020-01-01"), max: new Date("2026-12-31") }),
+              publishedAt: fc.date({
+                min: new Date("2020-01-01"),
+                max: new Date("2026-12-31"),
+                noInvalidDate: true,
+              }),
               severity: severityArb,
             }),
             { minLength: 3, maxLength: 6 },
