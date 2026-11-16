@@ -89,7 +89,7 @@ This assertion **fails against the 0.1.0 implementation and passes against the f
 
 **Costs accepted:**
 
-- Two patch releases in one day (0.1.1 for the behavioral fix, 0.1.2 for the gate extraction + test) so the published artifact and `main` do not diverge. 0.1.0 remains on the registry as an untagged, broken version — npm's 72-hour unpublish window makes removal optional, and `latest` never pointed at it after 0.1.1.
+- Two patch releases in one day (0.1.1 for the behavioral fix — published; 0.1.2 for the gate extraction + test — packed, its `npm publish` waits on the maintainer's 2FA) so that once 0.1.2 is out, the published artifact and `main` do not diverge. 0.1.0 remains on the registry as an untagged, broken version — npm's 72-hour unpublish window makes removal optional, and `latest` never pointed at it after 0.1.1.
 - The gate now performs two `realpathSync` syscalls at module load. Measured cost is negligible against a CLI that immediately performs network I/O.
 
 **Not resolved here:**
@@ -99,4 +99,4 @@ This assertion **fails against the 0.1.0 implementation and passes against the f
 
 ## Rollback
 
-Revert `cli/src/index.ts` to the inline unresolved comparison and delete the `isEntryPoint` block from `cli/src/index.test.ts`. The published versions 0.1.1/0.1.2 cannot be un-published after 72 hours, so a rollback would need a new patch release — which is itself the argument for keeping the fix.
+Revert `cli/src/index.ts` to the inline unresolved comparison and delete the `isEntryPoint` block from `cli/src/index.test.ts`. The published versions 0.1.1 (and 0.1.2 once its 2FA publish lands) cannot be un-published after 72 hours, so a rollback would need a new patch release — which is itself the argument for keeping the fix.
