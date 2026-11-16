@@ -134,6 +134,13 @@ jobs:
         # documented in the CHANGELOG's 2026-09-25 TASK-01 and mitigated by
         # the Warm Vercel functions step above. Original thresholds
         # (1500ms / 90) documented below for reference.
+        env:
+          # Same derivation input as the Lighthouse step — this step re-derives
+          # the expected page slugs from it. Without a step-level definition
+          # $INPUT_PAGES is UNBOUND here under `set -u` (live failure
+          # 43818767055); on scheduled runs `inputs.pages` is empty, which the
+          # `-n` check handles.
+          INPUT_PAGES: ${{ inputs.pages }}
         run: |
           set -euo pipefail
           failures=0
