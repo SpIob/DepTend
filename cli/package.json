@@ -1,15 +1,41 @@
 {
   "name": "@deptend/cli",
-  "version": "0.0.1",
-  "private": true,
+  "version": "0.1.0",
+  "private": false,
   "description": "npx-runnable CLI — reproduces the same analysis locally and exports JSON",
   "type": "module",
   "bin": {
     "deptend": "./dist/index.js"
   },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SpIob/DepTend.git",
+    "directory": "cli"
+  },
+  "homepage": "https://deptend.vercel.app",
+  "keywords": [
+    "dependency",
+    "vulnerability",
+    "security",
+    "maintenance",
+    "npm",
+    "pypi",
+    "go",
+    "cargo",
+    "scoring",
+    "prioritization",
+    "cli"
+  ],
   "scripts": {
     "prebuild": "pnpm --filter @deptend/core build",
-    "build": "tsc --project tsconfig.json",
+    "build": "rm -rf dist && esbuild src/index.ts --bundle --platform=node --format=esm --target=node20 --outfile=dist/index.js --banner:js=\"import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);\"",
+    "prepublishOnly": "pnpm build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests",
     "test:live": "vitest run src/live-integration.test.ts",
@@ -19,11 +45,10 @@
     "bench:update": "vitest bench --config vitest.bench.config.ts --run --update",
     "typecheck:tests": "tsc --noEmit --project tsconfig.eslint.json"
   },
-  "dependencies": {
-    "@deptend/core": "workspace:*"
-  },
   "devDependencies": {
+    "@deptend/core": "workspace:*",
     "@types/node": "^22.0.0",
+    "esbuild": "^0.28.2",
     "fast-check": "^3.15.0",
     "typescript": "^5.5.0",
     "vitest": "^2.1.9"
