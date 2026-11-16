@@ -89,6 +89,13 @@ direction.)
   reproduces in all passes and still fails. Rationale: the 2026-09-27 cold-start-lottery trap
   (single-run assert misreading noise as a page regression) has a second face — same single run,
   favorable flight, misreading noise as a trend. Median-of-3 closes both.
+- **Verification:** local RED/GREEN matrix against the real 11-15 artifacts (green unmodified;
+  one 3000 ms spike absorbed; two spiked passes fail; missing/extra pass counts and
+  phantom/misnamed reports all fail loudly) plus live dispatches: 43818767055 exposed an unbound
+  `$INPUT_PAGES` in the assert step under `set -u` (fixed by mirroring the Lighthouse step's
+  `env:`), its 12 uploaded cold passes re-verified locally (missions median 439.7 ms), and the
+  re-dispatch 43820211756 is fully green — live medians root 1012.6 ms/98, missions 546.3
+  ms/100, org 585.7 ms/100, repo 943.6 ms/99.
 - This report + raw probe evidence.
 
 ## Decision point (not auto-resolved, per AGENTS.md §0.3)
