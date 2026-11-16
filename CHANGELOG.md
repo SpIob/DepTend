@@ -1,5 +1,23 @@
 ---
 
+**2026-11-16 — Dependabot major-bump ignores + fast-check v4 migration**
+
+### Changed
+
+- **`.github/dependabot.yml`**: added `ignore` entries for four semver-major npm bumps per project policy (ADR 0058): `postgres` 3→4 (devDep, ESM/Date semantics), `eslint-config-next` 15→16 (Next 16 target), `@types/node` 22→26 (precedent: #9 closed 2026-10-30), `@renovatebot/pep440` 5→6 (runtime dep, Node ≥24.10 floor). Dependabot will close PRs #21–#24 on next evaluation.
+- **`docs/adr/0058-ci-cd-pipeline-hardening.md`**: new dated update section documenting the ignore decisions and rationale.
+
+### Fixed
+
+- **`cli/src/property.test.ts`**: fast-check 4 (3.23.2 → 4.10.2) now emits `Invalid Date` by default (upstream PR #5589), which broke the published_at tie-break property test (comparator returned NaN). All 9 `fc.date({min, max})` arbitraries updated with `noInvalidDate: true` per migration guide. Verified: cli suite 113 passed, property test green on 5 consecutive random seeds; all gates (typecheck, lint, format:check) pass.
+
+### Merged
+
+- **PR #25** (fast-check 4.10.2): merged after fix, commit `a18bf8a`.
+- **PR #26** (dawidd6/action-send-mail 23→24): merged, commit `90db200`.
+
+---
+
 **2026-11-16 — Fix the two follow-ups from ADR 0065 (ADR 0066)**
 
 ### Fixed

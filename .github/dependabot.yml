@@ -25,6 +25,18 @@ updates:
       - dependency-name: "vitest"
         update-types:
           - "version-update:semver-major"
+      - dependency-name: "postgres"
+        update-types:
+          - "version-update:semver-major"
+      - dependency-name: "eslint-config-next"
+        update-types:
+          - "version-update:semver-major"
+      - dependency-name: "@types/node"
+        update-types:
+          - "version-update:semver-major"
+      - dependency-name: "@renovatebot/pep440"
+        update-types:
+          - "version-update:semver-major"
     labels:
       - "dependencies"
   - package-ecosystem: "github-actions"

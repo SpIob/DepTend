@@ -107,6 +107,19 @@ The npm entry is restored (2026-10-30) with three scoping decisions:
 
 PRs #7, #8, #9, #10 were closed the same day with their branches deleted. #13 was closed by Dependabot itself minutes after this config landed ("these dependencies are updatable in another way"); its successor #20 (20 grouped minor/patch updates) shipped the same day — reviewed, approved, merged (`80163de5`) with the prettier-plugin-tailwindcss reformat committed on the branch.
 
+## Update — 2026-11-16: Four npm major bumps ignored per migration policy
+
+Four open Dependabot PRs carrying semver-major bumps were held on 2026-11-16 per the project's standing policy (ADR 0058 §1, 2026-10-30 update section): majors of npm dependencies are "deliberate migrations on this project, not merge-and-see bumps." The held PRs and their ignore entries added to `.github/dependabot.yml`:
+
+| PR  | Package               | Bump             | Rationale                                                                                                                    |
+| --- | --------------------- | ---------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| #21 | `postgres`            | 3.4.9 → 4.0.0    | devDep only (drizzle-kit); ESM-only, `infer: false`, `sql.array()` removed, Date semantics shifts                            |
+| #22 | `eslint-config-next`  | 15.5.19 → 16.4.3 | targets Next 16 while app is on Next 15.5.x; ESLint 10 support may diverge                                                   |
+| #23 | `@types/node`         | 22.20.0 → 26.6.6 | **precedent:** identical @types/node@26 PR (#9) closed 2026-10-30 as deliberate migration; CI/runtime uses Node 24           |
+| #24 | `@renovatebot/pep440` | 5.0.1 → 6.0.0    | **runtime dependency** (core + CLI); breaking: requires Node ≥24.10.0, would force Node 24 floor on `@deptend/cli` consumers |
+
+Each entry added to `ignore` with `update-types: ["version-update:semver-major"]`. The existing comment was extended to reference the ADR section. PRs #21–#24 remain open with the ignore entries active; Dependabot will close them on its next evaluation cycle per the #13 precedent. Drop an entry deliberately when the corresponding migration is scheduled.
+
 ## References
 
 - 15+ fix commits in Sep 2026 for CI workflow issues (e.g., efe138a, 0c1ae12, 45c028c, aafc964, d44a7c9, af465d1, e9777c1, 4abf47d, 40f9d1b).
