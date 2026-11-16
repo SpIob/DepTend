@@ -33,13 +33,13 @@ Three constraints are non-negotiable and shape every decision in this project:
 **The CLI.** It runs the same scoring engine against a local repo path, entirely in-memory, with no account or hosted infrastructure required:
 
 ```bash
-npx deptend <repo-path> --github-url <url> [--output <file>] [--json]
+npx @deptend/cli <repo-path> --github-url <url> [--output <file>] [--json]
 ```
 
 ```bash
 # Example
 export GITHUB_TOKEN=<a token with public repo read access>  # recommended, raises GitHub's rate limit
-npx deptend . --github-url https://github.com/your-username/your-repo --output missions.json
+npx @deptend/cli . --github-url https://github.com/your-username/your-repo --output missions.json
 ```
 
 | Flag                 | Required         | Purpose                                                                                                                                                                                              |
@@ -53,7 +53,7 @@ npx deptend . --github-url https://github.com/your-username/your-repo --output m
 
 The CLI reuses the exact same scoring and ranking code the dashboard runs: same formula, tie-break rules, and explainability. It doesn't touch a database and doesn't require the dashboard to be running. It imports `@deptend/core` — the same package the dashboard runs — so the two cannot drift; there is no second implementation to cross-verify.
 
-**Note on npx:** `@deptend/cli`'s `bin` entry is set up for `npx`-style invocation once published, but hasn't been published to the npm registry yet. Until then, run it from a local clone (see [Local development](#local-development) below), or use `pnpm --filter @deptend/cli exec deptend <args>` / `node cli/dist/index.js <args>` from the repo root after building.
+**Packaging:** `@deptend/cli` ships a single self-contained `dist/index.js` — `@deptend/core` and all of its dependencies are inlined at build time and the published manifest declares **no runtime dependencies**, so installing it resolves nothing from the registry. The bundle is built from the same `@deptend/core` the dashboard runs (see [ADR 0065](docs/adr/0065-cli-bundled-for-npm-distribution.md)), so the two still cannot drift. To run from a local clone instead (see [Local development](#local-development) below): `pnpm --filter @deptend/cli build && node cli/dist/index.js <args>`.
 
 ## What a mission looks like
 

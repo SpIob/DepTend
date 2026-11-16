@@ -9,3 +9,15 @@ pnpm-lock.yaml
 # failing on artifacts that aren't part of the source-of-truth repo surface.
 reports/perf/
 
+# opencode agent/skill definitions. These are prompt text consumed verbatim by
+# whichever agent loads them, not rendered documentation — and several are
+# vendored from upstream skill repos (`avoid-ai-writing`, `ponytail`), where a
+# Prettier rewrite would create permanent divergence from the source being
+# synced against. Excluded rather than reformatted.
+#
+# They were never under `format:check` before because the entire `.opencode/`
+# directory was gitignored, so a fresh CI clone simply had no such files; now
+# that `.opencode/agents/**` and `.opencode/skills/**` are committed (see
+# .gitignore), this entry is what keeps `pnpm run format:check` green.
+.opencode/
+

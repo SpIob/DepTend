@@ -1,5 +1,29 @@
 ---
 
+**2026-11-16 — Fix the two follow-ups from ADR 0065 (ADR 0066)**
+
+### Fixed
+
+- **Parser decoupling (ADR 0065 follow-up #1):** `parseGithubUrl` moved from `db/repos.ts` to `pipeline/parse-github-url.ts`, removing `drizzle-orm` from the CLI's module graph. Bundle size reduced from 636.5 KB to 530.3 KB (106 KB, 16.7%).
+- **Token warning (ADR 0065 follow-up #2):** CLI now reads `GITHUB_TOKEN ?? GH_INGEST_TOKEN`, warns naming `GITHUB_TOKEN` as primary and `GH_INGEST_TOKEN` as CI fallback. The dead `github-token-warning.ts` module removed from `core` (it had exactly one consumer, the CLI, and its message was wrong for that consumer).
+
+### Changed
+
+- `packages/core/src/db/repos.ts`: removed `GITHUB_URL_PATTERN` and `parseGithubUrl`; added pointer comment (ADR 0066).
+- `packages/core/src/db/repos.test.ts`: moved `parseGithubUrl` test block to new `pipeline/parse-github-url.test.ts`; updated header and import.
+- `packages/core/src/pipeline/parse-github-url.ts`: new file with implementation and header explaining the data-layer boundary (ADR 0066).
+- `packages/core/src/pipeline/parse-github-url.test.ts`: new file with moved tests.
+- `app/src/app/api/repos/route.ts`: split import — `parseGithubUrl` from pipeline path, others from db path.
+- `cli/src/index.ts`: reads `GITHUB_TOKEN ?? GH_INGEST_TOKEN`; inline warning names both variables; doc updated.
+- `packages/core/package.json`: removed `./pipeline/github-token-warning.js` export.
+- `packages/core/src/pipeline/github-token-warning.ts`: deleted (dead code — single consumer, wrong message).
+
+### Added
+
+- **`docs/adr/0066-decouple-parser-from-data-layer.md`** (new): decision record with bundle size evidence, the dead-code finding, and rollback plan.
+
+---
+
 **2026-11-15 — CLI packaged for npm: bundled, zero-dependency artifact (ADR 0065)**
 
 ### Added
@@ -14,10 +38,10 @@
 
 ### Fixed
 
-- **Publishing `@deptend/cli` would have shipped a broken package to every user, silently.** `pnpm pack` rewrote its `workspace:*` dependency to `@deptend/core@0.0.1` — private and never published — so `npm install` of the produced tarball failed with `404 '@deptend/core@0.0.1' could not be found` and every `npx @deptend/cli` invocation would have died at install. Reproduced end to end before the fix, and re-verified after: the tarball now installs as `added 1 package … in 761ms` with zero registry dependency resolution, `--help` renders, and a full analysis against a real npm fixture with a live `--github-url` produced 12 ranked missions with scores, effort labels, and confidence flags, exit 0. Only Node builtins remain as bare imports in the bundle. *(No user was ever exposed — this was caught before first publish.)*
+- **Publishing `@deptend/cli` would have shipped a broken package to every user, silently.** `pnpm pack` rewrote its `workspace:*` dependency to `@deptend/core@0.0.1` — private and never published — so `npm install` of the produced tarball failed with `404 '@deptend/core@0.0.1' could not be found` and every `npx @deptend/cli` invocation would have died at install. Reproduced end to end before the fix, and re-verified after: the tarball now installs as `added 1 package … in 761ms` with zero registry dependency resolution, `--help` renders, and a full analysis against a real npm fixture with a live `--github-url` produced 12 ranked missions with scores, effort labels, and confidence flags, exit 0. Only Node builtins remain as bare imports in the bundle. _(No user was ever exposed — this was caught before first publish.)_
 - **README documented `npx deptend`, which cannot resolve.** The package is `@deptend/cli`, so `npx deptend` looks for a package by that name and finds nothing. Corrected to `npx @deptend/cli` throughout, and the "not yet published to the npm registry" note replaced with the real invocation.
 
-### Known follow-ups (documented in ADR 0065, not fixed here)
+### Fixed (see ADR 0066)
 
 - `core/src/pipeline/parse-github-url.ts` imports `core/src/db/repos.ts`, dragging `drizzle-orm` into a local-first, no-DB CLI's runtime graph purely to reach a URL-string parser. Extracting the pure parser would drop the ORM from the bundle entirely. Deferred: it touches `core`, which the dashboard also consumes.
 - `cli/src/index.ts:131` reads `GITHUB_TOKEN`, but the shared `GITHUB_TOKEN_WARNING` constant it prints tells users to set `GH_INGEST_TOKEN`. A CLI user following the warning sets a variable the CLI never reads.

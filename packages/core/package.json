@@ -159,10 +159,6 @@
       "import": "./dist/pipeline/source-repo-extraction.js",
       "types": "./dist/pipeline/source-repo-extraction.d.ts"
     },
-    "./pipeline/github-token-warning.js": {
-      "import": "./dist/pipeline/github-token-warning.js",
-      "types": "./dist/pipeline/github-token-warning.d.ts"
-    },
     "./pipeline/parse-github-url.js": {
       "import": "./dist/pipeline/parse-github-url.js",
       "types": "./dist/pipeline/parse-github-url.d.ts"
