@@ -25,5 +25,5 @@ export const NpmIngestor = createHttpIngestor({
         lockFileName,
       ),
     ),
-  unsupportedLockFiles: ["pnpm-lock.yaml"],
+  unsupportedLockFiles: [],
 });

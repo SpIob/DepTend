@@ -196,4 +196,25 @@ Collect real lock files from popular projects for unit/integration tests:
 
 ---
 
+---
+
+## Follow-up: pnpm-lock.yaml Support (2026-11-17)
+
+**Status:** Implemented
+
+**Date:** 2026-11-17
+
+**Verified:** `packages/core/src/ingestor/pnpm-lock-parse.ts`, `packages/core/src/ingestor/pnpm-lock-parse.test.ts`, `packages/core/src/ingestor/lock-parse.ts` (registry), `packages/core/src/ingestor/npm.ts`, `packages/core/src/ingestor/local-npm.ts` (unsupportedLockFiles removal); all core tests pass (889), build passes, lint/format clean.
+
+**Summary:**
+
+- Added `parsePnpmLockContent()` in `packages/core/src/ingestor/pnpm-lock-parse.ts` — bounded hand-rolled YAML parser (no external dependency) for pnpm lockfileVersion 6.0 (pnpm 8) and 9.0 (pnpm 9+).
+- Reads the root importer (`.`) section for `dependencies`, `devDependencies`, `optionalDependencies`, and `peerDependencies` with their resolved versions.
+- Workspace multi-importer lockfiles: only the root importer is parsed; non-root importers are treated as not-parsed.
+- Unknown lockfileVersion sets a warning and returns empty result — never crashes (per AGENTS §0.3 decision point).
+- Transitive packages collected from `packages` (v6) and `packages`+`snapshots` (v9) top-level entries.
+- Registered in `LOCK_PARSERS` registry in `lock-parse.ts`.
+- Removed `"pnpm-lock.yaml"` from `unsupportedLockFiles` in both `npm.ts` and `local-npm.ts`.
+- Test fixtures modeled on real lockfiles from `vitejs/vite` (v6) and `pnpm/setup` (v9), with transitive packages included as top-level entries per real pnpm format.
+
 _End of document._

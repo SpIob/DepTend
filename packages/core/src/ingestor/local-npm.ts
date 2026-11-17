@@ -25,5 +25,5 @@ export const LocalNpmIngestor = createLocalIngestor({
         lockFileName,
       ),
     ),
-  unsupportedLockFiles: ["pnpm-lock.yaml"],
+  unsupportedLockFiles: [],
 });

@@ -19,6 +19,7 @@ import { parsePoetryLockContent } from "./poetry-lock-parse.js";
 import { parsePipfileLockContent } from "./pipfile-lock-parse.js";
 import { parsePdmLockContent } from "./pdm-lock-parse.js";
 import { parseCargoLockContent } from "./cargo-lock-parse.js";
+import { parsePnpmLockContent } from "./pnpm-lock-parse.js";
 
 /** Result of parsing a lock file */
 export interface LockFileParseResult {
@@ -52,7 +53,7 @@ export const LOCK_PARSERS: Record<string, LockFileParser> = {
   "Pipfile.lock": parsePipfileLockContent,
   "pdm.lock": parsePdmLockContent,
   "Cargo.lock": parseCargoLockContent,
-  // "pnpm-lock.yaml": parsePnpmLockContent, // not yet implemented
+  "pnpm-lock.yaml": parsePnpmLockContent,
 };
 
 /**
