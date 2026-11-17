@@ -33,7 +33,7 @@ Three constraints are non-negotiable and shape every decision in this project:
 **The CLI.** It runs the same scoring engine against a local repo path, entirely in-memory, with no account or hosted infrastructure required:
 
 ```bash
-npx @deptend/cli <repo-path> --github-url <url> [--output <file>] [--json]
+npx @deptend/cli <repo-path> [--github-url <url>] [--output <file>] [--json] [--format <fmt>] [--fail-on <level>] [--fail-on-count <n>] [--baseline <file>] [--fail-on-new]
 ```
 
 ```bash
@@ -42,12 +42,86 @@ export GITHUB_TOKEN=<a token with public repo read access>  # recommended, raise
 npx @deptend/cli . --github-url https://github.com/your-username/your-repo --output missions.json
 ```
 
-| Flag                 | Required         | Purpose                                                                                                                                                                                              |
-| -------------------- | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `<repo-path>`        | Yes (positional) | Local path to the repo root: the directory containing `package.json` (npm), `pyproject.toml`/`requirements.txt` (PyPI), or `go.mod` (Go). Ecosystem is auto-detected, npm first, then PyPI, then Go. |
-| `--github-url <url>` | Yes              | The repo's GitHub URL, used to fetch stars/open-issues for ecosystem-value scoring. A local checkout alone can't derive this.                                                                        |
-| `--output <file>`    | No               | Write the full JSON result to this file                                                                                                                                                              |
-| `--json`             | No               | Print the full JSON result to stdout instead of the human-readable summary (ignored if `--output` is set)                                                                                            |
+| Flag                  | Required         | Purpose                                                                                                                                                                                              |
+| --------------------- | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `<repo-path>`         | Yes (positional) | Local path to the repo root: the directory containing `package.json` (npm), `pyproject.toml`/`requirements.txt` (PyPI), or `go.mod` (Go). Ecosystem is auto-detected, npm first, then PyPI, then Go. |
+| `--github-url <url>`  | No*              | The repo's GitHub URL, used to fetch stars/open-issues for ecosystem-value scoring. Optional when `<repo-path>` is a git clone with an `origin` or `upstream` remote (auto-detected).                |
+| `--output <file>`     | No               | Write the formatted output to this file                                                                                                                                                              |
+| `--json`              | No               | Print the full JSON result to stdout instead of the human-readable summary (ignored if `--output` is set)                                                                                            |
+| `--format <fmt>`      | No               | Output format: `human` (default), `json`, `sarif`, `markdown`. `--json` and `--output` keep working for back-compat.                                                                                 |
+| `--fail-on <level>`   | No               | Exit 1 if any mission severity ≥ level. Levels: `critical`, `high`, `medium`, `low`, `any`. Combined with `--fail-on-count` as OR (either tripping fails).                                           |
+| `--fail-on-count <n>` | No               | Exit 1 if number of missions ≥ n. Combined with `--fail-on` as OR (either tripping fails).                                                                                                           |
+| `--baseline <file>`   | No               | Compare against previous `--output` JSON file. Adds diff section to human output; adds `diff` object to JSON.                                                                                        |
+| `--fail-on-new`       | No               | Exit 1 if any missions added vs baseline (requires `--baseline`).                                                                                                                                    |
+
+**Exit codes:**
+
+- `0` — Analysis completed successfully (no threshold tripped).
+- `1` — Threshold tripped (`--fail-on`, `--fail-on-count`, or `--fail-on-new` condition met).
+- `2` — Operational error (invalid args, network failure, no manifest, etc.).
+
+**GitHub Actions CI example:**
+
+```yaml
+# .github/workflows/deptend.yml
+name: DepTend vulnerability check
+on: [push, pull_request]
+jobs:
+  deptend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npx @deptend/cli . --fail-on high --fail-on-count 5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
+
+**SARIF upload to GitHub Code Scanning (free on public repos):**
+
+```yaml
+# .github/workflows/deptend-sarif.yml
+name: DepTend SARIF upload
+on: [push, pull_request]
+jobs:
+  deptend:
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npx @deptend/cli . --format sarif --output deptend.sarif
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: deptend.sarif
+```
+
+**Baseline diff mode (track new vs. resolved missions):**
+
+```yaml
+# .github/workflows/deptend-baseline.yml
+name: DepTend baseline check
+on: [push, pull_request]
+jobs:
+  deptend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      # Restore committed baseline (commit missions.json to repo)
+      - run: npx @deptend/cli . --baseline missions.json --fail-on-new --output missions.json
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
 
 **`GITHUB_TOKEN`** (env var, optional but recommended) raises the GitHub API rate limit from 60 to 5,000 requests/hour. A fine-grained PAT with public-repo read access is sufficient.
 
@@ -89,7 +163,7 @@ Missions are ranked by `composite_score`, bucketed into fixed-width tiers so nea
 
 Full detail: [`docs/adr/0006-scoring-algorithm.md`](docs/adr/0006-scoring-algorithm.md).
 
-> **On confidence:** missions with fully resolved lock files and a CVSS score reach `high`; those with lock-file data but missing dependents or breaking-change signals show `medium`; missions lacking lock-file data (no lock file in repo, or unparseable format like `pnpm-lock.yaml`) or missing both downstream dependents and breaking-change signals stay at `low`. Confidence flags are always visible per mission. See [ADR 0038](docs/adr/0038-lock-file-parsing.md), [ADR 0029](docs/adr/0029-breaking-change-signals.md), [ADR 0032](docs/adr/0032-downstream-dependents.md).
+> **On confidence:** missions with fully resolved lock files and a CVSS score reach `high`; those with lock-file data but missing dependents or breaking-change signals show `medium`; missions lacking lock-file data (no lock file in repo, or an unparseable lockfile format/version) or missing both downstream dependents and breaking-change signals stay at `low`. Confidence flags are always visible per mission. See [ADR 0038](docs/adr/0038-lock-file-parsing.md), [ADR 0029](docs/adr/0029-breaking-change-signals.md), [ADR 0032](docs/adr/0032-downstream-dependents.md).
 
 ## Ecosystem support
 
@@ -102,7 +176,7 @@ Four ecosystems, auto-detected per repo in this order: npm first, then PyPI, the
 | Go        | `go.mod` `require` directives, direct only                                                                           | [proxy.golang.org](https://proxy.golang.org/)                                  | `replace`/`exclude`/`retract` directives not handled ([ADR 0024](docs/adr/0024-go-ecosystem.md))                                                                                    |
 | Cargo     | `Cargo.toml` `[dependencies]`/`[dev-dependencies]`/`[build-dependencies]` (+ `[workspace.dependencies]` inheritance) | [crates.io API](https://crates.io/api/v1/crates)                               | Target tables, `[patch]`, and workspace member manifests not handled; crates.io fetches run at concurrency 1 per its ~1 req/s policy ([ADR 0063](docs/adr/0063-cargo-ecosystem.md)) |
 
-Lock files are parsed for `package-lock.json`, `yarn.lock`, `poetry.lock`, `Pipfile.lock`, `pdm.lock`, `go.sum`, and `Cargo.lock` (ADR 0038, extended by ADR 0063). `pnpm-lock.yaml` is not yet parsed. Resolved versions from lock files populate `dependencies.resolved_version`; when absent or unparseable, versions are estimated from declared ranges and the `no_lock_file` confidence flag is set.
+Lock files are parsed for `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`, `poetry.lock`, `Pipfile.lock`, `pdm.lock`, `go.sum`, and `Cargo.lock` (ADR 0038, extended by ADR 0063 and the 2026-11-17 pnpm update section). pnpm lockfiles are supported for `lockfileVersion` 6.x and 9.x, root importer only; other versions set the `no_lock_file` flag rather than guessing. Resolved versions from lock files populate `dependencies.resolved_version`; when absent or unparseable, versions are estimated from declared ranges and the `no_lock_file` confidence flag is set.
 
 A repo whose manifest lives outside the repo root is currently indistinguishable from a repo with no manifest at all; both land on `ingestionStatus: 'skipped'`. This is a scoping choice (root-only parsing), not a bug.
 

@@ -25,14 +25,20 @@ describe("parseArgs", () => {
     );
   });
 
-  it("throws when --github-url is missing", () => {
-    expect(() => parseArgs(["."])).toThrow(/Missing required --github-url/);
+  it("throws when --github-url is missing AND no repo path", () => {
+    expect(() => parseArgs([])).toThrow(/Missing required <repo-path>/);
   });
 
   it("captures the repo path from the first positional argument", () => {
     const result = parseArgs(["/tmp/myrepo", "--github-url", "https://github.com/owner/repo"]);
     expect(result?.repoPath).toBe("/tmp/myrepo");
     expect(result?.githubUrl).toBe("https://github.com/owner/repo");
+  });
+
+  it("allows --github-url to be omitted (returns null for githubUrl)", () => {
+    const result = parseArgs(["/tmp/myrepo"]);
+    expect(result?.repoPath).toBe("/tmp/myrepo");
+    expect(result?.githubUrl).toBeNull();
   });
 
   it("throws when --output is passed with no value (B1)", () => {
@@ -102,6 +108,148 @@ describe("parseArgs", () => {
       "/tmp/x.json",
     ]);
     expect(result?.outputPath).toBe("/tmp/x.json");
+  });
+
+  it("captures --fail-on correctly", () => {
+    const result = parseArgs([
+      ".",
+      "--github-url",
+      "https://github.com/owner/repo",
+      "--fail-on",
+      "high",
+    ]);
+    expect(result?.failOn).toBe("high");
+  });
+
+  it("throws on invalid --fail-on level", () => {
+    expect(() =>
+      parseArgs([".", "--github-url", "https://github.com/owner/repo", "--fail-on", "invalid"]),
+    ).toThrow(/Invalid --fail-on level/);
+  });
+
+  it("throws when --fail-on is passed with no value", () => {
+    expect(() =>
+      parseArgs([".", "--github-url", "https://github.com/owner/repo", "--fail-on"]),
+    ).toThrow(/--fail-on requires a level argument/);
+  });
+
+  it("captures --fail-on-count correctly", () => {
+    const result = parseArgs([
+      ".",
+      "--github-url",
+      "https://github.com/owner/repo",
+      "--fail-on-count",
+      "5",
+    ]);
+    expect(result?.failOnCount).toBe(5);
+  });
+
+  it("throws on invalid --fail-on-count (non-integer)", () => {
+    expect(() =>
+      parseArgs([".", "--github-url", "https://github.com/owner/repo", "--fail-on-count", "abc"]),
+    ).toThrow(/--fail-on-count requires a non-negative integer/);
+  });
+
+  it("throws on invalid --fail-on-count (negative)", () => {
+    expect(() =>
+      parseArgs([".", "--github-url", "https://github.com/owner/repo", "--fail-on-count", "-1"]),
+    ).toThrow(/--fail-on-count requires a non-negative integer/);
+  });
+
+  it("throws when --fail-on-count is passed with no value", () => {
+    expect(() =>
+      parseArgs([".", "--github-url", "https://github.com/owner/repo", "--fail-on-count"]),
+    ).toThrow(/--fail-on-count requires a number argument/);
+  });
+
+  it("allows both --fail-on and --fail-on-count together", () => {
+    const result = parseArgs([
+      ".",
+      "--github-url",
+      "https://github.com/owner/repo",
+      "--fail-on",
+      "medium",
+      "--fail-on-count",
+      "10",
+    ]);
+    expect(result?.failOn).toBe("medium");
+    expect(result?.failOnCount).toBe(10);
+  });
+
+  it("throws on duplicate --fail-on", () => {
+    expect(() =>
+      parseArgs([
+        ".",
+        "--github-url",
+        "https://github.com/owner/repo",
+        "--fail-on",
+        "high",
+        "--fail-on",
+        "low",
+      ]),
+    ).toThrow(/Duplicate flag: --fail-on/);
+  });
+
+  it("throws on duplicate --fail-on-count", () => {
+    expect(() =>
+      parseArgs([
+        ".",
+        "--github-url",
+        "https://github.com/owner/repo",
+        "--fail-on-count",
+        "5",
+        "--fail-on-count",
+        "10",
+      ]),
+    ).toThrow(/Duplicate flag: --fail-on-count/);
+  });
+
+  it("defaults failOn and failOnCount to null when not present", () => {
+    const result = parseArgs([".", "--github-url", "https://github.com/owner/repo"]);
+    expect(result?.failOn).toBeNull();
+    expect(result?.failOnCount).toBeNull();
+  });
+
+  it("captures --format correctly", () => {
+    const result = parseArgs([
+      ".",
+      "--github-url",
+      "https://github.com/owner/repo",
+      "--format",
+      "sarif",
+    ]);
+    expect(result?.format).toBe("sarif");
+  });
+
+  it("defaults --format to human when not present", () => {
+    const result = parseArgs([".", "--github-url", "https://github.com/owner/repo"]);
+    expect(result?.format).toBe("human");
+  });
+
+  it("throws on invalid --format", () => {
+    expect(() =>
+      parseArgs([".", "--github-url", "https://github.com/owner/repo", "--format", "invalid"]),
+    ).toThrow(/Invalid --format/);
+  });
+
+  it("throws when --format is passed with no value", () => {
+    expect(() =>
+      parseArgs([".", "--github-url", "https://github.com/owner/repo", "--format"]),
+    ).toThrow(/--format requires a format argument/);
+  });
+
+  it("throws on duplicate --format", () => {
+    expect(() =>
+      parseArgs([
+        ".",
+        "--github-url",
+        "https://github.com/owner/repo",
+        "--format",
+        "sarif",
+        "--format",
+        "markdown",
+      ]),
+    ).toThrow(/Duplicate flag: --format/);
   });
 });
 

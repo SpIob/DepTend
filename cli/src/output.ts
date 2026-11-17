@@ -1,38 +1,81 @@
 import { writeFile } from "node:fs/promises";
-import type { AnalyzeResult } from "./types.js";
+import type { AnalyzeResult, AnalyzedMission } from "./types.js";
 import { shortOsvId } from "./format/short-osv-id.js";
 import { severityColor, colorize, reset } from "./format/ansi.js";
 import { effortPrefix } from "./format/effort-glyph.js";
+import { formatSarif } from "./format/sarif.js";
+import { formatMarkdown } from "./format/markdown.js";
+
+export type OutputFormat = "human" | "json" | "sarif" | "markdown";
 
 export interface OutputOptions {
   /** File path to write full JSON to. If null, JSON is not written to disk. */
   outputPath: string | null;
   /** Print raw JSON to stdout instead of the human-readable summary. */
   json: boolean;
+  /** Output format: human, json, sarif, markdown. --json and --output still work for back-compat. */
+  format: OutputFormat;
+  /** Optional diff result from --baseline comparison. */
+  diff?: {
+    added: AnalyzedMission[];
+    resolved: AnalyzedMission[];
+    unchanged: AnalyzedMission[];
+  };
 }
 
 /**
  * Writes the analysis result per the requested output mode:
- *   --output <file>  always writes full JSON there, plus a short stdout
+ *   --output <file>  always writes the formatted output there, plus a short stdout
  *                     confirmation so the run isn't silent.
  *   --json            (no --output) prints full JSON to stdout, for piping.
- *   (neither)          prints a human-readable summary to stdout.
+ *   --format human|json|sarif|markdown
+ *                     (no --output) prints the selected format to stdout.
+ *   (neither)         prints a human-readable summary to stdout.
  */
 export async function writeOutput(result: AnalyzeResult, options: OutputOptions): Promise<void> {
-  const json = JSON.stringify(result, null, 2);
+  const { outputPath, json, format, diff } = options;
 
-  if (options.outputPath !== null) {
-    await writeFile(options.outputPath, json + "\n", "utf-8");
-    console.log(`✓ Wrote ${String(result.missions.length)} mission(s) to ${options.outputPath}`);
+  // Generate the requested output format
+  let outputContent: string;
+  switch (format) {
+    case "json": {
+      // Include diff in JSON output if present
+      const jsonResult = diff ? { ...result, diff } : result;
+      outputContent = JSON.stringify(jsonResult, null, 2);
+      break;
+    }
+    case "sarif":
+      outputContent = formatSarif(result);
+      break;
+    case "markdown":
+      outputContent = formatMarkdown(result);
+      break;
+    case "human":
+    default:
+      outputContent = formatHumanSummary(result);
+      break;
+  }
+
+  if (outputPath !== null) {
+    await writeFile(outputPath, outputContent + "\n", "utf-8");
+    console.log(`✓ Wrote ${String(result.missions.length)} mission(s) to ${outputPath}`);
     return;
   }
 
-  if (options.json) {
-    process.stdout.write(json + "\n");
+  if (json && format === "human") {
+    // Back-compat: --json without --format prints JSON to stdout
+    const jsonResult = diff ? { ...result, diff } : result;
+    process.stdout.write(JSON.stringify(jsonResult, null, 2) + "\n");
     return;
   }
 
-  console.log(formatHumanSummary(result));
+  // Print the selected format to stdout
+  // Use console.log for human format to maintain test compatibility
+  if (format === "human") {
+    console.log(outputContent);
+  } else {
+    process.stdout.write(outputContent + "\n");
+  }
 }
 
 function formatHumanSummary(result: AnalyzeResult): string {

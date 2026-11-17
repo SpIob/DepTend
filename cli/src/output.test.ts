@@ -114,7 +114,7 @@ describe("writeOutput", () => {
     const outFile = join(workDir, "result.json");
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
-    await writeOutput(ONE_MISSION_RESULT, { outputPath: outFile, json: false });
+    await writeOutput(ONE_MISSION_RESULT, { outputPath: outFile, json: false, format: "json" });
 
     const written = await readFile(outFile, "utf-8");
     const parsed = parseFrom(written);
@@ -127,7 +127,7 @@ describe("writeOutput", () => {
   it("prints full JSON to stdout when --json is set and no --output (I-14 branch 2)", async () => {
     const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
 
-    await writeOutput(ONE_MISSION_RESULT, { outputPath: null, json: true });
+    await writeOutput(ONE_MISSION_RESULT, { outputPath: null, json: true, format: "human" });
 
     expect(stdoutSpy).toHaveBeenCalledTimes(1);
     const payload = String(stdoutSpy.mock.calls[0]?.[0] ?? "");
@@ -138,7 +138,7 @@ describe("writeOutput", () => {
   it("prints the 'No open vulnerability missions' summary when missions is empty", async () => {
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
-    await writeOutput(EMPTY_RESULT, { outputPath: null, json: false });
+    await writeOutput(EMPTY_RESULT, { outputPath: null, json: false, format: "human" });
 
     const printed = printedOf(logSpy);
     expect(printed).toContain("owner/repo");
@@ -153,7 +153,7 @@ describe("writeOutput", () => {
       warnings: ["Warning A", "Warning B"],
     };
 
-    await writeOutput(resultWithWarnings, { outputPath: null, json: false });
+    await writeOutput(resultWithWarnings, { outputPath: null, json: false, format: "human" });
 
     const printed = printedOf(logSpy);
     expect(printed).toContain("2 warning(s):");
@@ -164,7 +164,7 @@ describe("writeOutput", () => {
   it("does not claim a /10 scale (I-13)", async () => {
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
-    await writeOutput(ONE_MISSION_RESULT, { outputPath: null, json: false });
+    await writeOutput(ONE_MISSION_RESULT, { outputPath: null, json: false, format: "human" });
 
     const printed = printedOf(logSpy);
     expect(printed).not.toContain("/10");
@@ -185,7 +185,7 @@ describe("writeOutput", () => {
     };
     const result: AnalyzeResult = { ...ONE_MISSION_RESULT, missions: [first, second] };
 
-    await writeOutput(result, { outputPath: null, json: false });
+    await writeOutput(result, { outputPath: null, json: false, format: "human" });
 
     const printed = printedOf(logSpy);
     expect(printed).toContain("(GHSA-aaaa)");
@@ -198,7 +198,7 @@ describe("writeOutput", () => {
     const low: AnalyzedMission = { ...sampleMission, effort_label: "low" };
     const result: AnalyzeResult = { ...ONE_MISSION_RESULT, missions: [trivial, low] };
 
-    await writeOutput(result, { outputPath: null, json: false });
+    await writeOutput(result, { outputPath: null, json: false, format: "human" });
 
     const printed = printedOf(logSpy);
     expect(printed).toMatch(/·\s+trivial/);
@@ -208,7 +208,7 @@ describe("writeOutput", () => {
   it("omits ANSI codes when stderr is not a TTY (I-9 / B7)", async () => {
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
     // stderr.isTTY is false from beforeEach — verify no escape codes leak.
-    await writeOutput(ONE_MISSION_RESULT, { outputPath: null, json: false });
+    await writeOutput(ONE_MISSION_RESULT, { outputPath: null, json: false, format: "human" });
 
     const printed = printedOf(logSpy);
     expect(printed).not.toContain("\x1b[");
@@ -219,7 +219,7 @@ describe("writeOutput", () => {
     process.env.NO_COLOR = "1";
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
-    await writeOutput(ONE_MISSION_RESULT, { outputPath: null, json: false });
+    await writeOutput(ONE_MISSION_RESULT, { outputPath: null, json: false, format: "human" });
 
     const printed = printedOf(logSpy);
     expect(printed).not.toContain("\x1b[");
