@@ -88,6 +88,8 @@ export interface AdvisorySummary {
   source: Advisory["source"];
   ecosystem: Ecosystem;
   severity: Severity;
+  cvssScore: Advisory["cvssScore"];
+  epssScore: Advisory["epssScore"];
   fixedVersion: string | null;
   publishedAt: Date | null;
 }
@@ -120,10 +122,12 @@ export const EMPTY_REPO_MISSION_COUNTS: RepoMissionCounts = {
  * for a signed-in user; false otherwise, not a tri-state.
  * isSubscribed is only meaningful for signed-in users with notifications
  * enabled for the repo.
+ * eventTypes is only present when userLogin was passed and the repo is subscribed.
  */
 export interface RepoWithMissionSummary extends Repo {
   ecosystems: Ecosystem[];
   missionCounts: RepoMissionCounts;
   isBookmarked: boolean;
   isSubscribed?: boolean;
+  eventTypes?: string[];
 }

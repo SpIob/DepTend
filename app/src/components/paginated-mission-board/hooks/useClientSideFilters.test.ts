@@ -82,6 +82,8 @@ function makeMission(
       source: "osv",
       ecosystem: overrides.ecosystem ?? "npm",
       severity: overrides.severity ?? "high",
+      cvssScore: 7.5,
+      epssScore: 0.1,
       fixedVersion: "1.1.0",
       publishedAt: overrides.advisoryPublishedAt ?? new Date("2024-01-01"),
     },

@@ -1,6 +1,7 @@
 "use client";
 
 import type { MissionWithScore } from "@deptend/core";
+import Link from "next/link";
 import { SeverityMark } from "../severity-mark";
 import { shortOsvId } from "./utils";
 import { FixedVersionTag } from "./FixedVersionTag";
@@ -28,12 +29,15 @@ export function MissionHeader({ mission }: MissionHeaderProps): React.JSX.Elemen
 
       <span className="flex min-w-0 flex-col gap-0.5 sm:flex-1">
         <span className="flex min-w-0 items-baseline gap-2">
-          <h3 className="min-w-0 truncate text-sm font-semibold text-ink">
+          <Link
+            href={`/mission/${mission.id}`}
+            className="min-w-0 truncate text-sm font-semibold text-ink hover:text-accent"
+          >
             {mission.title}
             {osvShortId !== null && (
               <span className="ml-1 font-normal text-ink-muted">({osvShortId})</span>
             )}
-          </h3>
+          </Link>
           {advisory?.fixedVersion != null && <FixedVersionTag version={advisory.fixedVersion} />}
         </span>
       </span>

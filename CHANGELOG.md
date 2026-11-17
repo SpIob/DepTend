@@ -1,10 +1,30 @@
 ---
 
+**2026-11-17 — usability sweep: 12 features across the CLI, dashboard, and notifications (#32–#44)**
+
+### Added
+
+- **CLI (issues #32–#35):** `--github-url` is now optional for git clones — the URL auto-detects from `origin`/`upstream` remotes (SSH-form remotes parse too; `parseGithubUrl` gained an SSH pattern and normalizes both forms, so the submission route's stored URLs are unchanged). `--fail-on <severity>` / `--fail-on-count <n>` gate CI runs (exit 0/1/2 contract, stderr summary of offending missions); `--format sarif` (SARIF 2.1.0, scoring inputs in `result.properties`) and `--format markdown` join human/JSON output; `--baseline <file>` diffs new/resolved/unchanged with `--fail-on-new`. README flag table + CI recipes updated.
+- **Mission permalinks (#37):** new `/mission/[id]` server-rendered page — full advisory block, action hint, score inputs, and confidence flags at a shareable URL; card titles link to it. New `getMissionById()` core query (ADR 0012); the shared `AdvisorySummary` projection gained `cvssScore`/`epssScore` (SELECT-list order is load-bearing — test fixtures updated, live-validated against dev Neon).
+- **Repo-owner claim mark (#41):** mission cards show a "repo owner" tag when `claimed_by` equals the repo owner; org-owned repos get no mark (an org can't be a session).
+- **Repo badge (#38):** `GET /api/repos/[owner]/[name]/badge.svg` — self-hosted shields-style SVG ("12 missions · 3 high" / "clean"), edge-cached (s-maxage=300), XML-escaped, 404 for unknown repos; copy-paste snippet on the repo page. Reuses `getRepoBoardPage` — no new core queries.
+- **Freshness + skip/error transparency (#40):** repo pages show "last scanned X ago" and a plain-language status (with `ingestionError`) for pending/skipped/failed repos; directory rows show a muted skipped/failed chip so the "N skipped" count is inspectable.
+- **Copy-as-Markdown (#39):** board button copies the current page's missions as a markdown table (repo column on the global board only), with clipboard fallback and an `aria-live` "Copied" confirmation; pure formatter module + tests.
+- **Notification event-type picker (#43):** the binary Notify toggle is now a disclosure with four checkboxes (default all four, so existing behavior is preserved); stored per-repo prefs are surfaced through a new `getSubscribedRepoEventTypes()` core read wired into the directory queries. Focus trap, Escape/click-outside handling.
+- **Submitter opt-in (#44):** the submit form offers "Notify me about new missions on this repo", **default off** (opt-in-only); it subscribes with `["new_mission"]` only after a successful submission and never turns a failed subscribe into a failed submit.
+- **pnpm-lock.yaml parsing (#36):** hand-rolled, dependency-free parser for `lockfileVersion` 6.x/9.x (root importer; unknown versions set the unparseable flag instead of guessing); registered in the ADR 0038 lock-parser registry, closing the last npm-ecosystem lockfile gap — pnpm repos now get `resolved_version` and stop carrying `no_lock_file`. See the dated update section in `docs/adr/0038-lock-file-parsing.md`.
+
+### Fixed
+
+- **CLI gate hygiene:** the new CLI modules shipped with lint/type violations the agent's narrower checks missed (exactOptionalPropertyTypes on the `diff` option, unused vars, `Array<T>` style, unformatted files) — all corrected; the full §6 gate passes from a clean state.
+
+---
+
 **2026-11-16 — /missions LCP "regression" investigated: single-run audit noise; weekly audit now measures median-of-3**
 
 ### Investigated
 
-- **Kanban task "Fix LCP regression on /missions page" closed as a measurement defect, not an app one.** The weekly Lighthouse series for `/missions` (317 → 463 → 465 ms across 11-01 → 11-15) is single-run iad-runner ↔ sin1-function flight variance, not a code regression: the series was never monotonic (10-04 measured 522 ms — worse than the "regressed" weeks), every client-side metric improved over the same window (TBT 121 → 0 ms, bootup 251 → 55 ms), the document payload *shrank* while stream end *grew*, and `git diff 325eb3d..HEAD` touches `/missions`' render path only with the dev-only `logRequestTimings()` wiring. Live browser measurement against prod (element-attributed LCP, Singapore vantage): the LCP element is the static header `<p>` of the 2026-09-05 round-3 Suspense refactor, painting from the first HTML flush at byte ~3.3 KB of the stream — FCP == LCP in every pass, warm LCP 256-344 ms. Full evidence in `reports/perf/2026-11-16-missions-lcp-audit/`.
+- **Kanban task "Fix LCP regression on /missions page" closed as a measurement defect, not an app one.** The weekly Lighthouse series for `/missions` (317 → 463 → 465 ms across 11-01 → 11-15) is single-run iad-runner ↔ sin1-function flight variance, not a code regression: the series was never monotonic (10-04 measured 522 ms — worse than the "regressed" weeks), every client-side metric improved over the same window (TBT 121 → 0 ms, bootup 251 → 55 ms), the document payload _shrank_ while stream end _grew_, and `git diff 325eb3d..HEAD` touches `/missions`' render path only with the dev-only `logRequestTimings()` wiring. Live browser measurement against prod (element-attributed LCP, Singapore vantage): the LCP element is the static header `<p>` of the 2026-09-05 round-3 Suspense refactor, painting from the first HTML flush at byte ~3.3 KB of the stream — FCP == LCP in every pass, warm LCP 256-344 ms. Full evidence in `reports/perf/2026-11-16-missions-lcp-audit/`.
 - **The only real >1 s LCP path is the documented Hobby cold start** (measured live: cold-function pass FCP/LCP 1,268 ms vs 256-344 ms warm; curl first-hit TTFB 2.10 s vs 0.23 s warm). Keeping the function warm for real users would need an external DB-free ~5-min pinger — surfaced as a decision point, not built (GitHub Actions cron is too unreliable at 5-min granularity; keep-alive must not touch Neon, whose 190 free compute-hours/month cannot cover 24/7).
 
 ### Changed

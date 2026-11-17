@@ -118,7 +118,7 @@ vi.mock("@/lib/ingestion-status", () => ({
       case "pending":
         return "Pending ingestion";
       case "running":
-        return "Ingesting...";
+        return "Ingesting…";
       case "failed":
         return "Ingestion failed";
       case "skipped":
@@ -126,6 +126,39 @@ vi.mock("@/lib/ingestion-status", () => ({
       case "complete":
         return null;
     }
+  },
+  ingestionStatusDetail: (status: string, error: string | null) => {
+    switch (status) {
+      case "pending":
+        return "This repo is queued for ingestion. It will be processed automatically.";
+      case "running":
+        return "Ingestion is currently in progress. Check back in a few minutes.";
+      case "failed":
+        return error
+          ? `Ingestion failed: ${error}. It will be retried automatically.`
+          : "Ingestion failed with no error details. It will be retried automatically.";
+      case "skipped":
+        return error
+          ? `No analyzable manifest found: ${error}. Ensure a package.json, pyproject.toml, requirements.txt, go.mod, or Cargo.toml exists at the repository root.`
+          : "No analyzable manifest found. Ensure a package.json, pyproject.toml, requirements.txt, go.mod, or Cargo.toml exists at the repository root.";
+      case "complete":
+        return "Indexed successfully.";
+    }
+  },
+}));
+
+vi.mock("@/lib/relative-time", () => ({
+  formatRelativeTime: (date: Date) => {
+    const now = Date.now();
+    const diffMs = now - date.getTime();
+    const diffSec = Math.floor(diffMs / 1000);
+    if (diffSec < 60) return "just now";
+    const diffMin = Math.floor(diffSec / 60);
+    if (diffMin < 60) return `${diffMin}m ago`;
+    const diffHour = Math.floor(diffMin / 60);
+    if (diffHour < 24) return `${diffHour}h ago`;
+    const diffDay = Math.floor(diffHour / 24);
+    return `${diffDay}d ago`;
   },
 }));
 
@@ -283,5 +316,205 @@ describe("RepoPage - complete repo with no missions", () => {
     expect(html).toContain("Either it");
     expect(html).toContain("in good shape");
     expect(html).toContain("finished ingesting yet");
+  });
+});
+
+describe("RepoPage - complete repo with freshness and badge", () => {
+  const now = Date.now();
+  const recentDate = new Date(now - 6 * 60 * 60 * 1000); // 6 hours ago
+
+  const completeRepoWithMissions = {
+    id: "repo-3",
+    owner: "testowner",
+    name: "testrepo3",
+    githubUrl: "https://github.com/testowner/testrepo3",
+    description: "Test repo with missions",
+    stars: 42,
+    openIssuesCount: 3,
+    topics: ["typescript", "security"],
+    homepageUrl: null,
+    ingestionStatus: "complete" as const,
+    lastIngestedAt: recentDate,
+    ingestionError: null,
+    submittedBy: "testuser",
+    orgId: null,
+    createdAt: new Date("2024-01-01"),
+    updatedAt: new Date("2024-01-01"),
+  };
+
+  const boardWithMissions = {
+    missions: [{ id: "m-1", title: "Mission 1" } as any, { id: "m-2", title: "Mission 2" } as any],
+    total: 12,
+    facets: {
+      severity: { critical: 1, high: 3, medium: 5, low: 3, unknown: 0 },
+      ecosystem: { npm: 12 },
+      effort: { trivial: 2, low: 5, medium: 3, high: 2 },
+      missionType: { vulnerability_fix: 8, dep_update: 4 },
+    },
+  };
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    mockGetRepoByOwnerAndName.mockResolvedValue(completeRepoWithMissions);
+    mockGetRepoBoardPage.mockResolvedValue(boardWithMissions);
+    mockGetBookmarkedRepoIds.mockResolvedValue(new Set());
+    mockGetRepoEcosystems.mockResolvedValue(["npm"]);
+
+    const { getServerSession } = await import("next-auth");
+    vi.mocked(getServerSession).mockResolvedValue(null);
+  });
+
+  it("renders freshness as 'last scanned X ago' with absolute timestamp as title", async () => {
+    const { default: RepoPage } = await import("./page");
+
+    const element = await RepoPage({
+      params: Promise.resolve({ owner: "testowner", name: "testrepo3" }),
+      searchParams: Promise.resolve({}),
+    });
+
+    const html = renderToString(element);
+
+    // Should show relative time
+    expect(html).toContain("last scanned");
+    expect(html).toContain("6h ago");
+    // Should have absolute timestamp as title/tooltip
+    expect(html).toContain(recentDate.toLocaleString());
+    expect(html).toContain("cursor-help");
+  });
+
+  it("renders badge disclosure with copy-paste markdown snippet", async () => {
+    const { default: RepoPage } = await import("./page");
+
+    const element = await RepoPage({
+      params: Promise.resolve({ owner: "testowner", name: "testrepo3" }),
+      searchParams: Promise.resolve({}),
+    });
+
+    const html = renderToString(element);
+
+    // Badge disclosure should be present
+    expect(html).toContain("Badge for this repo");
+    expect(html).toContain("Embed this in your README");
+    // Markdown snippet should contain the live origin
+    expect(html).toContain("![depTend](");
+    expect(html).toContain("/api/repos/testowner/testrepo3/badge.svg");
+  });
+});
+
+describe("RepoPage - failed repo with error reason", () => {
+  const failedRepo = {
+    id: "repo-4",
+    owner: "testowner",
+    name: "failedrepo",
+    githubUrl: "https://github.com/testowner/failedrepo",
+    description: "Failed repo",
+    stars: 10,
+    openIssuesCount: 0,
+    topics: [],
+    homepageUrl: null,
+    ingestionStatus: "failed" as const,
+    lastIngestedAt: new Date("2024-01-01"),
+    ingestionError: "GitHub API rate limit exceeded",
+    submittedBy: "testuser",
+    orgId: null,
+    createdAt: new Date("2024-01-01"),
+    updatedAt: new Date("2024-01-01"),
+  };
+
+  const emptyBoard = {
+    missions: [],
+    total: 0,
+    facets: {
+      severity: {},
+      ecosystem: {},
+      effort: {},
+      missionType: {},
+    },
+  };
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    mockGetRepoByOwnerAndName.mockResolvedValue(failedRepo);
+    mockGetRepoBoardPage.mockResolvedValue(emptyBoard);
+    mockGetBookmarkedRepoIds.mockResolvedValue(new Set());
+    mockGetRepoEcosystems.mockResolvedValue([]);
+
+    const { getServerSession } = await import("next-auth");
+    vi.mocked(getServerSession).mockResolvedValue(null);
+  });
+
+  it("renders detailed status with ingestionError for failed repo", async () => {
+    const { default: RepoPage } = await import("./page");
+
+    const element = await RepoPage({
+      params: Promise.resolve({ owner: "testowner", name: "failedrepo" }),
+      searchParams: Promise.resolve({}),
+    });
+
+    const html = renderToString(element);
+
+    // Should show the detailed status with error
+    expect(html).toContain("Ingestion failed: GitHub API rate limit exceeded");
+    expect(html).toContain("It will be retried automatically");
+  });
+});
+
+describe("RepoPage - skipped repo with error reason", () => {
+  const skippedRepoWithError = {
+    id: "repo-5",
+    owner: "testowner",
+    name: "skippedrepo",
+    githubUrl: "https://github.com/testowner/skippedrepo",
+    description: "Skipped repo with error",
+    stars: 5,
+    openIssuesCount: 0,
+    topics: [],
+    homepageUrl: null,
+    ingestionStatus: "skipped" as const,
+    lastIngestedAt: new Date("2024-01-01"),
+    ingestionError: "No package.json found at repository root",
+    submittedBy: "testuser",
+    orgId: null,
+    createdAt: new Date("2024-01-01"),
+    updatedAt: new Date("2024-01-01"),
+  };
+
+  const emptyBoard = {
+    missions: [],
+    total: 0,
+    facets: {
+      severity: {},
+      ecosystem: {},
+      effort: {},
+      missionType: {},
+    },
+  };
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    mockGetRepoByOwnerAndName.mockResolvedValue(skippedRepoWithError);
+    mockGetRepoBoardPage.mockResolvedValue(emptyBoard);
+    mockGetBookmarkedRepoIds.mockResolvedValue(new Set());
+    mockGetRepoEcosystems.mockResolvedValue([]);
+
+    const { getServerSession } = await import("next-auth");
+    vi.mocked(getServerSession).mockResolvedValue(null);
+  });
+
+  it("renders detailed status with ingestionError for skipped repo", async () => {
+    const { default: RepoPage } = await import("./page");
+
+    const element = await RepoPage({
+      params: Promise.resolve({ owner: "testowner", name: "skippedrepo" }),
+      searchParams: Promise.resolve({}),
+    });
+
+    const html = renderToString(element);
+
+    // Should show the detailed status with error
+    expect(html).toContain(
+      "No analyzable manifest found: No package.json found at repository root",
+    );
+    expect(html).toContain("Ensure a package.json");
   });
 });

@@ -132,12 +132,14 @@ describe("getRepoDirectoryBase", () => {
     opts: {
       bookmarks?: unknown[][];
       subscriptions?: unknown[][];
+      subscriptionEventTypes?: unknown[][];
       orgs?: unknown[][];
       severityRows?: unknown[][];
     } = {},
   ): import("./test-utils.js").RowRouter {
     const bookmarks = opts.bookmarks ?? [];
     const subscriptions = opts.subscriptions ?? [];
+    const subscriptionEventTypes = opts.subscriptionEventTypes ?? [];
     const orgs = opts.orgs ?? [];
     const severityRows = opts.severityRows ?? [
       ["r-1", "critical", 2],
@@ -146,7 +148,12 @@ describe("getRepoDirectoryBase", () => {
     return (sql: string): unknown[][] => {
       if (sql.includes('from "organizations"')) return orgs;
       if (sql.includes("repo_bookmarks")) return bookmarks;
-      if (sql.includes("notification_subscriptions")) return subscriptions;
+      if (sql.includes("notification_subscriptions")) {
+        // Distinguish between getSubscribedRepoIds (selects repoId only)
+        // and getSubscribedRepoEventTypes (selects repoId + eventTypes)
+        if (sql.includes("event_types")) return subscriptionEventTypes;
+        return subscriptions;
+      }
       if (/select distinct/i.test(sql))
         return [
           ["r-1", "npm"],
@@ -161,7 +168,11 @@ describe("getRepoDirectoryBase", () => {
     // The new getSubscribedRepoIds query selects only repo_id, so the mock
     // must return rows with just that column (matching the bookmarks pattern).
     const { db, calls: _calls } = makeDb(
-      summaryRouter({ bookmarks: [["r-1"]], subscriptions: [["r-2"]] }),
+      summaryRouter({
+        bookmarks: [["r-1"]],
+        subscriptions: [["r-2"]],
+        subscriptionEventTypes: [["r-2", ["new_mission", "claimed", "resolved"]]],
+      }),
     );
     const result = await getRepoDirectoryBase(db, { userLogin: "octocat" });
 
@@ -178,6 +189,7 @@ describe("getRepoDirectoryBase", () => {
       ecosystems: ["go"],
       isBookmarked: false,
       isSubscribed: true,
+      eventTypes: ["new_mission", "claimed", "resolved"],
     });
     expect(result[1]?.missionCounts.total).toBe(0);
   });

@@ -22,3 +22,31 @@ export function ingestionStatusNote(status: IngestionStatus): string | null {
       return null;
   }
 }
+
+/**
+ * Detailed status line for the repo page header when ingestionStatus is not "complete".
+ * Maps each enum value to a plain-language explanation of what the submitter should do,
+ * including the ingestionError text when present.
+ */
+export function ingestionStatusDetail(
+  status: IngestionStatus,
+  ingestionError: string | null,
+): string {
+  switch (status) {
+    case "pending":
+      return "This repo is queued for ingestion. It will be processed automatically.";
+    case "running":
+      return "Ingestion is currently in progress. Check back in a few minutes.";
+    case "failed":
+      return ingestionError
+        ? `Ingestion failed: ${ingestionError}. It will be retried automatically.`
+        : "Ingestion failed with no error details. It will be retried automatically.";
+    case "skipped":
+      return ingestionError
+        ? `No analyzable manifest found: ${ingestionError}. Ensure a package.json, pyproject.toml, requirements.txt, go.mod, or Cargo.toml exists at the repository root.`
+        : "No analyzable manifest found. Ensure a package.json, pyproject.toml, requirements.txt, go.mod, or Cargo.toml exists at the repository root.";
+    case "complete":
+      // Should not be called for complete status, but exhaustiveness requires a case.
+      return "Indexed successfully.";
+  }
+}

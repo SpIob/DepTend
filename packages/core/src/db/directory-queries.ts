@@ -15,7 +15,10 @@ import { dependencies, missions, organizations, repos, advisories } from "./sche
 import type { Ecosystem, Severity } from "./schema.js";
 import type { ReadonlyDb } from "./queries.js";
 import { getBookmarkedRepoIds } from "./bookmarks.js";
-import { getSubscribedRepoIds } from "../notifications/subscriptions.js";
+import {
+  getSubscribedRepoIds,
+  getSubscribedRepoEventTypes,
+} from "../notifications/subscriptions.js";
 import {
   EMPTY_REPO_MISSION_COUNTS,
   type RepoMissionCounts,
@@ -260,18 +263,22 @@ export async function getRepoDirectoryBase(
   // every entry point (board-wide listing, per-org page, future surfaces).
   let bookmarkedIds: Set<string> = new Set<string>();
   let subscribedIds: Set<string> = new Set<string>();
+  let subscribedEventTypes = new Map<string, string[]>();
   if (userLogin !== undefined) {
-    const [bookmarks, subscriptions] = await Promise.all([
+    const [bookmarks, subscriptions, eventTypesMap] = await Promise.all([
       getBookmarkedRepoIds(db, userLogin),
       getSubscribedRepoIds(db, userLogin),
+      getSubscribedRepoEventTypes(db, userLogin),
     ]);
     bookmarkedIds = bookmarks;
     subscribedIds = subscriptions;
+    subscribedEventTypes = eventTypesMap;
   }
 
-  return repoRows.map((repo) => {
+  return repoRows.map((repo): RepoWithMissionSummary => {
     const isBookmarked = bookmarkedIds.has(repo.id);
     const isSubscribed = subscribedIds.has(repo.id);
+    const eventTypes = isSubscribed ? subscribedEventTypes.get(repo.id) : undefined;
     return {
       ...repo,
       ecosystems: Array.from(ecosystemsByRepo.get(repo.id) ?? []),
@@ -282,7 +289,10 @@ export async function getRepoDirectoryBase(
       // notification toggle on a presence check rather than always-false
       // (per ADR 0027's "false, not a tri-state" — except this field is
       // genuinely tri-state: it can be absent entirely).
-      ...(userLogin !== undefined && { isSubscribed }),
+      ...(userLogin !== undefined && {
+        isSubscribed,
+        ...(isSubscribed && eventTypes !== undefined && { eventTypes }),
+      }),
     };
   });
 }

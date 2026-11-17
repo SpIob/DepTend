@@ -18,6 +18,7 @@ import { useSearchDebounce } from "./hooks/useSearchDebounce";
 import { useBoardNavigation } from "./hooks/useBoardNavigation";
 import { useGroupByRepo } from "./hooks/useGroupByRepo";
 import { useMissionStatusSync } from "./hooks/useMissionStatusSync";
+import { missionsToMarkdown, copyToClipboard } from "./mission-board-markdown";
 
 /**
  * The mission board, used by both /missions (board-wide, ADR 0031) and
@@ -140,6 +141,22 @@ export function PaginatedMissionBoard({
     }
   }
 
+  // Copy-as-Markdown state
+  const [copied, setCopied] = useState(false);
+
+  const handleCopyMarkdown = async () => {
+    const markdown = missionsToMarkdown(missions, showGroupByRepo);
+    if (!markdown) return;
+
+    try {
+      await copyToClipboard(markdown);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard API failed silently - could add error toast here if needed
+    }
+  };
+
   const isFiltered =
     initialQuery.severity.size > 0 ||
     initialQuery.ecosystem.size > 0 ||
@@ -152,128 +169,162 @@ export function PaginatedMissionBoard({
   const rangeEnd = Math.min(total, page * pageSize);
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="sticky top-0 z-10 flex flex-col gap-3 border-b border-border bg-bg py-3">
-        <MissionSearchInput value={search} onChange={setSearch} />
-        <FilterChips
-          initialQuery={initialQuery}
-          facets={facets}
+    <>
+      <div className="flex flex-col gap-4">
+        <div className="sticky top-0 z-10 flex flex-col gap-3 border-b border-border bg-bg py-3">
+          <MissionSearchInput value={search} onChange={setSearch} />
+          <FilterChips
+            initialQuery={initialQuery}
+            facets={facets}
+            isPending={isPending}
+            navigate={navigate}
+            buildHref={buildHref}
+          />
+          {isFiltered && (
+            <button
+              type="button"
+              onClick={() => {
+                navigate(
+                  buildHref({
+                    q: "",
+                    severity: new Set(),
+                    ecosystem: new Set(),
+                    effort: new Set(),
+                    missionType: new Set(),
+                  }),
+                );
+              }}
+              disabled={isPending}
+              className="self-start font-mono text-xs text-accent underline decoration-dotted underline-offset-2 hover:text-ink disabled:opacity-50"
+            >
+              Clear filters
+            </button>
+          )}
+          <div
+            className={`flex flex-wrap items-center gap-3 ${showGroupByRepo ? "justify-between" : "justify-end"}`}
+          >
+            {showGroupByRepo && (
+              <label
+                htmlFor="group-by-repo"
+                className="flex items-center gap-2 font-mono text-xs text-ink-muted"
+              >
+                <input
+                  id="group-by-repo"
+                  type="checkbox"
+                  checked={groupByRepo}
+                  onChange={(event) => {
+                    setGroupByRepo(event.target.checked);
+                  }}
+                  className="accent-accent"
+                />
+                Group by repo
+              </label>
+            )}
+            <label className="flex items-center gap-2 font-mono text-xs text-ink-muted">
+              Sort
+              <select
+                value={initialQuery.sort}
+                onChange={(event) => {
+                  navigate(buildHref({ sort: event.target.value as SortMode }));
+                }}
+                disabled={isPending}
+                className="rounded-sm border border-border bg-surface px-2 py-1 font-mono text-xs text-ink"
+              >
+                {SORT_MODES.map((mode) => (
+                  <option key={mode} value={mode}>
+                    {SORT_LABELS[mode]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              onClick={handleCopyMarkdown}
+              disabled={missions.length === 0 || isPending}
+              className="flex items-center gap-1.5 rounded-sm border border-border bg-surface px-2.5 py-1 font-mono text-xs text-ink-muted transition-colors hover:border-ink-muted hover:text-ink disabled:cursor-not-allowed disabled:opacity-50"
+              aria-label="Copy current page as Markdown"
+              title="Copies the current page's missions as a Markdown table (current page only)"
+            >
+              <svg
+                viewBox="0 0 16 16"
+                width="12"
+                height="12"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                aria-hidden="true"
+                className="pointer-events-none"
+              >
+                <rect x="2" y="2" width="10" height="10" rx="1" strokeLinecap="round" />
+                <path d="M6 6h6v6" strokeLinecap="round" />
+              </svg>
+              Copy as Markdown
+            </button>
+          </div>
+          {(isFiltered || pageCount > 1 || isPending) && (
+            <p className="font-mono text-xs text-ink-muted">
+              {rangeStart.toString()}–{rangeEnd.toString()} of {total.toString()} missions
+              {isPending && (
+                <span role="status" className="ml-3 text-accent">
+                  Updating…
+                </span>
+              )}
+            </p>
+          )}
+        </div>
+
+        {missions.length === 0 ? (
+          <EmptyFilterState />
+        ) : groups !== null ? (
+          <div className="flex flex-col gap-5">
+            {groups.map((group) => (
+              <div key={group.repoKey} className="flex flex-col gap-3">
+                <h2 className="border-b border-border pb-1 font-mono text-xs font-semibold uppercase tracking-wide text-ink-muted">
+                  {group.repoKey}{" "}
+                  <span className="normal-case">({group.missions.length.toString()})</span>
+                </h2>
+                <ul className="flex flex-col gap-3">
+                  {group.missions.map((mission) => (
+                    <li key={mission.id}>
+                      <MissionCard mission={mission} onStatusChange={handleStatusChange} />
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <>
+            {/* Cards are h3 (mission-card.tsx); this gives the flat list its
+                h2 parent so the page's heading outline stays h1 → h2 → h3. */}
+            <h2 className="sr-only">Missions</h2>
+            <ul className="flex flex-col gap-3">
+              {missions.map((mission) => (
+                <li key={mission.id}>
+                  <MissionCard mission={mission} onStatusChange={handleStatusChange} />
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+
+        <Pagination
+          page={page}
+          pageCount={pageCount}
           isPending={isPending}
           navigate={navigate}
           buildHref={buildHref}
         />
-        {isFiltered && (
-          <button
-            type="button"
-            onClick={() => {
-              navigate(
-                buildHref({
-                  q: "",
-                  severity: new Set(),
-                  ecosystem: new Set(),
-                  effort: new Set(),
-                  missionType: new Set(),
-                }),
-              );
-            }}
-            disabled={isPending}
-            className="self-start font-mono text-xs text-accent underline decoration-dotted underline-offset-2 hover:text-ink disabled:opacity-50"
-          >
-            Clear filters
-          </button>
-        )}
-        <div
-          className={`flex flex-wrap items-center gap-3 ${showGroupByRepo ? "justify-between" : "justify-end"}`}
-        >
-          {showGroupByRepo && (
-            <label
-              htmlFor="group-by-repo"
-              className="flex items-center gap-2 font-mono text-xs text-ink-muted"
-            >
-              <input
-                id="group-by-repo"
-                type="checkbox"
-                checked={groupByRepo}
-                onChange={(event) => {
-                  setGroupByRepo(event.target.checked);
-                }}
-                className="accent-accent"
-              />
-              Group by repo
-            </label>
-          )}
-          <label className="flex items-center gap-2 font-mono text-xs text-ink-muted">
-            Sort
-            <select
-              value={initialQuery.sort}
-              onChange={(event) => {
-                navigate(buildHref({ sort: event.target.value as SortMode }));
-              }}
-              disabled={isPending}
-              className="rounded-sm border border-border bg-surface px-2 py-1 font-mono text-xs text-ink"
-            >
-              {SORT_MODES.map((mode) => (
-                <option key={mode} value={mode}>
-                  {SORT_LABELS[mode]}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-        {(isFiltered || pageCount > 1 || isPending) && (
-          <p className="font-mono text-xs text-ink-muted">
-            {rangeStart.toString()}–{rangeEnd.toString()} of {total.toString()} missions
-            {isPending && (
-              <span role="status" className="ml-3 text-accent">
-                Updating…
-              </span>
-            )}
-          </p>
-        )}
       </div>
-
-      {missions.length === 0 ? (
-        <EmptyFilterState />
-      ) : groups !== null ? (
-        <div className="flex flex-col gap-5">
-          {groups.map((group) => (
-            <div key={group.repoKey} className="flex flex-col gap-3">
-              <h2 className="border-b border-border pb-1 font-mono text-xs font-semibold uppercase tracking-wide text-ink-muted">
-                {group.repoKey}{" "}
-                <span className="normal-case">({group.missions.length.toString()})</span>
-              </h2>
-              <ul className="flex flex-col gap-3">
-                {group.missions.map((mission) => (
-                  <li key={mission.id}>
-                    <MissionCard mission={mission} onStatusChange={handleStatusChange} />
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
+      {copied && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed bottom-4 right-4 z-50 rounded-sm border border-accent bg-accent px-3 py-2 font-mono text-xs text-white shadow-lg"
+        >
+          Copied to clipboard
         </div>
-      ) : (
-        <>
-          {/* Cards are h3 (mission-card.tsx); this gives the flat list its
-              h2 parent so the page's heading outline stays h1 → h2 → h3. */}
-          <h2 className="sr-only">Missions</h2>
-          <ul className="flex flex-col gap-3">
-            {missions.map((mission) => (
-              <li key={mission.id}>
-                <MissionCard mission={mission} onStatusChange={handleStatusChange} />
-              </li>
-            ))}
-          </ul>
-        </>
       )}
-
-      <Pagination
-        page={page}
-        pageCount={pageCount}
-        isPending={isPending}
-        navigate={navigate}
-        buildHref={buildHref}
-      />
-    </div>
+    </>
   );
 }

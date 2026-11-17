@@ -39,17 +39,19 @@ import type { AdvisorySummary, MissionWithScore } from "./query-types.js";
 export type ReadonlyDb = NeonHttpDatabase<typeof schema>;
 
 /**
- * Advisory columns the list rows actually ship (see AdvisorySummary in
- * query-types.ts for what's left out and why). The key order here is the
- * SELECT-list order the driver maps positional rows against — tests' joinedRow()
- * fixture must match it.
- */
+ /** Advisory columns the list rows actually ship (see AdvisorySummary in
+  * query-types.ts for what's left out and why). The key order here is the
+  * SELECT-list order the driver maps positional rows against — tests' joinedRow()
+  * fixture must match it.
+  */
 const advisoryListSelection = {
   id: advisories.id,
   osvId: advisories.osvId,
   source: advisories.source,
   ecosystem: advisories.ecosystem,
   severity: advisories.severity,
+  cvssScore: advisories.cvssScore,
+  epssScore: advisories.epssScore,
   fixedVersion: advisories.fixedVersion,
   publishedAt: advisories.publishedAt,
 };
@@ -91,6 +93,8 @@ interface MissionJoinRow {
   dependency: typeof dependencies.$inferSelect | null;
   repo: typeof repos.$inferSelect;
 }
+
+export type { MissionJoinRow };
 
 export function toMissionWithScore(row: MissionJoinRow): MissionWithScore {
   // A left-joined partial selection types every field as nullable, but at
@@ -216,3 +220,11 @@ export {
   getTotalRepoCount,
   getSkippedRepos,
 } from "./directory-queries.js";
+
+export {
+  claimMission,
+  unclaimMission,
+  dismissMission,
+  undismissMission,
+  getMissionById,
+} from "./missions.js";

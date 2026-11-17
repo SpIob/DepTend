@@ -4,7 +4,7 @@ import type { RepoWithMissionSummary } from "@deptend/core";
 import { EcosystemBadge } from "./ecosystem-badge";
 import { BookmarkToggle } from "./bookmark-toggle";
 import { NotificationToggle } from "./notification-toggle";
-import { ingestionStatusNote } from "@/lib/ingestion-status";
+import { ingestionStatusNote, ingestionStatusDetail } from "@/lib/ingestion-status";
 
 const SEVERITY_ORDER: readonly Severity[] = ["critical", "high", "medium", "low", "unknown"];
 
@@ -39,6 +39,24 @@ function MissionCounts({
   );
 }
 
+function IngestionStatusChip({
+  status,
+  error,
+}: {
+  status: "skipped" | "failed";
+  error: string | null;
+}): React.JSX.Element {
+  const detail = ingestionStatusDetail(status, error);
+  return (
+    <span
+      className="inline-flex items-center rounded border border-border px-2 py-0.5 font-mono text-[10px] text-ink-muted/70"
+      title={detail}
+    >
+      {status}
+    </span>
+  );
+}
+
 export function RepoCard({ repo }: { repo: RepoWithMissionSummary }): React.JSX.Element {
   const statusNote = ingestionStatusNote(repo.ingestionStatus);
   const repoFullName = `${repo.owner}/${repo.name}`;
@@ -63,6 +81,9 @@ export function RepoCard({ repo }: { repo: RepoWithMissionSummary }): React.JSX.
               repoId={repo.id}
               repoFullName={repoFullName}
               initialSubscribed={repo.isSubscribed}
+              initialEventTypes={
+                (repo.eventTypes ?? []) as import("./notification-helpers").AllowedEventType[]
+              }
             />
           )}
         </div>
@@ -84,6 +105,14 @@ export function RepoCard({ repo }: { repo: RepoWithMissionSummary }): React.JSX.
         <span className="font-mono text-xs text-ink-muted">{statusNote}</span>
       ) : (
         <MissionCounts counts={repo.missionCounts} />
+      )}
+
+      {repo.ingestionStatus === "skipped" && (
+        <IngestionStatusChip status="skipped" error={repo.ingestionError} />
+      )}
+
+      {repo.ingestionStatus === "failed" && (
+        <IngestionStatusChip status="failed" error={repo.ingestionError} />
       )}
 
       <div className="flex items-center justify-between border-t border-border/60 pt-2 font-mono text-[11px] text-ink-muted">

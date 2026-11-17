@@ -22,7 +22,8 @@ import { WithdrawButton } from "@/components/withdraw-button";
 import { EcosystemBadge } from "@/components/ecosystem-badge";
 import { BrandMark } from "@/components/brand-mark";
 import { PageHeader } from "@/components/page-header";
-import { ingestionStatusNote } from "@/lib/ingestion-status";
+import { ingestionStatusNote, ingestionStatusDetail } from "@/lib/ingestion-status";
+import { formatRelativeTime } from "@/lib/relative-time";
 import { logRequestTimings } from "@/lib/timing/log";
 
 export const dynamic = "force-dynamic";
@@ -90,6 +91,11 @@ export default async function RepoPage({
   ]);
 
   const statusNote = ingestionStatusNote(repo.ingestionStatus);
+  const statusDetail =
+    repo.ingestionStatus !== "complete"
+      ? ingestionStatusDetail(repo.ingestionStatus, repo.ingestionError)
+      : null;
+  const freshness = repo.lastIngestedAt !== null ? formatRelativeTime(repo.lastIngestedAt) : null;
   // Per-request timing (ADR 0052 follow-up): measures the session + board +
   // bookmarks + ecosystems fetches above, not the render. Same shape as
   // /missions's logger.
@@ -140,10 +146,20 @@ export default async function RepoPage({
             on their own line so the title row never truncates to fit them. */}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-xs text-ink-muted">
           <span>★ {repo.stars.toLocaleString()}</span>
-          {repo.lastIngestedAt !== null && (
-            <span>Ingested {repo.lastIngestedAt.toLocaleDateString()}</span>
+          {freshness !== null && repo.lastIngestedAt !== null && (
+            <>
+              <span>last scanned {freshness}</span>
+              <span
+                title={repo.lastIngestedAt.toISOString()}
+                className="cursor-help underline decoration-dotted underline-offset-1"
+              >
+                {repo.lastIngestedAt.toLocaleString()}
+              </span>
+            </>
           )}
+          {repo.lastIngestedAt === null && <span>never scanned</span>}
         </div>
+        {statusDetail !== null && <p className="text-sm text-ink-muted">{statusDetail}</p>}
         <p className="max-w-xl text-sm leading-relaxed text-ink-muted">
           {repo.description ?? "Prioritized maintenance missions for this repo."}
         </p>
@@ -154,6 +170,30 @@ export default async function RepoPage({
           ← All repos
         </Link>
       </PageHeader>
+
+      {/* Badge disclosure */}
+      <details className="rounded-sm border border-border bg-surface p-4">
+        <summary className="cursor-pointer select-none font-mono text-xs text-ink">
+          Badge for this repo
+        </summary>
+        <div className="mt-3 space-y-2">
+          <p className="text-sm text-ink-muted">
+            Embed this in your README to show your repo's mission posture:
+          </p>
+          <div className="overflow-x-auto rounded bg-black/50 p-3 font-mono text-xs text-green-300">
+            <code>
+              {`![depTend](${process.env.NEXT_PUBLIC_APP_URL ?? "https://deptend.dev"}/api/repos/${repo.owner}/${repo.name}/badge.svg)`}
+            </code>
+          </div>
+          <p className="text-xs text-ink-muted">
+            Markdown:
+            <br />
+            <code className="rounded bg-black/50 px-1.5 py-0.5 font-mono text-[10px]">
+              {`![depTend](${process.env.NEXT_PUBLIC_APP_URL ?? "https://deptend.dev"}/api/repos/${repo.owner}/${repo.name}/badge.svg)`}
+            </code>
+          </p>
+        </div>
+      </details>
 
       {statusNote !== null ? (
         <>

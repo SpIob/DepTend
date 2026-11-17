@@ -19,7 +19,13 @@
 
 import { and, eq } from "drizzle-orm";
 import { missions } from "./schema.js";
-import type { ReadonlyDb } from "./queries.js";
+import {
+  missionJoinRows,
+  toMissionWithScore,
+  type MissionJoinRow,
+  type ReadonlyDb,
+} from "./queries.js";
+import type { MissionWithScore } from "./query-types.js";
 
 /**
  * Claims an open mission on behalf of claimedBy (a GitHub login). Only
@@ -164,4 +170,26 @@ export async function undismissMission(
     .limit(1);
 
   return existing === undefined ? "not_found" : "not_dismissed";
+}
+
+/**
+ * Fetches a single mission by its UUID with its score, advisory, dependency,
+ * and owning repo — the full MissionWithScore shape used by the permalink
+ * page /mission/[id]. Returns null if not found.
+ *
+ * PK lookup is cheap; no caching wrapper (the page uses force-dynamic per
+ * ADR 0033, and a single-row join by primary key is fast enough to run on
+ * every request without unstable_cache).
+ */
+export async function getMissionById(
+  db: ReadonlyDb,
+  missionId: string,
+): Promise<MissionWithScore | null> {
+  const rows = await missionJoinRows(db).where(eq(missions.id, missionId)).limit(1);
+
+  if (rows.length === 0) {
+    return null;
+  }
+
+  return toMissionWithScore(rows[0] as MissionJoinRow);
 }

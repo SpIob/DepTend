@@ -111,6 +111,7 @@ export const ADVISORY_VALUES: Record<string, unknown> = {
   packageName: "lodash",
   severity: "high",
   cvssScore: 7.5,
+  epssScore: 0.1,
   summary: "summary",
   details: null,
   affectedVersions: [],
@@ -165,6 +166,8 @@ export function advisoryListColumns(): unknown[] {
     ADVISORY_VALUES.source,
     ADVISORY_VALUES.ecosystem,
     ADVISORY_VALUES.severity,
+    ADVISORY_VALUES.cvssScore,
+    ADVISORY_VALUES.epssScore,
     ADVISORY_VALUES.fixedVersion,
     ADVISORY_VALUES.publishedAt,
   ];
@@ -176,6 +179,8 @@ export const ADVISORY_SUMMARY_EXPECTED = {
   source: ADVISORY_VALUES.source,
   ecosystem: ADVISORY_VALUES.ecosystem,
   severity: ADVISORY_VALUES.severity,
+  cvssScore: ADVISORY_VALUES.cvssScore,
+  epssScore: ADVISORY_VALUES.epssScore,
   fixedVersion: ADVISORY_VALUES.fixedVersion,
   publishedAt: ADVISORY_VALUES.publishedAt,
 };

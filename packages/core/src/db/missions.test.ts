@@ -8,8 +8,26 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { claimMission, dismissMission, undismissMission, unclaimMission } from "./missions.js";
+import {
+  claimMission,
+  dismissMission,
+  undismissMission,
+  unclaimMission,
+  getMissionById,
+} from "./missions.js";
 import { isValidUuid } from "./validation.js";
+import {
+  makeDb,
+  joinedRow,
+  flatten,
+  MISSION_VALUES,
+  SCORE_VALUES,
+  DEPENDENCY_VALUES,
+  REPO_VALUES,
+  advisoryListColumns,
+  ADVISORY_SUMMARY_EXPECTED,
+} from "./test-utils.js";
+import { missions, missionScores, dependencies, repos } from "./schema.js";
 
 // ---------------------------------------------------------------------------
 // Mock DB
@@ -300,5 +318,51 @@ describe("undismissMission", () => {
     const result = await undismissMission(db, "does-not-exist");
 
     expect(result).toBe("not_found");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getMissionById
+// ---------------------------------------------------------------------------
+
+describe("getMissionById", () => {
+  it("returns MissionWithScore with full join data when mission exists", async () => {
+    const { db } = makeDb(() => [joinedRow()]);
+
+    const result = await getMissionById(db, "m-1");
+
+    expect(result).not.toBeNull();
+    expect(result).toMatchObject({
+      ...MISSION_VALUES,
+      score: SCORE_VALUES,
+      advisory: ADVISORY_SUMMARY_EXPECTED,
+      dependency: DEPENDENCY_VALUES,
+      repo: REPO_VALUES,
+    });
+  });
+
+  it("returns null when mission doesn't exist", async () => {
+    const { db } = makeDb(() => []);
+
+    const result = await getMissionById(db, "does-not-exist");
+
+    expect(result).toBeNull();
+  });
+
+  it("normalizes an all-null left-join advisory projection to null", async () => {
+    const { db } = makeDb(() => [
+      [
+        ...flatten(missions, MISSION_VALUES),
+        ...flatten(missionScores, SCORE_VALUES),
+        ...advisoryListColumns().map(() => null),
+        ...flatten(dependencies, DEPENDENCY_VALUES),
+        ...flatten(repos, REPO_VALUES),
+      ],
+    ]);
+
+    const result = await getMissionById(db, "m-1");
+
+    expect(result).not.toBeNull();
+    expect(result?.advisory).toBeNull();
   });
 });

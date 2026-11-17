@@ -92,3 +92,25 @@ export async function getSubscribedRepoIds(
     .where(eq(notificationSubscriptions.userLogin, userLogin));
   return new Set(rows.map((r) => r.repoId));
 }
+
+/**
+ * Get subscription details including eventTypes for a user.
+ * Returns a Map of repoId -> eventTypes array.
+ */
+export async function getSubscribedRepoEventTypes(
+  db: ReadonlyDb,
+  userLogin: string,
+): Promise<Map<string, string[]>> {
+  const rows = await db
+    .select({
+      repoId: notificationSubscriptions.repoId,
+      eventTypes: notificationSubscriptions.eventTypes,
+    })
+    .from(notificationSubscriptions)
+    .where(eq(notificationSubscriptions.userLogin, userLogin));
+  const map = new Map<string, string[]>();
+  for (const row of rows) {
+    map.set(row.repoId, row.eventTypes);
+  }
+  return map;
+}

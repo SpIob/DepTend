@@ -25,6 +25,7 @@ import {
   getRepoEcosystems as coreGetRepoEcosystems,
   getRepoDirectoryBase as coreGetRepoDirectoryBase,
   getRepoMissionsWithScores as coreGetRepoMissionsWithScores,
+  getMissionById as coreGetMissionById,
   type BoardFilters,
   type BoardPage,
   type RepoDirectorySummary,
@@ -163,4 +164,11 @@ export async function getBookmarkedRepoIds(userLogin: string): Promise<Set<strin
 /** Ecosystems present in one repo — backs the repo detail page's badge row. Uncached — cheap indexed lookup. */
 export async function getRepoEcosystems(repoId: string): Promise<Ecosystem[]> {
   return withTiming("repos:ecosystems", () => coreGetRepoEcosystems(getDb(), repoId));
+}
+
+/**
+ * Single mission by UUID — the /mission/[id] page's query. Uncached — cheap PK lookup.
+ */
+export async function getMissionById(missionId: string): Promise<MissionWithScore | null> {
+  return withTiming("missions:by-id", () => coreGetMissionById(getDb(), missionId));
 }
