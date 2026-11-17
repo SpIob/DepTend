@@ -31,6 +31,19 @@ describe("parseGithubUrl", () => {
     });
   });
 
+  it.each([
+    "git@github.com:owner/repo",
+    "git@github.com:owner/repo.git",
+    "git@github.com:owner/repo/",
+    "git@github.com:owner/repo.git/",
+  ])("accepts SSH form %s and normalizes it to https://github.com/owner/repo", (input) => {
+    expect(parseGithubUrl(input)).toEqual({
+      githubUrl: "https://github.com/owner/repo",
+      owner: "owner",
+      name: "repo",
+    });
+  });
+
   it("trims leading/trailing whitespace before parsing", () => {
     expect(parseGithubUrl("  https://github.com/owner/repo  ")).toEqual({
       githubUrl: "https://github.com/owner/repo",
@@ -69,6 +82,9 @@ describe("parseGithubUrl", () => {
     ["not a url at all", "garbage input"],
     ["https://github.com/-owner/repo", "owner starting with a hyphen"],
     ["https://github.com/owner-/repo", "owner ending with a hyphen"],
+    ["git@gitlab.com:owner/repo", "SSH non-GitHub host (gitlab.com)"],
+    ["git@github.com:owner", "SSH missing repo name"],
+    ["git@github.com:", "SSH missing owner and repo"],
   ])("rejects %s (%s)", (input) => {
     expect(parseGithubUrl(input)).toBeNull();
   });
