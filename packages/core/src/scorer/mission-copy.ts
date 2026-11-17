@@ -54,7 +54,11 @@ function severityLine(ctx: MissionScoringContext): string {
 
 function osvLine(ctx: MissionScoringContext): string {
   const { advisory } = ctx;
-  return `Reported via ${advisory.osvId} (${advisory.source.toUpperCase()}).`;
+  let line = `Reported via ${advisory.osvId} (${advisory.source.toUpperCase()}).`;
+  if (ctx.matchMethod === "version_spec") {
+    line += " Matched by declared version range (not lock-file-resolved version).";
+  }
+  return line;
 }
 
 interface MissionCopyTemplate {

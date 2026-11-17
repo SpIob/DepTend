@@ -196,9 +196,17 @@ async function main() {
   // per-repo try/catch inside ingestRepo somehow still throws — a Pool
   // holds an open WebSocket that must be closed explicitly, unlike the
   // stateless neon-http client this used to be (ADR 0009).
+  let rateLimited = false;
   try {
     for (const repo of targetRepos) {
-      const success = await ingestRepo(
+      if (rateLimited) {
+        log(
+          "warn",
+          `Rate limit encountered — skipping remaining ${String(targetRepos.length - failCount)} repo(s) to avoid burning budget.`,
+        );
+        break;
+      }
+      const { success, rateLimited: repoRateLimited } = await ingestRepo(
         repo,
         db,
         writer,
@@ -212,7 +220,12 @@ async function main() {
         librariesIoApiKey,
         args.triggeredBy,
       );
-      if (!success) failCount++;
+      if (!success) {
+        failCount++;
+      }
+      if (repoRateLimited) {
+        rateLimited = true;
+      }
     }
   } finally {
     await pool.end();
@@ -233,15 +246,16 @@ async function main() {
 
 /**
  * Run the full ingestion pipeline for a single repo.
- * Returns true on success, false on failure (errors are logged, not thrown).
+ * Returns { success, rateLimited } where success=false means the repo
+ * failed to ingest, and rateLimited=true means the failure was due to
+ * a GitHub rate limit (so the main loop should stop processing).
  *
  * Exported (with a small set of mocks) by scripts/ingest.test.js as the
  * regression target for the c32878f "Assignment to constant variable"
  * bug. The test calls ingestRepo directly; the main() call at the bottom
  * of this file is gated on import.meta.url so importing the module
  * from a test doesn't kick off a real cron run.
- */
-/**
+ *
  * @param {{ githubUrl?: string; url?: string; submittedBy?: string | null }} repo
  * @param {import("../packages/core/dist/db/db-types.js").AnyNeonDb} db
  * @param {import("../packages/core/dist/ingestor/writer.js").IngestionWriter} writer
@@ -254,7 +268,7 @@ async function main() {
  * @param {string | null} githubToken
  * @param {string | null} librariesIoApiKey
  * @param {"cron" | "manual" | "submit"} triggeredBy
- * @returns {Promise<boolean>}
+ * @returns {Promise<{ success: boolean; rateLimited: boolean }>}
  */
 export async function ingestRepo(
   repo,
@@ -483,10 +497,10 @@ export async function ingestRepo(
       if (err instanceof Error && err.stack) {
         log("error", err.stack);
       }
-      return false;
+      return { success: false, rateLimited: false };
     }
 
-    return true;
+    return { success: true, rateLimited: false };
   } catch (err) {
     // A repo that no longer exists on GitHub (deleted, renamed past
     // redirect, made private) is permanently broken. Mark it 'skipped' —
@@ -511,7 +525,7 @@ export async function ingestRepo(
           // Best-effort — the warn above already records what happened
         }
       }
-      return true;
+      return { success: true, rateLimited: false };
     }
 
     log(
@@ -538,7 +552,10 @@ export async function ingestRepo(
       }
     }
 
-    return false;
+    // Detect GitHub rate limit to signal the main loop to stop
+    const rateLimited = err instanceof GitHubMetaError && err.kind === "rate_limited";
+
+    return { success: false, rateLimited };
   }
 }
 

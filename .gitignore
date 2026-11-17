@@ -67,6 +67,7 @@ coverage/
 AGENTS.md
 GROWTH_PLAN.md
 TRAFFIC_GROWTH_PLAN.md
+.hermes.md
 
 # npm pack/publish artifacts
 *.tgz

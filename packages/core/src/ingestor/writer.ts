@@ -99,6 +99,13 @@ export interface WriteIngestionOutput {
    * ON DELETE SET NULL on missions.dependency_id.
    */
   dependenciesPruned: number;
+  /**
+   * Dependency-advisory links removed because this run's OSV query was
+   * complete and the advisory set is authoritative — links for advisories
+   * that no longer match are deleted (ADR 0068). Only when osvComplete
+   * and manifest_resolved are both true.
+   */
+  dependencyAdvisoriesPruned: number;
   /** All warnings collected across the ingestion pipeline */
   allWarnings: string[];
 }
@@ -149,18 +156,37 @@ export class IngestionWriter {
     let advisoriesWritten = 0;
     let dependencyAdvisoriesWritten = 0;
     let dependenciesPruned = 0;
+    let dependencyAdvisoriesPruned = 0;
 
     try {
       // 3–5. Transactional: advisories → dependencies → dependency_advisories
       const counts = await this.db.transaction(async (tx) => {
+        // Acquire per-repo advisory lock to prevent concurrent ingestions
+        // from interleaving dependency/link writes (ADR 0068, mirrors
+        // MissionWriter's lock at scorer/writer.ts:251).
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${repoId}))`);
+
         const advCount = await this.upsertAdvisories(tx, input.osvResult.advisories);
-        const { depCount, depAdvisoryCount } = await this.upsertDependencies(
+        const { depCount, depAdvisoryCount, depIds } = await this.upsertDependencies(
           tx,
           repoId,
           input.ingestorResult,
           input.registryResult,
           input.osvResult,
         );
+
+        // Prune stale dependency_advisories links when the OSV stage was
+        // complete (no detail-fetch failures). Only delete links for this
+        // repo's dependencies that are not in this run's authoritative set.
+        let depAdvisoryPruned = 0;
+        if (
+          input.osvResult.osvComplete &&
+          input.ingestorResult.manifest_resolved &&
+          depIds.length > 0
+        ) {
+          depAdvisoryPruned = await this.pruneStaleAdvisoryLinks(tx, depIds, input.osvResult);
+        }
+
         // Prune only when the manifest actually resolved this run: a
         // successfully-parsed manifest is the authoritative dependency set,
         // but a run where probing failed or found nothing to read must NOT
@@ -176,13 +202,14 @@ export class IngestionWriter {
               ),
             )
           : 0;
-        return { advCount, depCount, depAdvisoryCount, prunedCount };
+        return { advCount, depCount, depAdvisoryCount, prunedCount, depAdvisoryPruned };
       });
 
       dependenciesWritten = counts.depCount;
       advisoriesWritten = counts.advCount;
       dependencyAdvisoriesWritten = counts.depAdvisoryCount;
       dependenciesPruned = counts.prunedCount;
+      dependencyAdvisoriesPruned = counts.depAdvisoryPruned;
     } catch (err) {
       await this.closeRun(runId, "failed", 0, 0, err);
       throw err;
@@ -221,6 +248,7 @@ export class IngestionWriter {
       advisoriesWritten,
       dependencyAdvisoriesWritten,
       dependenciesPruned,
+      dependencyAdvisoriesPruned,
       allWarnings,
     };
   }
@@ -360,9 +388,9 @@ export class IngestionWriter {
     ingestorResult: IngestorResult,
     registryResult: NpmRegistryFetchResult,
     osvResult: OsvFetchResult,
-  ): Promise<{ depCount: number; depAdvisoryCount: number }> {
+  ): Promise<{ depCount: number; depAdvisoryCount: number; depIds: string[] }> {
     if (ingestorResult.dependencies.length === 0) {
-      return { depCount: 0, depAdvisoryCount: 0 };
+      return { depCount: 0, depAdvisoryCount: 0, depIds: [] };
     }
 
     // Build dependency rows, merging registry metadata in. Rows whose
@@ -540,7 +568,11 @@ export class IngestionWriter {
       }
     }
 
-    return { depCount: upsertedRows.length, depAdvisoryCount };
+    return {
+      depCount: upsertedRows.length,
+      depAdvisoryCount,
+      depIds: upsertedRows.map((r) => r.id),
+    };
   }
 
   // ---------------------------------------------------------------------------
@@ -588,6 +620,85 @@ export class IngestionWriter {
 
     await tx.delete(dependencies).where(inArray(dependencies.id, staleIds));
     return staleIds.length;
+  }
+
+  /**
+   * Prune stale dependency_advisories links for this repo's dependencies.
+   * Deletes links whose (dependency_id, advisory_id) pair is not present in
+   * the current run's authoritative set (built from osvResult).
+   * Called only when osvComplete is true and manifest_resolved is true.
+   */
+  private async pruneStaleAdvisoryLinks(
+    tx: DbOrTx,
+    depIds: string[],
+    osvResult: OsvFetchResult,
+  ): Promise<number> {
+    // Build advisoryIdMap directly from osvResult and DB state.
+    // Fetch advisory rows for the osvIds we just processed
+    const advisoryRows = await tx
+      .select({ id: advisories.id, osvId: advisories.osvId })
+      .from(advisories)
+      .where(inArray(advisories.osvId, [...osvResult.advisories.keys()]));
+
+    const osvIdToAdvisoryId = new Map<string, string>();
+    for (const row of advisoryRows) {
+      osvIdToAdvisoryId.set(row.osvId, row.id);
+    }
+
+    // Map dependencyId -> packageName for this repo's deps
+    const depRows = await tx
+      .select({
+        id: dependencies.id,
+        packageName: dependencies.packageName,
+      })
+      .from(dependencies)
+      .where(inArray(dependencies.id, depIds));
+
+    const depIdToPackageName = new Map<string, string>();
+    for (const row of depRows) {
+      depIdToPackageName.set(row.id, row.packageName);
+    }
+
+    // Build advisoryIdMap: dependencyId -> Set<advisoryId>
+    const advisoryIdMap = new Map<string, Set<string>>();
+    for (const depId of depIds) {
+      const packageName = depIdToPackageName.get(depId);
+      if (!packageName) continue;
+      const osvIds = osvResult.packageAdvisoryMap.get(packageName) ?? [];
+      for (const osvId of osvIds) {
+        const advisoryId = osvIdToAdvisoryId.get(osvId);
+        if (advisoryId) {
+          const set = advisoryIdMap.get(depId) ?? new Set();
+          set.add(advisoryId);
+          advisoryIdMap.set(depId, set);
+        }
+      }
+    }
+
+    // Fetch all current links for these depIds
+    const existingLinkRows = await tx
+      .select({
+        id: dependencyAdvisories.id,
+        dependencyId: dependencyAdvisories.dependencyId,
+        advisoryId: dependencyAdvisories.advisoryId,
+      })
+      .from(dependencyAdvisories)
+      .where(inArray(dependencyAdvisories.dependencyId, depIds));
+
+    const staleLinkIds: string[] = [];
+    for (const link of existingLinkRows) {
+      const liveAdvisoryIds = advisoryIdMap.get(link.dependencyId);
+      if (!liveAdvisoryIds?.has(link.advisoryId)) {
+        staleLinkIds.push(link.id);
+      }
+    }
+
+    if (staleLinkIds.length === 0) {
+      return 0;
+    }
+
+    await tx.delete(dependencyAdvisories).where(inArray(dependencyAdvisories.id, staleLinkIds));
+    return staleLinkIds.length;
   }
 }
 

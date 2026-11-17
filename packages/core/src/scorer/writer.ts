@@ -319,6 +319,7 @@ export class MissionWriter {
             updatedAt: new Date(),
           },
           repo: repoRow,
+          missionType: classification.type,
           ...(signals !== undefined && { effortSignals: signals }),
           ...(downstreamDependents !== undefined && { downstreamDependents }),
         };
@@ -422,7 +423,9 @@ export class MissionWriter {
         key: buildSignalKey(dependency.id, targetVersion),
         sourceRepo: sourceRepoByPackage.get(dependency.packageName) ?? null,
         ecosystem: dependency.ecosystem,
-        currentFloor: extractVersionFloor(dependency.ecosystem, dependency.versionSpec),
+        currentFloor:
+          dependency.resolvedVersion ??
+          extractVersionFloor(dependency.ecosystem, dependency.versionSpec),
         targetVersion,
       };
     });

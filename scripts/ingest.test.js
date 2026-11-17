@@ -170,7 +170,7 @@ describe("ingestRepo regression (c32878f)", () => {
       "manual",
     );
 
-    expect(result).toBe(false);
+    expect(result).toEqual({ success: false, rateLimited: false });
     expect(writer.write).not.toHaveBeenCalled();
   });
 
@@ -247,7 +247,7 @@ describe("ingestRepo regression (c32878f)", () => {
       "manual",
     );
 
-    expect(result).toBe(false);
+    expect(result).toEqual({ success: false, rateLimited: false });
     expect(writer.write).not.toHaveBeenCalled();
   });
 });

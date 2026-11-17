@@ -78,12 +78,15 @@ export function makeContext(
     repo?: ReturnType<typeof makeRepo>;
     effortSignals?: MissionScoringContext["effortSignals"];
     downstreamDependents?: MissionScoringContext["downstreamDependents"];
+    missionType?: MissionScoringContext["missionType"];
+    matchMethod?: MissionScoringContext["matchMethod"];
   } = {},
 ): MissionScoringContext {
   const base = {
     dependency: makeDependency(),
     advisory: makeAdvisory(),
     repo: makeRepo(),
+    missionType: "vulnerability_fix" as const,
   };
   const result: MissionScoringContext = { ...base };
   if (overrides.dependency) result.dependency = overrides.dependency;
@@ -92,5 +95,7 @@ export function makeContext(
   if (overrides.effortSignals !== undefined) result.effortSignals = overrides.effortSignals;
   if (overrides.downstreamDependents !== undefined)
     result.downstreamDependents = overrides.downstreamDependents;
+  if (overrides.missionType !== undefined) result.missionType = overrides.missionType;
+  if (overrides.matchMethod !== undefined) result.matchMethod = overrides.matchMethod;
   return result;
 }

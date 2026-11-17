@@ -58,6 +58,11 @@ import { fetchJson } from "./fetch-json.js";
 import { runBounded } from "./concurrency.js";
 import { cvssScoreToSeverity, cvssVectorToBaseScore, mapStringSeverity } from "./cvss.js";
 import { enrichAdvisoriesWithEpss, EpssFetcher } from "./epss.js";
+import { enrichAdvisoriesWithSeverity } from "./severity-recovery.js";
+import {
+  extractSeverity as extractSeverityFromRecord,
+  extractCvssScore as extractCvssScoreFromRecord,
+} from "./severity-extraction.js";
 
 // ---------------------------------------------------------------------------
 // OSV API constants
@@ -111,7 +116,7 @@ const ACCEPTED_RANGE_TYPES: Record<Ecosystem, OsvRange["type"][]> = {
 // Raw OSV API response types
 // ---------------------------------------------------------------------------
 
-interface OsvQuery {
+export interface OsvQuery {
   package: { name: string; ecosystem: string };
   /**
    * The dependency's lock-file-resolved version, when known (ADR 0038).
@@ -124,35 +129,35 @@ interface OsvQuery {
   version?: string;
 }
 
-interface OsvBatchRequest {
+export interface OsvBatchRequest {
   queries: OsvQuery[];
 }
 
 /** What the batch endpoint actually returns per result — id + modified only. */
-interface OsvMinimalVuln {
+export interface OsvMinimalVuln {
   id: string;
   modified?: string;
 }
 
-interface OsvBatchQueryResult {
+export interface OsvBatchQueryResult {
   vulns?: OsvMinimalVuln[];
 }
 
-interface OsvBatchResponse {
+export interface OsvBatchResponse {
   results: OsvBatchQueryResult[];
 }
 
-interface OsvSeverity {
+export interface OsvSeverity {
   type: string; // typically "CVSS_V2" or "CVSS_V3"
   score: string; // e.g. "CVSS:3.1/AV:N/AC:L/..."
 }
 
-interface OsvRange {
+export interface OsvRange {
   type: "SEMVER" | "ECOSYSTEM" | "GIT";
   events: { introduced?: string; fixed?: string; last_affected?: string }[];
 }
 
-interface OsvAffected {
+export interface OsvAffected {
   package?: { name: string; ecosystem: string };
   ranges?: OsvRange[];
   versions?: string[];
@@ -162,7 +167,7 @@ interface OsvAffected {
 
 /** The full record returned by GET /v1/vulns/{id} — everything is optional
  * except id, since OSV/GHSA entries don't uniformly populate every field. */
-interface OsvVulnerability {
+export interface OsvVulnerability {
   id: string;
   modified: string;
   published?: string;
@@ -195,6 +200,14 @@ export interface OsvFetchResult {
    * file was parsed for any dependency.
    */
   versionMatchedPackages: Set<string>;
+  /**
+   * True when the OSV stage completed without any detail-fetch failures.
+   * When false, the advisory set may be incomplete (some detail fetches
+   * failed and those advisories were dropped). The writer uses this to
+   * guard the stale-link prune: links are only deleted when the run's
+   * advisory set is authoritative.
+   */
+  osvComplete: boolean;
   /** Data-quality warnings to surface in the UI */
   warnings: string[];
 }
@@ -210,6 +223,7 @@ export class OsvFetcher {
   private readonly retryDelayMs: number;
   private readonly epssFetcher: EpssFetcher;
   private readonly epssEnabled: boolean;
+  private readonly severityRecoveryEnabled: boolean;
 
   constructor(
     batchUrl = OSV_BATCH_URL,
@@ -225,6 +239,10 @@ export class OsvFetcher {
     // kept as the single rollback point for the enrichment step).
     epssFetcher: EpssFetcher = new EpssFetcher(undefined, undefined, retryDelayMs),
     epssEnabled = true,
+    // ADR 0068: severity/CVSS recovery from GHSA/CVE aliases. Enabled by
+    // default for all ingestion callers; can be disabled for tests or
+    // callers that only need the raw OSV mapping.
+    severityRecoveryEnabled = true,
   ) {
     // Injected in tests to point at a mock server
     this.batchUrl = batchUrl;
@@ -233,6 +251,7 @@ export class OsvFetcher {
     this.retryDelayMs = retryDelayMs;
     this.epssFetcher = epssFetcher;
     this.epssEnabled = epssEnabled;
+    this.severityRecoveryEnabled = severityRecoveryEnabled;
   }
 
   /**
@@ -271,6 +290,7 @@ export class OsvFetcher {
         advisories: new Map(),
         packageAdvisoryMap: new Map(),
         versionMatchedPackages: new Set(),
+        osvComplete: true,
         warnings,
       };
     }
@@ -302,55 +322,83 @@ export class OsvFetcher {
     const queried = uniquePackages.slice(0, OSV_BATCH_LIMIT);
 
     // ------------------------------------------------------------------
-    // Stage 1: batch query — returns only {id, modified} per result.
-    // Packages with a resolved version are queried WITH that version, so
-    // the returned advisory set is version-true (a patched install stops
-    // matching its package's historical advisories). Packages without one
-    // fall back to the name-only query — conservative, unchanged.
+    // Stage 1: batch query with pagination support.
+    // OSV's querybatch may return next_page_token for individual queries
+    // when a single query exceeds 1,000 vulns or the queryset exceeds 3,000.
+    // We accumulate all pages per query before proceeding to detail fetches.
     // ------------------------------------------------------------------
     const osvEcosystemName = OSV_ECOSYSTEM_NAMES[ecosystem];
     const versionMatchedPackages = new Set<string>();
-    const requestBody: OsvBatchRequest = {
-      queries: queried.map((name) => {
-        const resolvedVersion = resolvedVersionByPackage.get(name);
-        if (resolvedVersion !== undefined) {
-          versionMatchedPackages.add(name);
+
+    // Accumulate results across pages: query index -> { vulns: id[], next_page_token?: string }
+    const accumulatedResults = new Map<
+      number,
+      { vulns: OsvMinimalVuln[]; nextPageToken?: string }
+    >();
+
+    // Initialize with first page (no page tokens)
+    let pageTokens: string[] | null = null;
+    let hasMore = true;
+
+    while (hasMore) {
+      const requestBody: OsvBatchRequest = {
+        queries: queried.map((name, i) => {
+          const resolvedVersion = resolvedVersionByPackage.get(name);
+          if (resolvedVersion !== undefined) {
+            versionMatchedPackages.add(name);
+            return {
+              package: { name, ecosystem: osvEcosystemName },
+              version: resolvedVersion,
+              ...(pageTokens?.[i] ? { page_token: pageTokens[i] } : {}),
+            };
+          }
           return {
             package: { name, ecosystem: osvEcosystemName },
-            version: resolvedVersion,
+            ...(pageTokens?.[i] ? { page_token: pageTokens[i] } : {}),
           };
+        }),
+      };
+
+      const batchResponse = await fetchJson<OsvBatchResponse>(
+        this.batchUrl,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(requestBody),
+        },
+        {
+          fetchOptions: { retryDelayMs: this.retryDelayMs },
+          errorPrefix: "OSV batch API",
+        },
+      );
+
+      if (!Array.isArray(batchResponse.results)) {
+        throw new Error("OSV batch API response missing expected 'results' array.");
+      }
+
+      const nextTokens: string[] = [];
+      hasMore = false;
+
+      for (let i = 0; i < batchResponse.results.length; i++) {
+        const result = batchResponse.results[i];
+        const token = (result as OsvBatchQueryResult & { next_page_token?: string })
+          .next_page_token;
+        nextTokens.push(token ?? "");
+
+        const existing = accumulatedResults.get(i) ?? { vulns: [] };
+        const minimalVulns = result?.vulns ?? [];
+        existing.vulns.push(...minimalVulns);
+        if (token) {
+          existing.nextPageToken = token;
+          hasMore = true;
         }
-        return { package: { name, ecosystem: osvEcosystemName } };
-      }),
-    };
+        accumulatedResults.set(i, existing);
+      }
 
-    const batchResponse = await fetchJson<OsvBatchResponse>(
-      this.batchUrl,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(requestBody),
-      },
-      {
-        fetchOptions: { retryDelayMs: this.retryDelayMs },
-        errorPrefix: "OSV batch API",
-      },
-    );
-
-    if (!Array.isArray(batchResponse.results)) {
-      throw new Error("OSV batch API response missing expected 'results' array.");
+      pageTokens = nextTokens;
     }
 
-    // ------------------------------------------------------------------
-    // Build package -> [ids] from the (minimal) batch response, and
-    // collect the set of unique ids needing a full-detail fetch. Also
-    // track the first package each id was seen under — advisories.
-    // packageName is NOT NULL, and an advisory can affect more than one
-    // package (see "deduplicates advisories that affect multiple packages"
-    // below), so this preserves the original code's convention of
-    // attributing the row to whichever package it was first encountered
-    // under, now that fetching happens independently of any one package.
-    // ------------------------------------------------------------------
+    // Build package -> [ids] from the accumulated results
     const packageAdvisoryMap = new Map<string, string[]>();
     const uniqueIds = new Set<string>();
     const firstPackageForId = new Map<string, string>();
@@ -359,12 +407,10 @@ export class OsvFetcher {
       const packageName = queried[i];
       if (packageName === undefined) continue;
 
-      const result = batchResponse.results[i];
-      const minimalVulns = result?.vulns ?? [];
-
+      const { vulns } = accumulatedResults.get(i) ?? { vulns: [] };
       const idsForPackage: string[] = [];
 
-      for (const vuln of minimalVulns) {
+      for (const vuln of vulns) {
         if (!vuln.id) {
           warnings.push(
             `OSV returned a vulnerability with no id for package "${packageName}" — skipped.`,
@@ -386,12 +432,15 @@ export class OsvFetcher {
     // ------------------------------------------------------------------
     // Stage 2: fetch full details per unique advisory id
     // ------------------------------------------------------------------
-    const { advisories, failedIds } = await this.fetchFullDetails(
+    const { advisories, failedIds, detailFetchFailed } = await this.fetchFullDetails(
       [...uniqueIds],
       firstPackageForId,
       ecosystem,
       warnings,
     );
+
+    // osvComplete is true only when ALL detail fetches succeeded
+    const osvComplete = !detailFetchFailed;
 
     // Drop any advisory whose detail fetch failed from the package map too
     // — we can't write a valid row for it, so it shouldn't be referenced.
@@ -414,7 +463,13 @@ export class OsvFetcher {
       await enrichAdvisoriesWithEpss(advisories, warnings, this.epssFetcher);
     }
 
-    return { advisories, packageAdvisoryMap, versionMatchedPackages, warnings };
+    // ADR 0068: enrich with severity/CVSS recovered from GHSA/CVE aliases.
+    // Runs after EPSS so aliases are already available from detail fetches.
+    if (this.severityRecoveryEnabled) {
+      await enrichAdvisoriesWithSeverity(advisories, warnings);
+    }
+
+    return { advisories, packageAdvisoryMap, versionMatchedPackages, osvComplete, warnings };
   }
 
   // ---------------------------------------------------------------------------
@@ -436,9 +491,14 @@ export class OsvFetcher {
     firstPackageForId: Map<string, string>,
     ecosystem: Ecosystem,
     warnings: string[],
-  ): Promise<{ advisories: Map<string, NewAdvisory>; failedIds: Set<string> }> {
+  ): Promise<{
+    advisories: Map<string, NewAdvisory>;
+    failedIds: Set<string>;
+    detailFetchFailed: boolean;
+  }> {
     const advisories = new Map<string, NewAdvisory>();
     const failedIds = new Set<string>();
+    let detailFetchFailed = false;
 
     // Bounded-concurrency worker pool (see concurrency.ts). Per-item
     // failures (network, HTTP, parse) are caught and recorded as warnings
@@ -469,11 +529,12 @@ export class OsvFetcher {
         advisories.set(result.id, result.advisory);
       } else {
         failedIds.add(result.id);
+        detailFetchFailed = true;
         warnings.push(result.error);
       }
     }
 
-    return { advisories, failedIds };
+    return { advisories, failedIds, detailFetchFailed };
   }
 
   private async fetchVulnById(id: string): Promise<OsvVulnerability> {
@@ -503,8 +564,8 @@ export class OsvFetcher {
     ecosystem: Ecosystem,
     warnings: string[],
   ): NewAdvisory {
-    const severity = this.extractSeverity(vuln, warnings);
-    const cvssScore = this.extractCvssScore(vuln);
+    const severity = extractSeverityFromRecord(vuln, warnings);
+    const cvssScore = extractCvssScoreFromRecord(vuln);
     const affectedVersions = this.extractAffectedRanges(vuln, ecosystem, packageName);
     const fixedVersion = this.extractFixedVersion(affectedVersions);
 

@@ -609,18 +609,55 @@ describe("deriveConfidence", () => {
 
 describe("buildConfidenceNotes", () => {
   it("produces one note per set flag, in flag order", () => {
-    const notes = buildConfidenceNotes({ no_lock_file: true, cvss_score_missing: true });
+    const notes = buildConfidenceNotes(
+      makeContext({
+        dependency: makeDependency({ resolvedVersion: null }),
+        advisory: makeAdvisory({ cvssScore: null }),
+        effortSignals: {
+          source_available: true,
+          has_migration_guide: false,
+          breaking_change_signals: [],
+        },
+        downstreamDependents: 100,
+      }),
+    );
     expect(notes).toHaveLength(2);
     expect(notes[0]).toMatch(/lock file/i);
     expect(notes[1]).toMatch(/CVSS/i);
   });
 
   it("produces no notes for an empty flag set", () => {
-    expect(buildConfidenceNotes({})).toEqual([]);
+    expect(
+      buildConfidenceNotes(
+        makeContext({
+          dependency: makeDependency({ resolvedVersion: "1.2.3" }),
+          advisory: makeAdvisory({ cvssScore: 7.5, fixedVersion: "1.2.4" }),
+          effortSignals: {
+            source_available: true,
+            has_migration_guide: false,
+            breaking_change_signals: [],
+          },
+          downstreamDependents: 100,
+        }),
+      ),
+    ).toEqual([]);
   });
 
   it("ignores explicitly-false flags", () => {
-    expect(buildConfidenceNotes({ no_lock_file: false })).toEqual([]);
+    expect(
+      buildConfidenceNotes(
+        makeContext({
+          dependency: makeDependency({ resolvedVersion: "1.2.3" }),
+          advisory: makeAdvisory({ cvssScore: 7.5, fixedVersion: "1.2.4" }),
+          effortSignals: {
+            source_available: true,
+            has_migration_guide: false,
+            breaking_change_signals: [],
+          },
+          downstreamDependents: 100,
+        }),
+      ),
+    ).toEqual([]);
   });
 });
 

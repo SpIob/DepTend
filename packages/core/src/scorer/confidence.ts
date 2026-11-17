@@ -18,11 +18,18 @@ export function deriveConfidenceFlags(ctx: MissionScoringContext): ConfidenceFla
   if (ctx.dependency.resolvedVersion === null) {
     flags.no_lock_file = true;
   }
-  if (ctx.advisory.cvssScore === null) {
-    flags.cvss_score_missing = true;
-  }
-  if (ctx.advisory.fixedVersion === null) {
-    flags.fixed_version_unknown = true;
+  // Only set advisory-derived flags for vulnerability_fix missions.
+  // For dep_update/maintenance/license_issue missions there is no advisory,
+  // so cvss_score_missing and fixed_version_unknown would be structurally
+  // true and cap confidence at "low" — which contradicts ADR 0061's stated
+  // consequence that dep_update can reach "medium".
+  if (ctx.missionType === "vulnerability_fix") {
+    if (ctx.advisory.cvssScore === null) {
+      flags.cvss_score_missing = true;
+    }
+    if (ctx.advisory.fixedVersion === null) {
+      flags.fixed_version_unknown = true;
+    }
   }
   if (ctx.dependency.latestVersion === null) {
     flags.registry_metadata_incomplete = true;
@@ -46,7 +53,8 @@ export function deriveConfidence(flags: ConfidenceFlags): ScoreConfidence {
   return "low";
 }
 
-export function buildConfidenceNotes(flags: ConfidenceFlags): string[] {
+export function buildConfidenceNotes(ctx: MissionScoringContext): string[] {
+  const flags = deriveConfidenceFlags(ctx);
   const notes: string[] = [];
 
   if (flags.no_lock_file === true) {
@@ -54,13 +62,16 @@ export function buildConfidenceNotes(flags: ConfidenceFlags): string[] {
       "The currently-installed version is estimated from this dependency's declared range rather than confirmed from a lock file (ADR 0038 covers most formats; pnpm and unparseable files are the remaining gaps).",
     );
   }
-  if (flags.cvss_score_missing === true) {
-    notes.push(
-      "No CVSS score was available for this advisory; the impact score falls back to a severity-based estimate.",
-    );
-  }
-  if (flags.fixed_version_unknown === true) {
-    notes.push("No fixed version is published for this advisory yet.");
+  // Advisory-derived notes only for vulnerability_fix missions.
+  if (ctx.missionType === "vulnerability_fix") {
+    if (flags.cvss_score_missing === true) {
+      notes.push(
+        "No CVSS score was available for this advisory; the impact score falls back to a severity-based estimate.",
+      );
+    }
+    if (flags.fixed_version_unknown === true) {
+      notes.push("No fixed version is published for this advisory yet.");
+    }
   }
   if (flags.registry_metadata_incomplete === true) {
     notes.push(
@@ -75,6 +86,11 @@ export function buildConfidenceNotes(flags: ConfidenceFlags): string[] {
   if (flags.breaking_change_signals_unavailable === true) {
     notes.push(
       "Changelog and migration-guide data wasn't available for this dependency's own upstream repository, so the effort estimate is based on the semver version bump alone.",
+    );
+  }
+  if (ctx.matchMethod === "version_spec") {
+    notes.push(
+      "This advisory was matched against the package's declared version range rather than a lock-file-resolved version. It may not affect the currently-installed version.",
     );
   }
 

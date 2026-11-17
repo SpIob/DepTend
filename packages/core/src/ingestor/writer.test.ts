@@ -66,15 +66,17 @@ interface MockDbCalls {
    */
   conflictSetCalls: Record<string, unknown>[];
   /**
-   * Every value array passed to .values() on an insert() chain, keyed by
-   * the table name insert() was called with, in call order. Not populated
-   * for update()/select() chains — .values() isn't meaningfully called on
-   * those. Added specifically to verify ADR 0022's ecosystem-hardcoding
-   * fix: without this, nothing in this file could actually inspect what
-   * upsertDependencies() builds for depRows, only the mock's pre-configured
-   * .returning() output (a count, not the real content).
-   */
+   /** Every value array passed to .values() on an insert() chain, keyed by
+    * the table name insert() was called with, in call order. Not populated
+    * for update()/select() chains — .values() isn't meaningfully called on
+    * those. Added specifically to verify ADR 0022's ecosystem-hardcoding
+    * fix: without this, nothing in this file could actually inspect what
+    * upsertDependencies() builds for depRows, only the mock's pre-configured
+    * .returning() output (a count, not the real content).
+    */
   insertedValues: { table: string; rows: unknown[] }[];
+  /** SQL strings passed to execute() in call order */
+  executes: string[];
 }
 
 interface MockDb {
@@ -83,6 +85,7 @@ interface MockDb {
   update: ReturnType<typeof vi.fn>;
   delete: ReturnType<typeof vi.fn>;
   select: ReturnType<typeof vi.fn>;
+  execute: ReturnType<typeof vi.fn>;
   transaction: ReturnType<typeof vi.fn>;
 }
 
@@ -118,6 +121,7 @@ function makeMockDb(overrides: {
     updates: [],
     deletes: [],
     selects: [],
+    executes: [],
     transactionCalled: false,
     setCalls: [],
     conflictSetCalls: [],
@@ -214,6 +218,11 @@ function makeMockDb(overrides: {
     delete: vi.fn((table: Table): Chain => {
       calls.deletes.push(getTableName(table));
       return makeChain();
+    }),
+
+    execute: vi.fn(async (sql: TemplateStringsArray): Promise<unknown[]> => {
+      calls.executes.push(String(sql));
+      return Promise.resolve([]);
     }),
 
     select: vi.fn((): Chain => {
@@ -335,6 +344,7 @@ function makeOsvResult(advisoryCount = 1): OsvFetchResult {
     advisories,
     packageAdvisoryMap,
     versionMatchedPackages: new Set<string>(),
+    osvComplete: true,
     warnings: [],
   };
 }
@@ -442,9 +452,10 @@ describe("IngestionWriter", () => {
 
     it("selects advisory UUIDs and prunable dependencies inside the transaction", async () => {
       await writer.write(makeInput());
-      // Two selects: the advisory UUID lookup, then this repo's stored
-      // dependency rows for the pruning pass.
-      expect(db.select).toHaveBeenCalledTimes(2);
+      // Selects: advisory UUID lookup, stored dependency rows for pruning,
+      // dependency package names, existing dependency_advisories links.
+      // (pruneStaleAdvisoryLinks now uses 3 selects: advisoryRows, depRows, existingLinkRows)
+      expect(db.select).toHaveBeenCalledTimes(5);
     });
   });
 

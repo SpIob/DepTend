@@ -120,6 +120,7 @@ export async function runScoreRankStep(input: ScoreRankStepInput): Promise<Score
         dependency,
         advisory,
         repo,
+        missionType: "vulnerability_fix",
         ...(signals !== undefined && { effortSignals: signals }),
       };
       const score = computeMissionScore(ctx);

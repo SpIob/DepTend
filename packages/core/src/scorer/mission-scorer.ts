@@ -13,7 +13,14 @@
  *      docs/adr/0032-downstream-dependents.md (downstreamDependents)
  */
 
-import type { Dependency, Advisory, Repo, EffortLabel, ScoreConfidence } from "../db/schema.js";
+import type {
+  Dependency,
+  Advisory,
+  Repo,
+  EffortLabel,
+  ScoreConfidence,
+  MissionType,
+} from "../db/schema.js";
 import type {
   ConfidenceFlags,
   EffortInputs,
@@ -55,6 +62,8 @@ export interface MissionScoringContext {
   dependency: Dependency;
   advisory: Advisory;
   repo: Repo;
+  /** The type of mission being scored. Determines which confidence flags apply. */
+  missionType: MissionType;
   /**
    * Prefetched breaking-change/migration-guide signals for this
    * dependency's own upstream repo (ADR 0029) — undefined means "the
@@ -77,6 +86,13 @@ export interface MissionScoringContext {
    * value scorer's with-downstream weighting applies.
    */
   downstreamDependents?: number;
+  /**
+   * The match_method of the dependency-advisory link, if available.
+   * "version_resolved" = OSV query carried the lock-file-resolved version;
+   * "version_spec" = conservative package-wide match. Used to surface
+   * match provenance in mission copy and confidence notes.
+   */
+  matchMethod?: "version_resolved" | "version_spec";
 }
 
 export interface MissionScoreComputation {
@@ -126,7 +142,7 @@ export function computeMissionScore(ctx: MissionScoringContext): MissionScoreCom
     ecosystem_value_inputs: ecosystemValueResult.inputs,
     effort_inputs: effortResult.inputs,
     confidence: deriveConfidence(confidenceFlags),
-    confidence_notes: buildConfidenceNotes(confidenceFlags),
+    confidence_notes: buildConfidenceNotes(ctx),
     confidence_flags: confidenceFlags,
     scoring_version: SCORING_VERSION,
   };

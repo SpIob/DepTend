@@ -92,6 +92,15 @@ export function clampScore(score: number): number {
   return Math.min(Math.max(score, 0), 10);
 }
 
+/**
+ * CVSS score finite guard — mirrors the EPSS guard in the impact scorer.
+ * A NaN cvss_score would propagate through `??` (since NaN != null) and
+ * poison the base score. Use Number.isFinite to catch it.
+ */
+export function cvssScoreFinite(cvssScore: number | null): number | null {
+  return cvssScore != null && Number.isFinite(cvssScore) ? cvssScore : null;
+}
+
 // ---------------------------------------------------------------------------
 // DefaultImpactScorer
 // ---------------------------------------------------------------------------
@@ -103,7 +112,7 @@ export interface ImpactScoreResult {
 
 export class DefaultImpactScorer {
   score(inputs: ImpactInputs): ImpactScoreResult {
-    const base = inputs.cvss_score ?? severityFallbackScore(inputs.severity);
+    const base = cvssScoreFinite(inputs.cvss_score) ?? severityFallbackScore(inputs.severity);
 
     let score = base * depTypeWeight(inputs.dep_type);
 
