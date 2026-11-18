@@ -1,5 +1,16 @@
 ---
 
+**2026-11-18 — hotfix: badge endpoint moved to `/api/badge/[owner]/[name]`; the first cut 500'd every `/api/repos` route in production (#38)**
+
+### Fixed
+
+- **The repo badge endpoint, as shipped in the 2026-11-17 sweep, broke the entire `/api/repos` route subtree in production.** The first cut served it at `/api/repos/[owner]/[name]/badge.svg`, but Next.js requires identical slug names at every dynamic segment position, and the pre-existing `/api/repos/[id]/{bookmark,unbookmark,withdraw,notifications/*}` tree already claims position one for `id`. Next throws `You cannot use different slug names for the same dynamic path ('id' !== 'owner')` at server start — and every route under `/api/repos/*` (including bookmarking and notification subscribe, which worked the day before) returned 500 from the 2026-11-17 deploy until this fix. Caught by live verification, not by CI: the colocated route tests invoke the handler directly and never see Next's route table, and the production build passes (route-table assembly happens at runtime).
+- **Badge endpoint relocated to `GET /api/badge/[owner]/[name]`** (same handler, same SVG, same cache headers); the repo page's copy-paste snippet updated, and its fallback domain corrected from the unregistered `deptend.dev` to `deptend.vercel.app` (ADR 0015). The issue's proposed URL shape is therefore not implementable — recorded here and on #38.
+- **New `app/src/app/api/route-tree.test.ts`** walks the real `app/src/app/api` tree and fails on any slug-name conflict at a shared position — the class-level guard for this failure mode (sabotage-verified: a planted `[owner]` probe fails the test, the fixed tree passes).
+- `health-check.yml` now probes `/api/badge/SpIob/deptend-go-test-fixture` (six-hourly), so an endpoint-class outage of this shape surfaces within one health-check cycle instead of silently persisting.
+
+---
+
 **2026-11-17 — usability sweep: 12 features across the CLI, dashboard, and notifications (#32–#44)**
 
 ### Added

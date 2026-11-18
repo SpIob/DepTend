@@ -397,7 +397,7 @@ describe("RepoPage - complete repo with freshness and badge", () => {
     expect(html).toContain("Embed this in your README");
     // Markdown snippet should contain the live origin
     expect(html).toContain("![depTend](");
-    expect(html).toContain("/api/repos/testowner/testrepo3/badge.svg");
+    expect(html).toContain("/api/badge/testowner/testrepo3");
   });
 });
 

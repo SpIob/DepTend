@@ -28,7 +28,7 @@ jobs:
         # catches the error-boundary class (status 200, body says not found).
         run: |
           set -euo pipefail
-          for path in "/" "/missions" "/org/SpIob" "/repo/SpIob/deptend-go-test-fixture"; do
+          for path in "/" "/missions" "/org/SpIob" "/repo/SpIob/deptend-go-test-fixture" "/api/badge/SpIob/deptend-go-test-fixture"; do
             url="https://deptend.vercel.app${path}"
             body=$(mktemp)
             status=$(curl -fsSL -o "$body" -w '%{http_code}' "$url")

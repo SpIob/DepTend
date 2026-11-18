@@ -182,14 +182,14 @@ export default async function RepoPage({
           </p>
           <div className="overflow-x-auto rounded bg-black/50 p-3 font-mono text-xs text-green-300">
             <code>
-              {`![depTend](${process.env.NEXT_PUBLIC_APP_URL ?? "https://deptend.dev"}/api/repos/${repo.owner}/${repo.name}/badge.svg)`}
+              {`![depTend](${process.env.NEXT_PUBLIC_APP_URL ?? "https://deptend.vercel.app"}/api/badge/${repo.owner}/${repo.name})`}
             </code>
           </div>
           <p className="text-xs text-ink-muted">
             Markdown:
             <br />
             <code className="rounded bg-black/50 px-1.5 py-0.5 font-mono text-[10px]">
-              {`![depTend](${process.env.NEXT_PUBLIC_APP_URL ?? "https://deptend.dev"}/api/repos/${repo.owner}/${repo.name}/badge.svg)`}
+              {`![depTend](${process.env.NEXT_PUBLIC_APP_URL ?? "https://deptend.vercel.app"}/api/badge/${repo.owner}/${repo.name})`}
             </code>
           </p>
         </div>

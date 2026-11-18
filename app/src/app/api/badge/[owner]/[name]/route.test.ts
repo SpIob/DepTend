@@ -1,6 +1,14 @@
 /**
- * Route-level tests for GET /api/repos/[owner]/[name]/badge.svg
+ * Route-level tests for GET /api/badge/[owner]/[name]
  * Read-only route — no same-origin gate needed (ADR 0037 applies to mutating routes).
+ *
+ * Lives under /api/badge, NOT /api/repos/[owner]/[name]: Next requires
+ * consistent slug names at each dynamic segment position, and the existing
+ * /api/repos/[id]/... tree already claims position one for `id`. The first
+ * cut used /api/repos/[owner]/[name]/badge.svg and 500'd every /api/repos
+ * route in production while its colocated handler tests stayed green
+ * (route-table conflicts are invisible to direct-handler tests; covered now
+ * by app/src/app/api/route-tree.test.ts).
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -25,7 +33,7 @@ vi.mock("@deptend/core/db/board-queries.js", async (importOriginal) => ({
   getRepoBoardPage,
 }));
 
-describe("GET /api/repos/[owner]/[name]/badge.svg", () => {
+describe("GET /api/badge/[owner]/[name]", () => {
   beforeEach(() => {
     vi.resetAllMocks();
     getDb.mockReturnValue(DB);
@@ -34,7 +42,7 @@ describe("GET /api/repos/[owner]/[name]/badge.svg", () => {
   it("returns 404 for unknown repo", async () => {
     getRepoByOwnerAndName.mockResolvedValue(null);
 
-    const response = await GET(new Request("http://localhost/api/repos/unknown/repo/badge.svg"), {
+    const response = await GET(new Request("http://localhost/api/badge/unknown/repo"), {
       params: Promise.resolve({ owner: "unknown", name: "repo" }),
     });
 
@@ -73,10 +81,9 @@ describe("GET /api/repos/[owner]/[name]/badge.svg", () => {
       },
     });
 
-    const response = await GET(
-      new Request("http://localhost/api/repos/testowner/testrepo/badge.svg"),
-      { params: Promise.resolve({ owner: "testowner", name: "testrepo" }) },
-    );
+    const response = await GET(new Request("http://localhost/api/badge/testowner/testrepo"), {
+      params: Promise.resolve({ owner: "testowner", name: "testrepo" }),
+    });
 
     expect(response.status).toBe(200);
     expect(response.headers.get("Content-Type")).toBe("image/svg+xml; charset=utf-8");
@@ -121,10 +128,9 @@ describe("GET /api/repos/[owner]/[name]/badge.svg", () => {
       },
     });
 
-    const response = await GET(
-      new Request("http://localhost/api/repos/cleanowner/cleanrepo/badge.svg"),
-      { params: Promise.resolve({ owner: "cleanowner", name: "cleanrepo" }) },
-    );
+    const response = await GET(new Request("http://localhost/api/badge/cleanowner/cleanrepo"), {
+      params: Promise.resolve({ owner: "cleanowner", name: "cleanrepo" }),
+    });
 
     expect(response.status).toBe(200);
     const svg = await response.text();
@@ -164,7 +170,7 @@ describe("GET /api/repos/[owner]/[name]/badge.svg", () => {
     });
 
     const response = await GET(
-      new Request("http://localhost/api/repos/test%26owner/test%3Crepo%3E/badge.svg"),
+      new Request("http://localhost/api/badge/test%26owner/test%3Crepo%3E"),
       { params: Promise.resolve({ owner: "test&owner", name: "test<repo>" }) },
     );
 
@@ -208,7 +214,7 @@ describe("GET /api/repos/[owner]/[name]/badge.svg", () => {
       },
     });
 
-    const response = await GET(new Request("http://localhost/api/repos/owner/repo/badge.svg"), {
+    const response = await GET(new Request("http://localhost/api/badge/owner/repo"), {
       params: Promise.resolve({ owner: "owner", name: "repo" }),
     });
 
