@@ -42,6 +42,24 @@ export function decideNotificationAction(notifyOptIn: boolean): "none" | "subscr
 }
 
 /**
+ * Local-scan hint for the submit form (issue #45's cheap interim): while a
+ * valid-looking GitHub repo URL is typed, show the exact CLI command that
+ * scans it instantly on the visitor's own machine — zero server cost, no
+ * waiting for the next ingest run. Deliberately a display-only hint: the
+ * trust boundary stays at POST /api/repos (parseGithubUrl there); this is
+ * UX sugar and must never block or alter submission.
+ */
+const GITHUB_REPO_URL_PATTERN = /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/?$/;
+
+export function buildLocalScanCommand(url: string): string | null {
+  const trimmed = url.trim().replace(/\/+$/, "");
+  if (!GITHUB_REPO_URL_PATTERN.test(trimmed)) {
+    return null;
+  }
+  return `npx @deptend/cli <local-path> --github-url ${trimmed}`;
+}
+
+/**
  * Build the success message for the submit form based on the opt-in state
  * and subscription result.
  *

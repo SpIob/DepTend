@@ -163,6 +163,10 @@
       "import": "./dist/pipeline/parse-github-url.js",
       "types": "./dist/pipeline/parse-github-url.d.ts"
     },
+    "./pipeline/parse-pr-url.js": {
+      "import": "./dist/pipeline/parse-pr-url.js",
+      "types": "./dist/pipeline/parse-pr-url.d.ts"
+    },
     "./constants/withdrawable-statuses.js": {
       "import": "./dist/constants/withdrawable-statuses.js",
       "types": "./dist/constants/withdrawable-statuses.d.ts"

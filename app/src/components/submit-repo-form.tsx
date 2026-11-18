@@ -8,6 +8,7 @@ import {
   SUBMITTER_OPTIN_EVENT_TYPES,
   decideNotificationAction,
   buildSubmitSuccessMessage,
+  buildLocalScanCommand,
 } from "./submit-repo-helpers";
 
 type SubmitState =
@@ -46,6 +47,9 @@ export function SubmitRepoForm({
   const [notifyOptIn, setNotifyOptIn] = useState(false);
 
   const atCap = repoCount >= maxRepos;
+  // Issue #45's cheap interim: instant local scan hint once the URL looks
+  // like a GitHub repo. Display-only — never blocks or alters submission.
+  const localScanCommand = buildLocalScanCommand(url);
 
   async function handleSubmit(event: React.SyntheticEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
@@ -160,6 +164,17 @@ export function SubmitRepoForm({
           )}
           {state.kind === "error" && <p className="text-xs text-status-error">{state.message}</p>}
         </div>
+        {localScanCommand !== null && (
+          <div className="rounded-sm border border-border bg-surface p-2 font-mono text-[11px] text-ink-muted">
+            <p>
+              Want results <span className="text-ink">now</span>? Clone the repo and run:
+            </p>
+            <code className="mt-1 block break-all text-green-300">{localScanCommand}</code>
+            <p className="mt-1 text-[10px]">
+              Scans on your machine in seconds — no waiting for the next ingest run.
+            </p>
+          </div>
+        )}
       </div>
       <div className="flex flex-col gap-2 sm:w-64 sm:flex-row sm:items-center sm:justify-between">
         <label className="flex cursor-pointer items-center gap-1.5">

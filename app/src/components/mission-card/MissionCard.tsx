@@ -2,7 +2,7 @@
 
 import { memo } from "react";
 import type { MissionWithScore } from "@deptend/core";
-import type { MissionClaimPatch } from "./types";
+import type { MissionPatch } from "./types";
 import { MissionHeader } from "./MissionHeader";
 import { MissionMeta } from "./MissionMeta";
 import { MissionActions } from "./MissionActions";
@@ -14,7 +14,7 @@ export function MissionCard({
   onStatusChange,
 }: {
   mission: MissionWithScore;
-  onStatusChange?: ((missionId: string, patch: MissionClaimPatch) => void) | undefined;
+  onStatusChange?: ((missionId: string, patch: MissionPatch) => void) | undefined;
 }): React.JSX.Element {
   const { score, advisory, dependency } = mission;
   const severity = advisory?.severity ?? "unknown";
@@ -48,6 +48,7 @@ export function MissionCard({
             missionId={mission.id}
             status={mission.status}
             claimedBy={mission.claimedBy}
+            prUrl={mission.prUrl}
             onStatusChange={onStatusChange}
           />
 

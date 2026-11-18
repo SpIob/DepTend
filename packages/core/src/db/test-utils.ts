@@ -81,6 +81,8 @@ export const MISSION_VALUES: Record<string, unknown> = {
   resolvedAt: null,
   dismissedAt: null,
   dismissReason: null,
+  prUrl: null,
+  prUrlAddedBy: null,
   createdAt: NOW,
   updatedAt: NOW,
 };

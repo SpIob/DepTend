@@ -276,6 +276,13 @@ export const missions = pgTable(
     dismissedAt: timestamp("dismissed_at", { withTimezone: true }),
     dismissReason: text("dismiss_reason"),
 
+    // Fix-PR link set by the mission's claimant (migration 0010, ADR 0068).
+    // Nullable: unset until the claimant attaches one; cleared via the same
+    // claimant-only write path. pr_url_added_by stamps who set the current
+    // link (null when pr_url is null).
+    prUrl: text("pr_url"),
+    prUrlAddedBy: text("pr_url_added_by"),
+
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

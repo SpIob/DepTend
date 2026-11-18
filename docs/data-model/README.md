@@ -136,26 +136,30 @@ UNIQUE constraint on `(dependency_id, advisory_id)`.
 
 Ranked maintenance work items shown on the dashboard.
 
-| Column           | Type                    | Notes                                                                |
-| ---------------- | ----------------------- | -------------------------------------------------------------------- |
-| `id`             | uuid PK                 |                                                                      |
-| `repo_id`        | uuid FK → repos         | CASCADE on delete                                                    |
-| `title`          | text                    | Human-readable; e.g. "Patch CVE-2024-… in lodash"                    |
-| `description`    | text                    | Plain-language explanation                                           |
-| `action_hint`    | text?                   | e.g. `pnpm update lodash`                                            |
-| `mission_type`   | enum                    | `vulnerability_fix \| dep_update \| maintenance \| license_issue`    |
-| `status`         | enum                    | `open \| claimed \| resolved \| dismissed`                           |
-| `advisory_id`    | uuid? FK → advisories   | SET NULL on delete                                                   |
-| `dependency_id`  | uuid? FK → dependencies | SET NULL on delete                                                   |
-| `claimed_by`     | text?                   | GitHub username; Phase 5                                             |
-| `claimed_at`     | timestamptz?            |                                                                      |
-| `resolved_at`    | timestamptz?            | Set by the pipeline's auto-resolution pass or a future manual flow   |
-| `dismissed_at`   | timestamptz?            | Set by the dismiss endpoint (any signed-in user, open missions only) |
-| `dismiss_reason` | text?                   | Optional bounded plain-text reason from the dismiss endpoint         |
-| `created_at`     | timestamptz             |                                                                      |
-| `updated_at`     | timestamptz             |                                                                      |
+| Column            | Type                    | Notes                                                                                 |
+| ----------------- | ----------------------- | ------------------------------------------------------------------------------------- |
+| `id`              | uuid PK                 |                                                                                       |
+| `repo_id`         | uuid FK → repos         | CASCADE on delete                                                                     |
+| `title`           | text                    | Human-readable; e.g. "Patch CVE-2024-… in lodash"                                     |
+| `description`     | text                    | Plain-language explanation                                                            |
+| `action_hint`     | text?                   | e.g. `pnpm update lodash`                                                             |
+| `mission_type`    | enum                    | `vulnerability_fix \| dep_update \| maintenance \| license_issue`                     |
+| `status`          | enum                    | `open \| claimed \| resolved \| dismissed`                                            |
+| `advisory_id`     | uuid? FK → advisories   | SET NULL on delete                                                                    |
+| `dependency_id`   | uuid? FK → dependencies | SET NULL on delete                                                                    |
+| `claimed_by`      | text?                   | GitHub username; Phase 5                                                              |
+| `claimed_at`      | timestamptz?            |                                                                                       |
+| `resolved_at`     | timestamptz?            | Set by the pipeline's auto-resolution pass or a future manual flow                    |
+| `dismissed_at`    | timestamptz?            | Set by the dismiss endpoint (any signed-in user, open missions only)                  |
+| `dismiss_reason`  | text?                   | Optional bounded plain-text reason from the dismiss endpoint                          |
+| `pr_url`          | text?                   | Fix pull-request URL; claimant-only write via `/api/missions/[id]/pr-link` (ADR 0068) |
+| `pr_url_added_by` | text?                   | GitHub login that set the current `pr_url`; NULL when `pr_url` is NULL                |
+| `created_at`      | timestamptz             |                                                                                       |
+| `updated_at`      | timestamptz             |                                                                                       |
 
 **Status lifecycle:** `resolved` and `dismissed` are both reachable. The pipeline closes open/claimed missions as `resolved` when their `(dependency_id, advisory_id)` pair produces no candidate in a re-ingestion run; dependency pruned from the manifest, advisory range no longer matching, or the advisory withdrawn; a previously auto-resolved mission whose pair returns is reopened. `dismissed` is a human decision via `POST /api/missions/[id]/dismiss` (open missions only), reversible via `/undismiss`. Claim fields survive auto-resolution as history; dismissal of claimed missions requires unclaiming first.
+
+**Fix-PR link (ADR 0068):** the mission's current claimant may set or clear `pr_url` via `POST /api/missions/[id]/pr-link` (body `{"prUrl": "https://github.com/owner/repo/pull/N"}` to set, `{"prUrl": null}` to clear). The write is a guarded single-statement UPDATE whose WHERE carries `status='claimed' AND claimed_by=$login` — the same claimant-ownership rule as unclaim; URLs are validated by `packages/core/src/pipeline/parse-pr-url.ts` at the route boundary and stored normalized (trailing slash stripped). `pr_url_added_by` stamps the login that set the current link and is cleared together with `pr_url`. The link renders on mission cards and the `/mission/[id]` permalink.
 
 ---
 
@@ -323,3 +327,4 @@ UNIQUE constraint on `(user_login, repo_id)`.
 | 0.1.8   | 2026-08-28 | ADR 0040 (migration `0007_foamy_chimera`): the consolidated diff of four previously-unregistered hand-written SQL files (`0007`–`0010`) that the prior commit (`a539d8e`) had added without journal entries. Adds: `organizations` + `organization_members` + `notification_subscriptions` tables, `repos.org_id` FK to organizations, `transitive` value to `dep_type`, `advisories.epss_score` column, the `mission_scores.impact_inputs` default refresh with the `epss_score` field, and the four board-query composite indexes (`idx_advisories_severity_id`, `idx_dependencies_ecosystem_id`, `idx_mission_scores_effort_composite`, `idx_missions_status_repo`, `idx_repos_org_id`) |
 | 0.1.9   | 2026-09-20 | ADR 0045 (migration `0008_mission_scores_tier_index`): expression index `idx_mission_scores_composite_tier` on `FLOOR(mission_scores.composite_score / 0.5) DESC` — serves the board's priority ORDER BY; no column or row-type changes                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | 0.1.10  | 2026-11-02 | ADR 0063 (migration `0009_ambitious_wendell_vaughn`): `'cargo'` added to `ecosystem`, same pattern as 0.1.3/0.1.4; the migration also recreates `idx_mission_scores_composite_tier` byte-identically (schema.ts ↔ live-catalog drift repair on the dev branch)                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| 0.1.11  | 2026-11-18 | ADR 0068 (migration `0010_mission_pr_link`): nullable `missions.pr_url` + `missions.pr_url_added_by` — the mission's fix-PR link, set/cleared by the current claimant via `POST /api/missions/[id]/pr-link`; no index, no enum change                                                                                                                                                                                                                                                                                                                                                                                                                                                      |

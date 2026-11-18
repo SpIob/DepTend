@@ -114,7 +114,13 @@ export function formatSarif(result: AnalyzeResult): string {
           },
         },
         results,
-        columnKind: "utf16",
+        // SARIF 2.1.0 enum — must be "utf16CodeUnits" | "unicodeCodePoints".
+        // The first cut used "utf16", which passed every local test (the
+        // value was asserted verbatim) and failed the REAL contract at the
+        // first GitHub code-scanning upload: "instance.runs[0].columnKind
+        // is not one of enum values: utf16CodeUnits,unicodeCodePoints".
+        // Caught by the #34 scratch-repo round-trip, 2026-11-18.
+        columnKind: "utf16CodeUnits",
       },
     ],
   };

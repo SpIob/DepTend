@@ -26,6 +26,18 @@ export function MissionMeta({ mission }: MissionMetaProps): React.JSX.Element {
       >
         {repo.owner}/{repo.name}
       </a>
+      {mission.prUrl !== null && (
+        <>
+          <span aria-hidden="true">·</span>
+          <a
+            href={mission.prUrl}
+            className="underline decoration-dotted underline-offset-2 hover:text-accent"
+            aria-label={`Fix pull request: ${mission.prUrl}`}
+          >
+            fix PR ↗
+          </a>
+        </>
+      )}
       {isRepoOwner && (
         <span
           className="inline-flex items-center rounded border border-border bg-surface px-1.5 py-0.5 font-mono text-[10px] text-ink-muted"

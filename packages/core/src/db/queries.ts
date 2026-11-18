@@ -226,5 +226,6 @@ export {
   unclaimMission,
   dismissMission,
   undismissMission,
+  setMissionPrUrl,
   getMissionById,
 } from "./missions.js";

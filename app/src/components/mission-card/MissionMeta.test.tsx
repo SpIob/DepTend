@@ -9,6 +9,7 @@ function makeMission(
     claimedBy: string | null;
     repoOwner: string;
     repoOrgId: string | null;
+    prUrl: string | null;
   }> = {},
 ): MissionWithScore {
   return {
@@ -28,6 +29,8 @@ function makeMission(
     dismissReason: null,
     createdAt: new Date("2024-01-01"),
     updatedAt: new Date("2024-01-01"),
+    prUrl: overrides.prUrl ?? null,
+    prUrlAddedBy: overrides.prUrl === null || overrides.prUrl === undefined ? null : "test-user",
     score: {
       id: "score-1",
       missionId: "mission-1",
@@ -122,5 +125,22 @@ describe("MissionMeta - repo owner mark", () => {
     const html = renderToString(<MissionMeta mission={mission} />);
 
     expect(html).not.toContain("repo owner");
+  });
+});
+
+describe("MissionMeta - fix PR link (ADR 0068)", () => {
+  it("renders a fix-PR anchor when prUrl is set, pointing at the stored URL", () => {
+    const mission = makeMission({ prUrl: "https://github.com/owner/repo/pull/42" });
+    const html = renderToString(<MissionMeta mission={mission} />);
+
+    expect(html).toContain("fix PR");
+    expect(html).toContain('href="https://github.com/owner/repo/pull/42"');
+  });
+
+  it("renders no fix-PR anchor when prUrl is null", () => {
+    const mission = makeMission({ prUrl: null });
+    const html = renderToString(<MissionMeta mission={mission} />);
+
+    expect(html).not.toContain("fix PR");
   });
 });

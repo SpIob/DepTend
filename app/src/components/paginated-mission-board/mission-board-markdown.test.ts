@@ -41,6 +41,8 @@ function makeMission(
     resolvedAt: null,
     dismissedAt: null,
     dismissReason: null,
+    prUrl: null,
+    prUrlAddedBy: null,
     createdAt: new Date(),
     updatedAt: new Date(),
     score: {

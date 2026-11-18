@@ -11,6 +11,19 @@
 
 ---
 
+**2026-11-18 — issue-sweep closure: fix-PR link on claimed missions (#42), local-scan hint on the submit form (#45), SARIF code-scanning round-trip (#34)**
+
+### Added
+
+- **Fix-PR link on claimed missions (#42, ADR 0068):** the mission's current claimant can attach the fix's pull-request URL from the claimed card (inline editor in `MissionActions`; empty input clears it), and every card — including other users' claims — renders a "fix PR ↗" link when one is set. Backend: migration `0010_mission_pr_link` adds nullable `missions.pr_url` + `pr_url_added_by` (Option 1 of the issue's three options, decided by Mico 2026-11-18); `setMissionPrUrl()` in core is a guarded single-statement UPDATE whose WHERE carries `status='claimed' AND claimed_by=$login` — the same claimant-ownership rule as unclaim; new `POST /api/missions/[id]/pr-link` runs the full ADR 0037 gate stack with a colocated route suite (both origin paths, real `parsePullRequestUrl`, real rate limiter) and revalidates only the `missions` tag (the directory counts don't read the link). URLs are validated by a new strict `packages/core/src/pipeline/parse-pr-url.ts` (sibling of ADR 0066's repo-URL parser) and stored normalized. Migration applied to both Neon branches same day; ADR 0068 stays Proposed until a live signed-in write is observed (flagged, not silently flipped).
+- **Local-scan hint on the submit form (#45's cheap interim):** while the URL field holds a GitHub repo URL, the form shows the exact `npx @deptend/cli <local-path> --github-url <url>` command for an instant scan on the visitor's own machine — zero server cost, per the issue's ship-now recommendation. Display-only (never blocks submission); the server-side scan-preview remains deferred until real demand, per the same decision.
+
+### Fixed
+
+- **CLI SARIF output now validates against GitHub code scanning** (#34 acceptance round-trip): the first real upload to a scratch public repo's code scanning failed with `instance.runs[0].columnKind is not one of enum values: utf16CodeUnits,unicodeCodePoints` — the formatter emitted `"utf16"`, and the unit test asserted that exact wrong value. `columnKind` is now the valid `"utf16CodeUnits"`, and the test asserts the closed SARIF 2.1.0 enum. Caught by the live round-trip, not by mocks — the §6 meta-lesson again; evidence in `reports/sarif-round-trip/2026-11-18/`.
+
+---
+
 **2026-11-17 — usability sweep: 12 features across the CLI, dashboard, and notifications (#32–#44)**
 
 ### Added

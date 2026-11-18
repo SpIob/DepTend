@@ -6,6 +6,7 @@ import {
   SUCCESS_MESSAGE_CHECKED_SUBSCRIBE_FAILED,
   decideNotificationAction,
   buildSubmitSuccessMessage,
+  buildLocalScanCommand,
 } from "./submit-repo-helpers";
 
 describe("submit-repo-helpers", () => {
@@ -87,6 +88,33 @@ describe("submit-repo-helpers", () => {
       expect(failedResult).not.toContain("submission failed");
       expect(unauthorizedResult).not.toContain("submission failed");
       // Note: "failed" appears in "signup failed" but not as "submission failed"
+    });
+  });
+
+  describe("buildLocalScanCommand (issue #45 interim)", () => {
+    it("returns the prefilled CLI command for a plain repo URL", () => {
+      expect(buildLocalScanCommand("https://github.com/owner/repo")).toBe(
+        "npx @deptend/cli <local-path> --github-url https://github.com/owner/repo",
+      );
+    });
+
+    it("strips a trailing slash", () => {
+      expect(buildLocalScanCommand("https://github.com/owner/repo/")).toBe(
+        "npx @deptend/cli <local-path> --github-url https://github.com/owner/repo",
+      );
+    });
+
+    it("trims surrounding whitespace", () => {
+      expect(buildLocalScanCommand("  https://github.com/owner/repo  ")).toBe(
+        "npx @deptend/cli <local-path> --github-url https://github.com/owner/repo",
+      );
+    });
+
+    it("returns null for partial or non-repo input", () => {
+      expect(buildLocalScanCommand("https://github.com/owner")).toBeNull();
+      expect(buildLocalScanCommand("https://gitlab.com/owner/repo")).toBeNull();
+      expect(buildLocalScanCommand("not a url")).toBeNull();
+      expect(buildLocalScanCommand("")).toBeNull();
     });
   });
 });

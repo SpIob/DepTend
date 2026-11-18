@@ -13,6 +13,7 @@ import {
   dismissMission,
   undismissMission,
   unclaimMission,
+  setMissionPrUrl,
   getMissionById,
 } from "./missions.js";
 import { isValidUuid } from "./validation.js";
@@ -364,5 +365,76 @@ describe("getMissionById", () => {
 
     expect(result).not.toBeNull();
     expect(result?.advisory).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// setMissionPrUrl — claimant-only PR-link write (ADR 0068)
+// ---------------------------------------------------------------------------
+
+describe("setMissionPrUrl", () => {
+  it("returns updated and stamps prUrl + prUrlAddedBy for the current claimant", async () => {
+    const { db, setValues } = makeMockDb({
+      updateResponse: [{ id: "mission-1" }],
+      recheckResponse: [],
+    });
+
+    const result = await setMissionPrUrl(
+      db,
+      "mission-1",
+      "https://github.com/owner/repo/pull/42",
+      "octocat",
+    );
+
+    expect(result).toBe("updated");
+    expect(setValues).toHaveLength(1);
+    expect(setValues[0]).toMatchObject({
+      prUrl: "https://github.com/owner/repo/pull/42",
+      prUrlAddedBy: "octocat",
+    });
+  });
+
+  it("clears both prUrl and prUrlAddedBy when prUrl is null", async () => {
+    const { db, setValues } = makeMockDb({
+      updateResponse: [{ id: "mission-1" }],
+      recheckResponse: [],
+    });
+
+    const result = await setMissionPrUrl(db, "mission-1", null, "octocat");
+
+    expect(result).toBe("updated");
+    expect(setValues[0]).toMatchObject({ prUrl: null, prUrlAddedBy: null });
+  });
+
+  it("returns not_claimed_by_you when the update matches nothing but the mission exists", async () => {
+    const { db } = makeMockDb({
+      updateResponse: [],
+      recheckResponse: [{ id: "mission-1" }],
+    });
+
+    const result = await setMissionPrUrl(
+      db,
+      "mission-1",
+      "https://github.com/o/r/pull/1",
+      "mallory",
+    );
+
+    expect(result).toBe("not_claimed_by_you");
+  });
+
+  it("returns not_found when the update matches nothing and the mission doesn't exist", async () => {
+    const { db } = makeMockDb({
+      updateResponse: [],
+      recheckResponse: [],
+    });
+
+    const result = await setMissionPrUrl(
+      db,
+      "missing-id",
+      "https://github.com/o/r/pull/1",
+      "octocat",
+    );
+
+    expect(result).toBe("not_found");
   });
 });

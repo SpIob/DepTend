@@ -173,6 +173,47 @@ export async function undismissMission(
 }
 
 /**
+ * Sets or clears a claimed mission's fix-PR link (ADR 0068). Only the
+ * mission's CURRENT claimant may write it — the same ownership rule as
+ * unclaimMission, enforced the same way: the WHERE clause carries
+ * status="claimed" AND claimed_by=addedBy, so a lost race or a non-claimant
+ * UPDATE matches zero rows, distinguished from "mission doesn't exist" by
+ * the follow-up SELECT. Clearing (prUrl === null) uses the identical guard —
+ * the claimant who unclaims loses the ability to clear only by no longer
+ * being the claimant, which is the point.
+ */
+export async function setMissionPrUrl(
+  db: ReadonlyDb,
+  missionId: string,
+  prUrl: string | null,
+  addedBy: string,
+): Promise<"updated" | "not_claimed_by_you" | "not_found"> {
+  const [updated] = await db
+    .update(missions)
+    .set({ prUrl, prUrlAddedBy: prUrl === null ? null : addedBy })
+    .where(
+      and(
+        eq(missions.id, missionId),
+        eq(missions.status, "claimed"),
+        eq(missions.claimedBy, addedBy),
+      ),
+    )
+    .returning({ id: missions.id });
+
+  if (updated !== undefined) {
+    return "updated";
+  }
+
+  const [existing] = await db
+    .select({ id: missions.id })
+    .from(missions)
+    .where(eq(missions.id, missionId))
+    .limit(1);
+
+  return existing === undefined ? "not_found" : "not_claimed_by_you";
+}
+
+/**
  * Fetches a single mission by its UUID with its score, advisory, dependency,
  * and owning repo — the full MissionWithScore shape used by the permalink
  * page /mission/[id]. Returns null if not found.

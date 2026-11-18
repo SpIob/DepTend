@@ -9,6 +9,13 @@ export interface MissionClaimPatch {
   claimedAt: Date | null;
 }
 
+/** What changes after a successful PR-link save/clear (ADR 0068). */
+export interface MissionPrUrlPatch {
+  prUrl: string | null;
+}
+
+export type MissionPatch = MissionClaimPatch | MissionPrUrlPatch;
+
 export type ClaimRequestState =
   { kind: "idle" } | { kind: "pending" } | { kind: "error"; message: string };
 

@@ -213,11 +213,16 @@ describe("formatSarif", () => {
     expect(sarif.runs[0].results).toHaveLength(0);
   });
 
-  it("includes columnKind in run", () => {
+  it("includes a SARIF-2.1.0-valid columnKind in run", () => {
     const result = makeResult([baseMission]);
     const sarif = JSON.parse(formatSarif(result));
 
-    expect(sarif.runs[0].columnKind).toBe("utf16");
+    // The enum is closed per the SARIF 2.1.0 schema — GitHub's upload
+    // endpoint rejects anything else (first cut shipped "utf16" and the
+    // real upload failed: #34 round-trip, 2026-11-18).
+    const COLUMN_KINDS = ["utf16CodeUnits", "unicodeCodePoints"];
+    expect(COLUMN_KINDS).toContain(sarif.runs[0].columnKind);
+    expect(sarif.runs[0].columnKind).toBe("utf16CodeUnits");
   });
 
   it("produces valid JSON that can be parsed", () => {
