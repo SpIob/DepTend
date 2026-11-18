@@ -20,7 +20,7 @@ export const MISSION_TYPE_CLASS: Record<MissionType, string> = {
 };
 
 export const CONFIDENCE_NOTES_BLOCK =
-  "border-severity-high/40 bg-severity-high/10 rounded-sm border-l-2 px-3 py-2";
+  "border-severity-high/40 bg-severity-high/10 rounded-xs border-l-2 px-3 py-2";
 
 export const CONFIDENCE_NOTES_HEADING =
   "text-ink-muted mb-1 font-mono text-xs font-semibold uppercase tracking-wide";

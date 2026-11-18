@@ -49,7 +49,7 @@ export default async function MissionPage({
     <main id="main" className="mx-auto flex max-w-3xl flex-col gap-8 px-4 py-8 sm:px-6 sm:py-12">
       <header className="flex flex-col gap-2">
         <nav
-          className="flex items-center gap-2 font-mono text-xs text-ink-muted"
+          className="text-ink-muted flex items-center gap-2 font-mono text-xs"
           aria-label="Breadcrumb"
         >
           <Link href="/" className="hover:text-ink">
@@ -71,7 +71,7 @@ export default async function MissionPage({
           <MissionHeader mission={mission} />
         </div>
 
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-xs text-ink-muted">
+        <div className="text-ink-muted flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-xs">
           <span className={CONFIDENCE_CLASS[score.confidence]}>
             {isLowConfidence && "⚠ "}
             {CONFIDENCE_TEXT[score.confidence]}
@@ -89,18 +89,18 @@ export default async function MissionPage({
 
         <Link
           href={`https://github.com/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.name)}`}
-          className="w-fit font-mono text-xs text-ink-muted underline decoration-dotted underline-offset-2 hover:text-accent"
+          className="text-ink-muted hover:text-accent w-fit font-mono text-xs underline decoration-dotted underline-offset-2"
         >
           View repo on GitHub
         </Link>
       </header>
 
-      <div className="flex flex-col gap-3 border-t border-border/60 px-4 py-4">
+      <div className="border-border/60 flex flex-col gap-3 border-t px-4 py-4">
         <section aria-labelledby="description-heading">
           <h2 id="description-heading" className="sr-only">
             Description
           </h2>
-          <p className="whitespace-pre-line text-sm leading-relaxed text-ink-muted">
+          <p className="text-ink-muted text-sm leading-relaxed whitespace-pre-line">
             {mission.description}
           </p>
         </section>
@@ -110,7 +110,7 @@ export default async function MissionPage({
             <h2 id="action-hint-heading" className="sr-only">
               Recommended action
             </h2>
-            <p className="border-l-2 border-border pl-3 text-sm font-medium text-ink">
+            <p className="border-border text-ink border-l-2 pl-3 text-sm font-medium">
               {mission.actionHint}
             </p>
           </section>
@@ -128,15 +128,15 @@ export default async function MissionPage({
             <h2 id="advisory-heading" className="sr-only">
               Advisory details
             </h2>
-            <div className="flex flex-col gap-2 border-t border-border/60 pt-4">
-              <p className="font-mono text-xs uppercase text-ink-muted">Advisory</p>
-              <dl className="flex flex-col gap-1.5 font-mono text-xs text-ink">
+            <div className="border-border/60 flex flex-col gap-2 border-t pt-4">
+              <p className="text-ink-muted font-mono text-xs uppercase">Advisory</p>
+              <dl className="text-ink flex flex-col gap-1.5 font-mono text-xs">
                 <div className="flex gap-2">
-                  <dt className="shrink-0 text-ink-muted">Source</dt>
+                  <dt className="text-ink-muted shrink-0">Source</dt>
                   <dd>{advisory.source.toUpperCase()}</dd>
                 </div>
                 <div className="flex gap-2">
-                  <dt className="shrink-0 text-ink-muted">OSV ID</dt>
+                  <dt className="text-ink-muted shrink-0">OSV ID</dt>
                   <dd>
                     <a
                       href={osvUrl(advisory.osvId)}
@@ -150,29 +150,29 @@ export default async function MissionPage({
                 </div>
                 {dependency !== null && (
                   <div className="flex gap-2">
-                    <dt className="shrink-0 text-ink-muted">Package</dt>
+                    <dt className="text-ink-muted shrink-0">Package</dt>
                     <dd>{dependency.packageName}</dd>
                   </div>
                 )}
                 <div className="flex gap-2">
-                  <dt className="shrink-0 text-ink-muted">Severity</dt>
+                  <dt className="text-ink-muted shrink-0">Severity</dt>
                   <dd>{advisory.severity}</dd>
                 </div>
                 {advisory.cvssScore !== null && (
                   <div className="flex gap-2">
-                    <dt className="shrink-0 text-ink-muted">CVSS</dt>
+                    <dt className="text-ink-muted shrink-0">CVSS</dt>
                     <dd>{advisory.cvssScore.toFixed(1)}</dd>
                   </div>
                 )}
                 {advisory.fixedVersion !== null && (
                   <div className="flex gap-2">
-                    <dt className="shrink-0 text-ink-muted">Fixed version</dt>
+                    <dt className="text-ink-muted shrink-0">Fixed version</dt>
                     <dd className="font-mono">{advisory.fixedVersion}</dd>
                   </div>
                 )}
                 {advisory.publishedAt !== null && (
                   <div className="flex gap-2">
-                    <dt className="shrink-0 text-ink-muted">Published</dt>
+                    <dt className="text-ink-muted shrink-0">Published</dt>
                     <dd>{advisory.publishedAt.toLocaleDateString()}</dd>
                   </div>
                 )}
@@ -185,7 +185,7 @@ export default async function MissionPage({
           <h2 id="score-breakdown-heading" className="sr-only">
             Full score breakdown
           </h2>
-          <div className="border-t border-border/60 pt-4">
+          <div className="border-border/60 border-t pt-4">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
               <ScoreInputsList
                 label="Impact inputs"
@@ -254,7 +254,7 @@ export default async function MissionPage({
         {score.confidenceNotes !== null && score.confidenceNotes.length > 0 && (
           <section
             aria-labelledby="confidence-notes-heading"
-            className="border-t border-border/60 pt-4"
+            className="border-border/60 border-t pt-4"
           >
             <h2 id="confidence-notes-heading" className="sr-only">
               Confidence notes
@@ -267,7 +267,7 @@ export default async function MissionPage({
               >
                 Why {CONFIDENCE_TEXT[score.confidence].toLowerCase()}
               </p>
-              <ul className="flex flex-col gap-0.5 text-ink">
+              <ul className="text-ink flex flex-col gap-0.5">
                 {score.confidenceNotes.map((note) => (
                   <li key={note}>· {note}</li>
                 ))}
@@ -276,24 +276,24 @@ export default async function MissionPage({
           </section>
         )}
 
-        <section aria-labelledby="status-heading" className="border-t border-border/60 pt-4">
+        <section aria-labelledby="status-heading" className="border-border/60 border-t pt-4">
           <h2 id="status-heading" className="sr-only">
             Mission status
           </h2>
-          <dl className="flex flex-col gap-1.5 font-mono text-xs text-ink">
+          <dl className="text-ink flex flex-col gap-1.5 font-mono text-xs">
             <div className="flex gap-2">
-              <dt className="shrink-0 text-ink-muted">Status</dt>
+              <dt className="text-ink-muted shrink-0">Status</dt>
               <dd className="capitalize">{mission.status}</dd>
             </div>
             {mission.claimedBy !== null && (
               <>
                 <div className="flex gap-2">
-                  <dt className="shrink-0 text-ink-muted">Claimed by</dt>
+                  <dt className="text-ink-muted shrink-0">Claimed by</dt>
                   <dd>{mission.claimedBy}</dd>
                 </div>
                 {mission.claimedAt !== null && (
                   <div className="flex gap-2">
-                    <dt className="shrink-0 text-ink-muted">Claimed at</dt>
+                    <dt className="text-ink-muted shrink-0">Claimed at</dt>
                     <dd>{mission.claimedAt.toLocaleDateString()}</dd>
                   </div>
                 )}
@@ -302,12 +302,12 @@ export default async function MissionPage({
             {mission.dismissedAt !== null && (
               <>
                 <div className="flex gap-2">
-                  <dt className="shrink-0 text-ink-muted">Dismissed at</dt>
+                  <dt className="text-ink-muted shrink-0">Dismissed at</dt>
                   <dd>{mission.dismissedAt.toLocaleDateString()}</dd>
                 </div>
                 {mission.dismissReason !== null && (
                   <div className="flex gap-2">
-                    <dt className="shrink-0 text-ink-muted">Reason</dt>
+                    <dt className="text-ink-muted shrink-0">Reason</dt>
                     <dd>{mission.dismissReason}</dd>
                   </div>
                 )}
@@ -320,13 +320,13 @@ export default async function MissionPage({
       <nav className="flex flex-wrap gap-2 font-mono text-xs" aria-label="Back links">
         <Link
           href="/missions"
-          className="text-ink-muted underline decoration-dotted underline-offset-2 hover:text-accent"
+          className="text-ink-muted hover:text-accent underline decoration-dotted underline-offset-2"
         >
           ← All missions
         </Link>
         <Link
           href={`/repo/${repo.owner}/${repo.name}`}
-          className="text-ink-muted underline decoration-dotted underline-offset-2 hover:text-accent"
+          className="text-ink-muted hover:text-accent underline decoration-dotted underline-offset-2"
         >
           ← Repo board
         </Link>

@@ -171,7 +171,7 @@ export function PaginatedMissionBoard({
   return (
     <>
       <div className="flex flex-col gap-4">
-        <div className="sticky top-0 z-10 flex flex-col gap-3 border-b border-border bg-bg py-3">
+        <div className="border-border bg-bg sticky top-0 z-10 flex flex-col gap-3 border-b py-3">
           <MissionSearchInput value={search} onChange={setSearch} />
           <FilterChips
             initialQuery={initialQuery}
@@ -195,7 +195,7 @@ export function PaginatedMissionBoard({
                 );
               }}
               disabled={isPending}
-              className="self-start font-mono text-xs text-accent underline decoration-dotted underline-offset-2 hover:text-ink disabled:opacity-50"
+              className="text-accent hover:text-ink self-start font-mono text-xs underline decoration-dotted underline-offset-2 disabled:opacity-50"
             >
               Clear filters
             </button>
@@ -206,7 +206,7 @@ export function PaginatedMissionBoard({
             {showGroupByRepo && (
               <label
                 htmlFor="group-by-repo"
-                className="flex items-center gap-2 font-mono text-xs text-ink-muted"
+                className="text-ink-muted flex items-center gap-2 font-mono text-xs"
               >
                 <input
                   id="group-by-repo"
@@ -220,7 +220,7 @@ export function PaginatedMissionBoard({
                 Group by repo
               </label>
             )}
-            <label className="flex items-center gap-2 font-mono text-xs text-ink-muted">
+            <label className="text-ink-muted flex items-center gap-2 font-mono text-xs">
               Sort
               <select
                 value={initialQuery.sort}
@@ -228,7 +228,7 @@ export function PaginatedMissionBoard({
                   navigate(buildHref({ sort: event.target.value as SortMode }));
                 }}
                 disabled={isPending}
-                className="rounded-sm border border-border bg-surface px-2 py-1 font-mono text-xs text-ink"
+                className="border-border bg-surface text-ink rounded-xs border px-2 py-1 font-mono text-xs"
               >
                 {SORT_MODES.map((mode) => (
                   <option key={mode} value={mode}>
@@ -241,7 +241,7 @@ export function PaginatedMissionBoard({
               type="button"
               onClick={handleCopyMarkdown}
               disabled={missions.length === 0 || isPending}
-              className="flex items-center gap-1.5 rounded-sm border border-border bg-surface px-2.5 py-1 font-mono text-xs text-ink-muted transition-colors hover:border-ink-muted hover:text-ink disabled:cursor-not-allowed disabled:opacity-50"
+              className="border-border bg-surface text-ink-muted hover:border-ink-muted hover:text-ink flex items-center gap-1.5 rounded-xs border px-2.5 py-1 font-mono text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-50"
               aria-label="Copy current page as Markdown"
               title="Copies the current page's missions as a Markdown table (current page only)"
             >
@@ -262,10 +262,10 @@ export function PaginatedMissionBoard({
             </button>
           </div>
           {(isFiltered || pageCount > 1 || isPending) && (
-            <p className="font-mono text-xs text-ink-muted">
+            <p className="text-ink-muted font-mono text-xs">
               {rangeStart.toString()}–{rangeEnd.toString()} of {total.toString()} missions
               {isPending && (
-                <span role="status" className="ml-3 text-accent">
+                <span role="status" className="text-accent ml-3">
                   Updating…
                 </span>
               )}
@@ -279,7 +279,7 @@ export function PaginatedMissionBoard({
           <div className="flex flex-col gap-5">
             {groups.map((group) => (
               <div key={group.repoKey} className="flex flex-col gap-3">
-                <h2 className="border-b border-border pb-1 font-mono text-xs font-semibold uppercase tracking-wide text-ink-muted">
+                <h2 className="border-border text-ink-muted border-b pb-1 font-mono text-xs font-semibold tracking-wide uppercase">
                   {group.repoKey}{" "}
                   <span className="normal-case">({group.missions.length.toString()})</span>
                 </h2>
@@ -320,7 +320,7 @@ export function PaginatedMissionBoard({
         <div
           role="status"
           aria-live="polite"
-          className="fixed bottom-4 right-4 z-50 rounded-sm border border-accent bg-accent px-3 py-2 font-mono text-xs text-white shadow-lg"
+          className="border-accent bg-accent fixed right-4 bottom-4 z-50 rounded-xs border px-3 py-2 font-mono text-xs text-white shadow-lg"
         >
           Copied to clipboard
         </div>

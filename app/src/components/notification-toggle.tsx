@@ -186,7 +186,7 @@ export function NotificationToggle({
         onClick={() => void signInWithGitHub()}
         title={signedOutLabel}
         aria-label={signedOutLabel}
-        className="shrink-0 p-0.5 font-mono text-xs leading-none text-ink-muted hover:text-ink"
+        className="text-ink-muted hover:text-ink shrink-0 p-0.5 font-mono text-xs leading-none"
       >
         Notify
       </button>
@@ -227,16 +227,16 @@ export function NotificationToggle({
           <div
             role="listbox"
             aria-label={`Notification event types for ${repoFullName}`}
-            className="absolute right-0 top-full z-10 mt-1 w-64 rounded-md border border-border bg-surface p-2 shadow-lg"
+            className="border-border bg-surface absolute top-full right-0 z-10 mt-1 w-64 rounded-md border p-2 shadow-lg"
           >
             <div role="group" aria-labelledby="event-types-label" className="flex flex-col gap-1.5">
-              <p id="event-types-label" className="px-1 text-[11px] font-medium text-ink-muted">
+              <p id="event-types-label" className="text-ink-muted px-1 text-[11px] font-medium">
                 Notify me about…
               </p>
               {ALLOWED_EVENT_TYPES.map((type) => (
                 <label
                   key={type}
-                  className="flex cursor-pointer items-center gap-2 rounded-sm px-1 py-1 hover:bg-accent/5"
+                  className="hover:bg-accent/5 flex cursor-pointer items-center gap-2 rounded-xs px-1 py-1"
                 >
                   <input
                     type="checkbox"
@@ -247,19 +247,19 @@ export function NotificationToggle({
                     checked={eventTypes.includes(type)}
                     onChange={(e) => handleCheckboxChange(type, e.target.checked)}
                     disabled={pending}
-                    className="rounded border-border text-accent focus-visible:outline-1 focus-visible:outline-accent"
+                    className="border-border text-accent focus-visible:outline-accent rounded-sm focus-visible:outline-1"
                     aria-selected={eventTypes.includes(type)}
                   />
-                  <span className="text-[11px] leading-none text-ink">{eventTypeLabel(type)}</span>
+                  <span className="text-ink text-[11px] leading-none">{eventTypeLabel(type)}</span>
                 </label>
               ))}
             </div>
-            <div className="mt-2 flex justify-end gap-1.5 border-t border-border pt-2">
+            <div className="border-border mt-2 flex justify-end gap-1.5 border-t pt-2">
               <button
                 type="button"
                 onClick={closeDisclosure}
                 disabled={pending}
-                className="rounded-sm px-2 py-1 font-mono text-[11px] text-ink-muted hover:bg-border hover:text-ink disabled:opacity-50"
+                className="text-ink-muted hover:bg-border hover:text-ink rounded-xs px-2 py-1 font-mono text-[11px] disabled:opacity-50"
               >
                 Cancel
               </button>
@@ -267,7 +267,7 @@ export function NotificationToggle({
                 type="button"
                 onClick={handleSubscribe}
                 disabled={pending || eventTypes.length === 0}
-                className="rounded-sm bg-accent px-2 py-1 font-mono text-[11px] text-white disabled:opacity-50"
+                className="bg-accent rounded-xs px-2 py-1 font-mono text-[11px] text-white disabled:opacity-50"
               >
                 {pending ? "..." : "Subscribe"}
               </button>
@@ -278,7 +278,7 @@ export function NotificationToggle({
 
       <div role="status" aria-live="polite">
         {errorMessage !== null && (
-          <p className="text-[10px] leading-tight text-status-error">{errorMessage}</p>
+          <p className="text-status-error text-[10px] leading-tight">{errorMessage}</p>
         )}
       </div>
     </div>

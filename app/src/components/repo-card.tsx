@@ -25,7 +25,7 @@ function MissionCounts({
   counts: RepoWithMissionSummary["missionCounts"];
 }): React.JSX.Element {
   if (counts.total === 0) {
-    return <span className="font-mono text-xs text-ink-muted">No open missions</span>;
+    return <span className="text-ink-muted font-mono text-xs">No open missions</span>;
   }
   const present = SEVERITY_ORDER.filter((severity) => counts[severity] > 0);
   return (
@@ -49,7 +49,7 @@ function IngestionStatusChip({
   const detail = ingestionStatusDetail(status, error);
   return (
     <span
-      className="inline-flex items-center rounded border border-border px-2 py-0.5 font-mono text-[10px] text-ink-muted/70"
+      className="border-border text-ink-muted/70 inline-flex items-center rounded-sm border px-2 py-0.5 font-mono text-[10px]"
       title={detail}
     >
       {status}
@@ -62,11 +62,11 @@ export function RepoCard({ repo }: { repo: RepoWithMissionSummary }): React.JSX.
   const repoFullName = `${repo.owner}/${repo.name}`;
 
   return (
-    <article className="flex flex-col gap-3 rounded-md border border-border bg-surface p-4 transition-shadow hover:border-ink-muted/50 hover:shadow-md">
+    <article className="border-border bg-surface hover:border-ink-muted/50 flex flex-col gap-3 rounded-md border p-4 transition-shadow hover:shadow-md">
       <div className="flex items-start justify-between gap-2">
         <Link
           href={`/repo/${repo.owner}/${repo.name}`}
-          className="min-w-0 truncate text-sm font-semibold text-ink hover:text-accent"
+          className="text-ink hover:text-accent min-w-0 truncate text-sm font-semibold"
         >
           {repo.owner}/{repo.name}
         </Link>
@@ -90,7 +90,7 @@ export function RepoCard({ repo }: { repo: RepoWithMissionSummary }): React.JSX.
       </div>
 
       {repo.description !== null && repo.description !== "" && (
-        <p className="line-clamp-2 text-xs leading-relaxed text-ink-muted">{repo.description}</p>
+        <p className="text-ink-muted line-clamp-2 text-xs leading-relaxed">{repo.description}</p>
       )}
 
       {repo.ecosystems.length > 0 && (
@@ -102,7 +102,7 @@ export function RepoCard({ repo }: { repo: RepoWithMissionSummary }): React.JSX.
       )}
 
       {statusNote !== null ? (
-        <span className="font-mono text-xs text-ink-muted">{statusNote}</span>
+        <span className="text-ink-muted font-mono text-xs">{statusNote}</span>
       ) : (
         <MissionCounts counts={repo.missionCounts} />
       )}
@@ -115,7 +115,7 @@ export function RepoCard({ repo }: { repo: RepoWithMissionSummary }): React.JSX.
         <IngestionStatusChip status="failed" error={repo.ingestionError} />
       )}
 
-      <div className="flex items-center justify-between border-t border-border/60 pt-2 font-mono text-[11px] text-ink-muted">
+      <div className="border-border/60 text-ink-muted flex items-center justify-between border-t pt-2 font-mono text-[11px]">
         <span>★ {repo.stars.toLocaleString()}</span>
         {repo.lastIngestedAt !== null && (
           <span>Ingested {repo.lastIngestedAt.toLocaleDateString()}</span>

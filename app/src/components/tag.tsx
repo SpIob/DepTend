@@ -18,7 +18,7 @@ export function Tag({
 }): React.JSX.Element {
   return (
     <span
-      className={`inline-flex shrink-0 items-center gap-1 rounded-sm px-1.5 py-0.5 font-mono text-[11px] font-semibold uppercase tracking-wide ${className}`}
+      className={`inline-flex shrink-0 items-center gap-1 rounded-xs px-1.5 py-0.5 font-mono text-[11px] font-semibold tracking-wide uppercase ${className}`}
     >
       {children}
     </span>

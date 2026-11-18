@@ -59,7 +59,7 @@ export default async function OrgPage({
             <span className="text-border" aria-hidden="true">
               /
             </span>
-            <h1 className="font-mono text-lg font-semibold text-ink">{org.name ?? orgLogin}</h1>
+            <h1 className="text-ink font-mono text-lg font-semibold">{org.name ?? orgLogin}</h1>
             {org.avatarUrl && (
               <Image
                 src={org.avatarUrl}
@@ -72,7 +72,7 @@ export default async function OrgPage({
                 // an <img>'s pixels, not around them). The 1px border
                 // still needs *some* surface when the asset has not
                 // loaded, so use `bg-surface` underneath.
-                className="shrink-0 rounded-full border border-border"
+                className="border-border shrink-0 rounded-full border"
               />
             )}
           </>
@@ -80,7 +80,7 @@ export default async function OrgPage({
         right={
           <>
             {isMember && (
-              <span className="rounded-sm border border-accent/20 bg-accent/10 px-2 py-0.5 text-accent">
+              <span className="border-accent/20 bg-accent/10 text-accent rounded-xs border px-2 py-0.5">
                 Member
               </span>
             )}
@@ -88,14 +88,14 @@ export default async function OrgPage({
           </>
         }
       >
-        <p className="max-w-2xl text-sm leading-relaxed text-ink-muted">
+        <p className="text-ink-muted max-w-2xl text-sm leading-relaxed">
           Repositories in this organization.
         </p>
       </PageHeader>
 
       {repos.length === 0 ? (
-        <div className="rounded-sm border border-dashed border-border bg-surface p-10 text-center">
-          <p className="font-medium text-ink">No repositories in this organization.</p>
+        <div className="border-border bg-surface rounded-xs border border-dashed p-10 text-center">
+          <p className="text-ink font-medium">No repositories in this organization.</p>
         </div>
       ) : (
         <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
