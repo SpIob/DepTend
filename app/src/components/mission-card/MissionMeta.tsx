@@ -14,7 +14,7 @@ export function MissionMeta({ mission }: MissionMetaProps): React.JSX.Element {
     mission.claimedBy !== null && mission.claimedBy === repo.owner && repo.orgId === null;
 
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-xs text-ink-muted">
+    <div className="text-ink-muted flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-xs">
       <span className={CONFIDENCE_CLASS[score.confidence]}>
         {isLowConfidence && "⚠ "}
         {CONFIDENCE_TEXT[score.confidence]}
@@ -22,13 +22,13 @@ export function MissionMeta({ mission }: MissionMetaProps): React.JSX.Element {
       <span aria-hidden="true">·</span>
       <a
         href={`https://github.com/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.name)}`}
-        className="underline decoration-dotted underline-offset-2 hover:text-accent"
+        className="hover:text-accent underline decoration-dotted underline-offset-2"
       >
         {repo.owner}/{repo.name}
       </a>
       {isRepoOwner && (
         <span
-          className="inline-flex items-center rounded border border-border bg-surface px-1.5 py-0.5 font-mono text-[10px] text-ink-muted"
+          className="border-border bg-surface text-ink-muted inline-flex items-center rounded-sm border px-1.5 py-0.5 font-mono text-[10px]"
           aria-label="Mission claimed by the repository owner"
         >
           repo owner

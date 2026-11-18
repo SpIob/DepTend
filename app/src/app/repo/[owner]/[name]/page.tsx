@@ -41,9 +41,9 @@ export async function generateMetadata({
 
 function EmptyState({ note }: { note: string | null }): React.JSX.Element {
   return (
-    <div className="rounded-sm border border-dashed border-border bg-surface p-10 text-center">
-      <p className="font-medium text-ink">No open missions for this repo.</p>
-      <p className="mt-1 text-sm text-ink-muted">
+    <div className="border-border bg-surface rounded-xs border border-dashed p-10 text-center">
+      <p className="text-ink font-medium">No open missions for this repo.</p>
+      <p className="text-ink-muted mt-1 text-sm">
         {note ?? "Either it's in good shape, or it hasn't finished ingesting yet."}
       </p>
     </div>
@@ -110,7 +110,7 @@ export default async function RepoPage({
             <span className="text-border" aria-hidden="true">
               /
             </span>
-            <h1 className="min-w-0 truncate font-mono text-sm font-semibold text-ink">
+            <h1 className="text-ink min-w-0 truncate font-mono text-sm font-semibold">
               {repo.owner}/{repo.name}
             </h1>
             <BookmarkToggle
@@ -124,7 +124,7 @@ export default async function RepoPage({
           <>
             <a
               href={`https://github.com/${repo.owner}/${repo.name}`}
-              className="underline decoration-dotted underline-offset-2 hover:text-ink"
+              className="hover:text-ink underline decoration-dotted underline-offset-2"
             >
               View on GitHub
             </a>
@@ -144,7 +144,7 @@ export default async function RepoPage({
         )}
         {/* Same stats the repo card shows on the directory, mirrored here —
             on their own line so the title row never truncates to fit them. */}
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-xs text-ink-muted">
+        <div className="text-ink-muted flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-xs">
           <span>★ {repo.stars.toLocaleString()}</span>
           {freshness !== null && repo.lastIngestedAt !== null && (
             <>
@@ -159,36 +159,36 @@ export default async function RepoPage({
           )}
           {repo.lastIngestedAt === null && <span>never scanned</span>}
         </div>
-        {statusDetail !== null && <p className="text-sm text-ink-muted">{statusDetail}</p>}
-        <p className="max-w-xl text-sm leading-relaxed text-ink-muted">
+        {statusDetail !== null && <p className="text-ink-muted text-sm">{statusDetail}</p>}
+        <p className="text-ink-muted max-w-xl text-sm leading-relaxed">
           {repo.description ?? "Prioritized maintenance missions for this repo."}
         </p>
         <Link
           href="/"
-          className="w-fit font-mono text-xs text-accent underline decoration-dotted underline-offset-2 hover:text-ink"
+          className="text-accent hover:text-ink w-fit font-mono text-xs underline decoration-dotted underline-offset-2"
         >
           ← All repos
         </Link>
       </PageHeader>
 
       {/* Badge disclosure */}
-      <details className="rounded-sm border border-border bg-surface p-4">
-        <summary className="cursor-pointer select-none font-mono text-xs text-ink">
+      <details className="border-border bg-surface rounded-xs border p-4">
+        <summary className="text-ink cursor-pointer font-mono text-xs select-none">
           Badge for this repo
         </summary>
         <div className="mt-3 space-y-2">
-          <p className="text-sm text-ink-muted">
+          <p className="text-ink-muted text-sm">
             Embed this in your README to show your repo's mission posture:
           </p>
-          <div className="overflow-x-auto rounded bg-black/50 p-3 font-mono text-xs text-green-300">
+          <div className="overflow-x-auto rounded-sm bg-black/50 p-3 font-mono text-xs text-green-300">
             <code>
               {`![depTend](${process.env.NEXT_PUBLIC_APP_URL ?? "https://deptend.dev"}/api/repos/${repo.owner}/${repo.name}/badge.svg)`}
             </code>
           </div>
-          <p className="text-xs text-ink-muted">
+          <p className="text-ink-muted text-xs">
             Markdown:
             <br />
-            <code className="rounded bg-black/50 px-1.5 py-0.5 font-mono text-[10px]">
+            <code className="rounded-sm bg-black/50 px-1.5 py-0.5 font-mono text-[10px]">
               {`![depTend](${process.env.NEXT_PUBLIC_APP_URL ?? "https://deptend.dev"}/api/repos/${repo.owner}/${repo.name}/badge.svg)`}
             </code>
           </p>

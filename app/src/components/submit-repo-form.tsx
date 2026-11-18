@@ -113,11 +113,11 @@ export function SubmitRepoForm({
 
   if (session?.user === undefined) {
     return (
-      <p className="text-sm text-ink-muted">
+      <p className="text-ink-muted text-sm">
         <button
           type="button"
           onClick={() => void signInWithGitHub()}
-          className="text-accent underline decoration-dotted underline-offset-2 hover:text-ink"
+          className="text-accent hover:text-ink underline decoration-dotted underline-offset-2"
         >
           Sign in with GitHub
         </button>{" "}
@@ -128,7 +128,7 @@ export function SubmitRepoForm({
 
   if (atCap) {
     return (
-      <p className="font-mono text-xs text-ink-muted">
+      <p className="text-ink-muted font-mono text-xs">
         {repoCount}/{maxRepos} repos indexed — cap reached for MVP.
       </p>
     );
@@ -152,13 +152,13 @@ export function SubmitRepoForm({
           }}
           placeholder="https://github.com/owner/repo"
           required
-          className="w-full rounded-sm border border-border bg-surface px-3 py-1.5 font-mono text-sm text-ink placeholder:text-ink-muted focus-visible:outline-accent"
+          className="border-border bg-surface text-ink placeholder:text-ink-muted focus-visible:outline-accent w-full rounded-xs border px-3 py-1.5 font-mono text-sm"
         />
         <div role="status" aria-live="polite">
           {state.kind === "success" && (
-            <p className="text-xs text-status-success">{state.message}</p>
+            <p className="text-status-success text-xs">{state.message}</p>
           )}
-          {state.kind === "error" && <p className="text-xs text-status-error">{state.message}</p>}
+          {state.kind === "error" && <p className="text-status-error text-xs">{state.message}</p>}
         </div>
       </div>
       <div className="flex flex-col gap-2 sm:w-64 sm:flex-row sm:items-center sm:justify-between">
@@ -168,10 +168,10 @@ export function SubmitRepoForm({
             checked={notifyOptIn}
             onChange={(e) => setNotifyOptIn(e.target.checked)}
             disabled={state.kind === "submitting"}
-            className="rounded border-border text-accent focus-visible:outline-1 focus-visible:outline-accent disabled:opacity-50"
+            className="border-border text-accent focus-visible:outline-accent rounded-sm focus-visible:outline-1 disabled:opacity-50"
             aria-describedby="notify-optin-desc"
           />
-          <span className="font-mono text-sm text-ink">
+          <span className="text-ink font-mono text-sm">
             Notify me about new missions on this repo
           </span>
         </label>
@@ -182,7 +182,7 @@ export function SubmitRepoForm({
         <button
           type="submit"
           disabled={state.kind === "submitting"}
-          className="shrink-0 rounded-sm bg-accent px-3 py-1.5 font-mono text-sm text-white disabled:opacity-50"
+          className="bg-accent shrink-0 rounded-xs px-3 py-1.5 font-mono text-sm text-white disabled:opacity-50"
         >
           {state.kind === "submitting" ? "Submitting…" : "Submit repo"}
         </button>
