@@ -1,0 +1,552 @@
+[
+  {
+    "number": 12,
+    "created_at": "2026-11-19T00:00:40Z",
+    "updated_at": "2026-11-19T00:00:40Z",
+    "url": "https://api.github.com/repos/SpIob/deptend-sarif-scratch/code-scanning/alerts/12",
+    "html_url": "https://github.com/SpIob/deptend-sarif-scratch/security/code-scanning/12",
+    "state": "open",
+    "fixed_at": null,
+    "dismissed_by": null,
+    "dismissed_at": null,
+    "dismissed_reason": null,
+    "dismissed_comment": null,
+    "rule": {
+      "id": "GHSA-vh95-rmgr-6w4m",
+      "severity": "warning",
+      "description": "Prototype Pollution in minimist",
+      "name": "GHSA-vh95-rmgr-6w4m",
+      "tags": ["security", "vulnerability"],
+      "full_description": "Prototype Pollution in minimist",
+      "help": "[GHSA-vh95-rmgr-6w4m](https://github.com/advisories/GHSA-vh95-rmgr-6w4m): Prototype Pollution in minimist\n\nFixed in version: 0.2.1"
+    },
+    "tool": { "name": "deptend", "guid": null, "version": "0.1.2" },
+    "most_recent_instance": {
+      "ref": "refs/heads/main",
+      "analysis_key": ".github/workflows/sarif.yml:scan",
+      "environment": "{}",
+      "category": ".github/workflows/sarif.yml:scan",
+      "state": "open",
+      "commit_sha": "a7f6925ed36961fad052af665b85d125040c37d4",
+      "message": { "text": "MEDIUM: Prototype Pollution in minimist in minimist@1.2.0" },
+      "location": {
+        "path": "package.json",
+        "start_line": 1,
+        "end_line": 1,
+        "start_column": 1,
+        "end_column": 1
+      },
+      "classifications": []
+    },
+    "instances_url": "https://api.github.com/repos/SpIob/deptend-sarif-scratch/code-scanning/alerts/12/instances",
+    "dismissal_approved_by": null,
+    "assignees": [],
+    "linked_pull_requests": [],
+    "linked_issues": []
+  },
+  {
+    "number": 11,
+    "created_at": "2026-11-19T00:00:40Z",
+    "updated_at": "2026-11-19T00:00:40Z",
+    "url": "https://api.github.com/repos/SpIob/deptend-sarif-scratch/code-scanning/alerts/11",
+    "html_url": "https://github.com/SpIob/deptend-sarif-scratch/security/code-scanning/11",
+    "state": "open",
+    "fixed_at": null,
+    "dismissed_by": null,
+    "dismissed_at": null,
+    "dismissed_reason": null,
+    "dismissed_comment": null,
+    "rule": {
+      "id": "GHSA-4xc9-xhrj-v574",
+      "severity": "error",
+      "description": "Prototype Pollution in lodash",
+      "name": "GHSA-4xc9-xhrj-v574",
+      "tags": ["security", "vulnerability"],
+      "full_description": "Prototype Pollution in lodash",
+      "help": "[GHSA-4xc9-xhrj-v574](https://github.com/advisories/GHSA-4xc9-xhrj-v574): Prototype Pollution in lodash\n\nFixed in version: 4.17.11"
+    },
+    "tool": { "name": "deptend", "guid": null, "version": "0.1.2" },
+    "most_recent_instance": {
+      "ref": "refs/heads/main",
+      "analysis_key": ".github/workflows/sarif.yml:scan",
+      "environment": "{}",
+      "category": ".github/workflows/sarif.yml:scan",
+      "state": "open",
+      "commit_sha": "a7f6925ed36961fad052af665b85d125040c37d4",
+      "message": { "text": "HIGH: Prototype Pollution in lodash in lodash@4.17.15" },
+      "location": {
+        "path": "package.json",
+        "start_line": 1,
+        "end_line": 1,
+        "start_column": 1,
+        "end_column": 1
+      },
+      "classifications": []
+    },
+    "instances_url": "https://api.github.com/repos/SpIob/deptend-sarif-scratch/code-scanning/alerts/11/instances",
+    "dismissal_approved_by": null,
+    "assignees": [],
+    "linked_pull_requests": [],
+    "linked_issues": []
+  },
+  {
+    "number": 10,
+    "created_at": "2026-11-19T00:00:40Z",
+    "updated_at": "2026-11-19T00:00:40Z",
+    "url": "https://api.github.com/repos/SpIob/deptend-sarif-scratch/code-scanning/alerts/10",
+    "html_url": "https://github.com/SpIob/deptend-sarif-scratch/security/code-scanning/10",
+    "state": "open",
+    "fixed_at": null,
+    "dismissed_by": null,
+    "dismissed_at": null,
+    "dismissed_reason": null,
+    "dismissed_comment": null,
+    "rule": {
+      "id": "GHSA-29mw-wpgm-hmr9",
+      "severity": "warning",
+      "description": "Regular Expression Denial of Service (ReDoS) in lodash",
+      "name": "GHSA-29mw-wpgm-hmr9",
+      "tags": ["security", "vulnerability"],
+      "full_description": "Regular Expression Denial of Service (ReDoS) in lodash",
+      "help": "[GHSA-29mw-wpgm-hmr9](https://github.com/advisories/GHSA-29mw-wpgm-hmr9): Regular Expression Denial of Service (ReDoS) in lodash\n\nFixed in version: 4.17.21"
+    },
+    "tool": { "name": "deptend", "guid": null, "version": "0.1.2" },
+    "most_recent_instance": {
+      "ref": "refs/heads/main",
+      "analysis_key": ".github/workflows/sarif.yml:scan",
+      "environment": "{}",
+      "category": ".github/workflows/sarif.yml:scan",
+      "state": "open",
+      "commit_sha": "a7f6925ed36961fad052af665b85d125040c37d4",
+      "message": {
+        "text": "MEDIUM: Regular Expression Denial of Service (ReDoS) in lodash in lodash@4.17.15"
+      },
+      "location": {
+        "path": "package.json",
+        "start_line": 1,
+        "end_line": 1,
+        "start_column": 1,
+        "end_column": 1
+      },
+      "classifications": []
+    },
+    "instances_url": "https://api.github.com/repos/SpIob/deptend-sarif-scratch/code-scanning/alerts/10/instances",
+    "dismissal_approved_by": null,
+    "assignees": [],
+    "linked_pull_requests": [],
+    "linked_issues": []
+  },
+  {
+    "number": 9,
+    "created_at": "2026-11-19T00:00:40Z",
+    "updated_at": "2026-11-19T00:00:40Z",
+    "url": "https://api.github.com/repos/SpIob/deptend-sarif-scratch/code-scanning/alerts/9",
+    "html_url": "https://github.com/SpIob/deptend-sarif-scratch/security/code-scanning/9",
+    "state": "open",
+    "fixed_at": null,
+    "dismissed_by": null,
+    "dismissed_at": null,
+    "dismissed_reason": null,
+    "dismissed_comment": null,
+    "rule": {
+      "id": "GHSA-f23m-r3pf-42rh",
+      "severity": "warning",
+      "description": "lodash vulnerable to prototype pollution via array-path bypass in `_.unset`, `_.omit`, and `_.pullAt",
+      "name": "GHSA-f23m-r3pf-42rh",
+      "tags": ["security", "vulnerability"],
+      "full_description": "lodash vulnerable to prototype pollution via array-path bypass in `_.unset`, `_.omit`, and `_.pullAt",
+      "help": "[GHSA-f23m-r3pf-42rh](https://github.com/advisories/GHSA-f23m-r3pf-42rh): lodash vulnerable to prototype pollution via array-path bypass in `_.unset`, `_.omit`, and `_.pullAt\n\nFixed in version: 4.18.1"
+    },
+    "tool": { "name": "deptend", "guid": null, "version": "0.1.2" },
+    "most_recent_instance": {
+      "ref": "refs/heads/main",
+      "analysis_key": ".github/workflows/sarif.yml:scan",
+      "environment": "{}",
+      "category": ".github/workflows/sarif.yml:scan",
+      "state": "open",
+      "commit_sha": "a7f6925ed36961fad052af665b85d125040c37d4",
+      "message": {
+        "text": "MEDIUM: lodash vulnerable to prototype pollution via array-path bypass in `_.unset`, `_.omit`, and `_.pullAt in lodash@4.17.15"
+      },
+      "location": {
+        "path": "package.json",
+        "start_line": 1,
+        "end_line": 1,
+        "start_column": 1,
+        "end_column": 1
+      },
+      "classifications": []
+    },
+    "instances_url": "https://api.github.com/repos/SpIob/deptend-sarif-scratch/code-scanning/alerts/9/instances",
+    "dismissal_approved_by": null,
+    "assignees": [],
+    "linked_pull_requests": [],
+    "linked_issues": []
+  },
+  {
+    "number": 8,
+    "created_at": "2026-11-19T00:00:40Z",
+    "updated_at": "2026-11-19T00:00:40Z",
+    "url": "https://api.github.com/repos/SpIob/deptend-sarif-scratch/code-scanning/alerts/8",
+    "html_url": "https://github.com/SpIob/deptend-sarif-scratch/security/code-scanning/8",
+    "state": "open",
+    "fixed_at": null,
+    "dismissed_by": null,
+    "dismissed_at": null,
+    "dismissed_reason": null,
+    "dismissed_comment": null,
+    "rule": {
+      "id": "GHSA-fvqr-27wr-82fm",
+      "severity": "warning",
+      "description": "Prototype Pollution in lodash",
+      "name": "GHSA-fvqr-27wr-82fm",
+      "tags": ["security", "vulnerability"],
+      "full_description": "Prototype Pollution in lodash",
+      "help": "[GHSA-fvqr-27wr-82fm](https://github.com/advisories/GHSA-fvqr-27wr-82fm): Prototype Pollution in lodash\n\nFixed in version: 4.17.5"
+    },
+    "tool": { "name": "deptend", "guid": null, "version": "0.1.2" },
+    "most_recent_instance": {
+      "ref": "refs/heads/main",
+      "analysis_key": ".github/workflows/sarif.yml:scan",
+      "environment": "{}",
+      "category": ".github/workflows/sarif.yml:scan",
+      "state": "open",
+      "commit_sha": "a7f6925ed36961fad052af665b85d125040c37d4",
+      "message": { "text": "MEDIUM: Prototype Pollution in lodash in lodash@4.17.15" },
+      "location": {
+        "path": "package.json",
+        "start_line": 1,
+        "end_line": 1,
+        "start_column": 1,
+        "end_column": 1
+      },
+      "classifications": []
+    },
+    "instances_url": "https://api.github.com/repos/SpIob/deptend-sarif-scratch/code-scanning/alerts/8/instances",
+    "dismissal_approved_by": null,
+    "assignees": [],
+    "linked_pull_requests": [],
+    "linked_issues": []
+  },
+  {
+    "number": 7,
+    "created_at": "2026-11-19T00:00:40Z",
+    "updated_at": "2026-11-19T00:00:40Z",
+    "url": "https://api.github.com/repos/SpIob/deptend-sarif-scratch/code-scanning/alerts/7",
+    "html_url": "https://github.com/SpIob/deptend-sarif-scratch/security/code-scanning/7",
+    "state": "open",
+    "fixed_at": null,
+    "dismissed_by": null,
+    "dismissed_at": null,
+    "dismissed_reason": null,
+    "dismissed_comment": null,
+    "rule": {
+      "id": "GHSA-x5rq-j2xg-h7qm",
+      "severity": "warning",
+      "description": "Regular Expression Denial of Service (ReDoS) in lodash",
+      "name": "GHSA-x5rq-j2xg-h7qm",
+      "tags": ["security", "vulnerability"],
+      "full_description": "Regular Expression Denial of Service (ReDoS) in lodash",
+      "help": "[GHSA-x5rq-j2xg-h7qm](https://github.com/advisories/GHSA-x5rq-j2xg-h7qm): Regular Expression Denial of Service (ReDoS) in lodash\n\nFixed in version: 4.17.11"
+    },
+    "tool": { "name": "deptend", "guid": null, "version": "0.1.2" },
+    "most_recent_instance": {
+      "ref": "refs/heads/main",
+      "analysis_key": ".github/workflows/sarif.yml:scan",
+      "environment": "{}",
+      "category": ".github/workflows/sarif.yml:scan",
+      "state": "open",
+      "commit_sha": "a7f6925ed36961fad052af665b85d125040c37d4",
+      "message": {
+        "text": "MEDIUM: Regular Expression Denial of Service (ReDoS) in lodash in lodash@4.17.15"
+      },
+      "location": {
+        "path": "package.json",
+        "start_line": 1,
+        "end_line": 1,
+        "start_column": 1,
+        "end_column": 1
+      },
+      "classifications": []
+    },
+    "instances_url": "https://api.github.com/repos/SpIob/deptend-sarif-scratch/code-scanning/alerts/7/instances",
+    "dismissal_approved_by": null,
+    "assignees": [],
+    "linked_pull_requests": [],
+    "linked_issues": []
+  },
+  {
+    "number": 6,
+    "created_at": "2026-11-19T00:00:40Z",
+    "updated_at": "2026-11-19T00:00:40Z",
+    "url": "https://api.github.com/repos/SpIob/deptend-sarif-scratch/code-scanning/alerts/6",
+    "html_url": "https://github.com/SpIob/deptend-sarif-scratch/security/code-scanning/6",
+    "state": "open",
+    "fixed_at": null,
+    "dismissed_by": null,
+    "dismissed_at": null,
+    "dismissed_reason": null,
+    "dismissed_comment": null,
+    "rule": {
+      "id": "GHSA-xxjr-mmjv-4gpg",
+      "severity": "warning",
+      "description": "Lodash has Prototype Pollution Vulnerability in `_.unset`, `_.omit`, and `_.pullAt` functions",
+      "name": "GHSA-xxjr-mmjv-4gpg",
+      "tags": ["security", "vulnerability"],
+      "full_description": "Lodash has Prototype Pollution Vulnerability in `_.unset`, `_.omit`, and `_.pullAt` functions",
+      "help": "[GHSA-xxjr-mmjv-4gpg](https://github.com/advisories/GHSA-xxjr-mmjv-4gpg): Lodash has Prototype Pollution Vulnerability in `_.unset`, `_.omit`, and `_.pullAt` functions\n\nFixed in version: 4.17.23"
+    },
+    "tool": { "name": "deptend", "guid": null, "version": "0.1.2" },
+    "most_recent_instance": {
+      "ref": "refs/heads/main",
+      "analysis_key": ".github/workflows/sarif.yml:scan",
+      "environment": "{}",
+      "category": ".github/workflows/sarif.yml:scan",
+      "state": "open",
+      "commit_sha": "a7f6925ed36961fad052af665b85d125040c37d4",
+      "message": {
+        "text": "MEDIUM: Lodash has Prototype Pollution Vulnerability in `_.unset`, `_.omit`, and `_.pullAt` functions in lodash@4.17.15"
+      },
+      "location": {
+        "path": "package.json",
+        "start_line": 1,
+        "end_line": 1,
+        "start_column": 1,
+        "end_column": 1
+      },
+      "classifications": []
+    },
+    "instances_url": "https://api.github.com/repos/SpIob/deptend-sarif-scratch/code-scanning/alerts/6/instances",
+    "dismissal_approved_by": null,
+    "assignees": [],
+    "linked_pull_requests": [],
+    "linked_issues": []
+  },
+  {
+    "number": 5,
+    "created_at": "2026-11-19T00:00:40Z",
+    "updated_at": "2026-11-19T00:00:40Z",
+    "url": "https://api.github.com/repos/SpIob/deptend-sarif-scratch/code-scanning/alerts/5",
+    "html_url": "https://github.com/SpIob/deptend-sarif-scratch/security/code-scanning/5",
+    "state": "open",
+    "fixed_at": null,
+    "dismissed_by": null,
+    "dismissed_at": null,
+    "dismissed_reason": null,
+    "dismissed_comment": null,
+    "rule": {
+      "id": "GHSA-r5fr-rjxr-66jc",
+      "severity": "error",
+      "description": "lodash vulnerable to Code Injection via `_.template` imports key names",
+      "name": "GHSA-r5fr-rjxr-66jc",
+      "tags": ["security", "vulnerability"],
+      "full_description": "lodash vulnerable to Code Injection via `_.template` imports key names",
+      "help": "[GHSA-r5fr-rjxr-66jc](https://github.com/advisories/GHSA-r5fr-rjxr-66jc): lodash vulnerable to Code Injection via `_.template` imports key names\n\nFixed in version: 4.18.0"
+    },
+    "tool": { "name": "deptend", "guid": null, "version": "0.1.2" },
+    "most_recent_instance": {
+      "ref": "refs/heads/main",
+      "analysis_key": ".github/workflows/sarif.yml:scan",
+      "environment": "{}",
+      "category": ".github/workflows/sarif.yml:scan",
+      "state": "open",
+      "commit_sha": "a7f6925ed36961fad052af665b85d125040c37d4",
+      "message": {
+        "text": "HIGH: lodash vulnerable to Code Injection via `_.template` imports key names in lodash@4.17.15"
+      },
+      "location": {
+        "path": "package.json",
+        "start_line": 1,
+        "end_line": 1,
+        "start_column": 1,
+        "end_column": 1
+      },
+      "classifications": []
+    },
+    "instances_url": "https://api.github.com/repos/SpIob/deptend-sarif-scratch/code-scanning/alerts/5/instances",
+    "dismissal_approved_by": null,
+    "assignees": [],
+    "linked_pull_requests": [],
+    "linked_issues": []
+  },
+  {
+    "number": 4,
+    "created_at": "2026-11-19T00:00:40Z",
+    "updated_at": "2026-11-19T00:00:40Z",
+    "url": "https://api.github.com/repos/SpIob/deptend-sarif-scratch/code-scanning/alerts/4",
+    "html_url": "https://github.com/SpIob/deptend-sarif-scratch/security/code-scanning/4",
+    "state": "open",
+    "fixed_at": null,
+    "dismissed_by": null,
+    "dismissed_at": null,
+    "dismissed_reason": null,
+    "dismissed_comment": null,
+    "rule": {
+      "id": "GHSA-p6mc-m468-83gw",
+      "severity": "error",
+      "description": "Prototype Pollution in lodash",
+      "name": "GHSA-p6mc-m468-83gw",
+      "tags": ["security", "vulnerability"],
+      "full_description": "Prototype Pollution in lodash",
+      "help": "[GHSA-p6mc-m468-83gw](https://github.com/advisories/GHSA-p6mc-m468-83gw): Prototype Pollution in lodash\n\nFixed in version: 4.17.19"
+    },
+    "tool": { "name": "deptend", "guid": null, "version": "0.1.2" },
+    "most_recent_instance": {
+      "ref": "refs/heads/main",
+      "analysis_key": ".github/workflows/sarif.yml:scan",
+      "environment": "{}",
+      "category": ".github/workflows/sarif.yml:scan",
+      "state": "open",
+      "commit_sha": "a7f6925ed36961fad052af665b85d125040c37d4",
+      "message": { "text": "HIGH: Prototype Pollution in lodash in lodash@4.17.15" },
+      "location": {
+        "path": "package.json",
+        "start_line": 1,
+        "end_line": 1,
+        "start_column": 1,
+        "end_column": 1
+      },
+      "classifications": []
+    },
+    "instances_url": "https://api.github.com/repos/SpIob/deptend-sarif-scratch/code-scanning/alerts/4/instances",
+    "dismissal_approved_by": null,
+    "assignees": [],
+    "linked_pull_requests": [],
+    "linked_issues": []
+  },
+  {
+    "number": 3,
+    "created_at": "2026-11-19T00:00:40Z",
+    "updated_at": "2026-11-19T00:00:40Z",
+    "url": "https://api.github.com/repos/SpIob/deptend-sarif-scratch/code-scanning/alerts/3",
+    "html_url": "https://github.com/SpIob/deptend-sarif-scratch/security/code-scanning/3",
+    "state": "open",
+    "fixed_at": null,
+    "dismissed_by": null,
+    "dismissed_at": null,
+    "dismissed_reason": null,
+    "dismissed_comment": null,
+    "rule": {
+      "id": "GHSA-35jh-r3h4-6jhm",
+      "severity": "error",
+      "description": "Command Injection in lodash",
+      "name": "GHSA-35jh-r3h4-6jhm",
+      "tags": ["security", "vulnerability"],
+      "full_description": "Command Injection in lodash",
+      "help": "[GHSA-35jh-r3h4-6jhm](https://github.com/advisories/GHSA-35jh-r3h4-6jhm): Command Injection in lodash\n\nFixed in version: 4.17.21"
+    },
+    "tool": { "name": "deptend", "guid": null, "version": "0.1.2" },
+    "most_recent_instance": {
+      "ref": "refs/heads/main",
+      "analysis_key": ".github/workflows/sarif.yml:scan",
+      "environment": "{}",
+      "category": ".github/workflows/sarif.yml:scan",
+      "state": "open",
+      "commit_sha": "a7f6925ed36961fad052af665b85d125040c37d4",
+      "message": { "text": "HIGH: Command Injection in lodash in lodash@4.17.15" },
+      "location": {
+        "path": "package.json",
+        "start_line": 1,
+        "end_line": 1,
+        "start_column": 1,
+        "end_column": 1
+      },
+      "classifications": []
+    },
+    "instances_url": "https://api.github.com/repos/SpIob/deptend-sarif-scratch/code-scanning/alerts/3/instances",
+    "dismissal_approved_by": null,
+    "assignees": [],
+    "linked_pull_requests": [],
+    "linked_issues": []
+  },
+  {
+    "number": 2,
+    "created_at": "2026-11-19T00:00:40Z",
+    "updated_at": "2026-11-19T00:00:40Z",
+    "url": "https://api.github.com/repos/SpIob/deptend-sarif-scratch/code-scanning/alerts/2",
+    "html_url": "https://github.com/SpIob/deptend-sarif-scratch/security/code-scanning/2",
+    "state": "open",
+    "fixed_at": null,
+    "dismissed_by": null,
+    "dismissed_at": null,
+    "dismissed_reason": null,
+    "dismissed_comment": null,
+    "rule": {
+      "id": "GHSA-jf85-cpcp-j695",
+      "severity": "error",
+      "description": "Prototype Pollution in lodash",
+      "name": "GHSA-jf85-cpcp-j695",
+      "tags": ["security", "vulnerability"],
+      "full_description": "Prototype Pollution in lodash",
+      "help": "[GHSA-jf85-cpcp-j695](https://github.com/advisories/GHSA-jf85-cpcp-j695): Prototype Pollution in lodash\n\nFixed in version: 4.17.12"
+    },
+    "tool": { "name": "deptend", "guid": null, "version": "0.1.2" },
+    "most_recent_instance": {
+      "ref": "refs/heads/main",
+      "analysis_key": ".github/workflows/sarif.yml:scan",
+      "environment": "{}",
+      "category": ".github/workflows/sarif.yml:scan",
+      "state": "open",
+      "commit_sha": "a7f6925ed36961fad052af665b85d125040c37d4",
+      "message": { "text": "CRITICAL: Prototype Pollution in lodash in lodash@4.17.15" },
+      "location": {
+        "path": "package.json",
+        "start_line": 1,
+        "end_line": 1,
+        "start_column": 1,
+        "end_column": 1
+      },
+      "classifications": []
+    },
+    "instances_url": "https://api.github.com/repos/SpIob/deptend-sarif-scratch/code-scanning/alerts/2/instances",
+    "dismissal_approved_by": null,
+    "assignees": [],
+    "linked_pull_requests": [],
+    "linked_issues": []
+  },
+  {
+    "number": 1,
+    "created_at": "2026-11-19T00:00:40Z",
+    "updated_at": "2026-11-19T00:00:40Z",
+    "url": "https://api.github.com/repos/SpIob/deptend-sarif-scratch/code-scanning/alerts/1",
+    "html_url": "https://github.com/SpIob/deptend-sarif-scratch/security/code-scanning/1",
+    "state": "open",
+    "fixed_at": null,
+    "dismissed_by": null,
+    "dismissed_at": null,
+    "dismissed_reason": null,
+    "dismissed_comment": null,
+    "rule": {
+      "id": "GHSA-xvch-5gv4-984h",
+      "severity": "error",
+      "description": "Prototype Pollution in minimist",
+      "name": "GHSA-xvch-5gv4-984h",
+      "tags": ["security", "vulnerability"],
+      "full_description": "Prototype Pollution in minimist",
+      "help": "[GHSA-xvch-5gv4-984h](https://github.com/advisories/GHSA-xvch-5gv4-984h): Prototype Pollution in minimist\n\nFixed in version: 1.2.6"
+    },
+    "tool": { "name": "deptend", "guid": null, "version": "0.1.2" },
+    "most_recent_instance": {
+      "ref": "refs/heads/main",
+      "analysis_key": ".github/workflows/sarif.yml:scan",
+      "environment": "{}",
+      "category": ".github/workflows/sarif.yml:scan",
+      "state": "open",
+      "commit_sha": "a7f6925ed36961fad052af665b85d125040c37d4",
+      "message": { "text": "CRITICAL: Prototype Pollution in minimist in minimist@1.2.0" },
+      "location": {
+        "path": "package.json",
+        "start_line": 1,
+        "end_line": 1,
+        "start_column": 1,
+        "end_column": 1
+      },
+      "classifications": []
+    },
+    "instances_url": "https://api.github.com/repos/SpIob/deptend-sarif-scratch/code-scanning/alerts/1/instances",
+    "dismissal_approved_by": null,
+    "assignees": [],
+    "linked_pull_requests": [],
+    "linked_issues": []
+  }
+]

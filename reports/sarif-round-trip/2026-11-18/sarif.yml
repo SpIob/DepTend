@@ -1,0 +1,51 @@
+name: SARIF round-trip
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  scan:
+    name: Scan with @deptend/cli and upload SARIF
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout this repo (scan target)
+        uses: actions/checkout@v7
+
+      - name: Checkout DepTend (CLI source)
+        uses: actions/checkout@v7
+        with:
+          repository: SpIob/DepTend
+          path: deptend
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          package_json_file: deptend/package.json
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: deptend/pnpm-lock.yaml
+
+      - name: Install workspace deps
+        run: pnpm install --frozen-lockfile
+        working-directory: deptend
+
+      - name: Build CLI from source
+        run: pnpm --filter @deptend/cli build
+        working-directory: deptend
+
+      - name: Run DepTend scan (SARIF)
+        run: node deptend/cli/dist/index.js . --format sarif --output results.sarif
+
+      - name: Upload SARIF to code scanning
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: results.sarif

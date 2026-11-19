@@ -1,0 +1,438 @@
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	﻿2026-11-19T00:00:14.1249845Z Current runner version: '2.338.2'
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:14.1275958Z ##[group]Runner Image Provisioner
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:14.1276969Z Hosted Compute Agent
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:14.1277613Z Version: 20261111.635
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:14.1278271Z Commit: b8a594ea514ff44cadb5342986c68b1eac6e22ed
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:14.1279044Z Build Date: 2026-11-11T01:49:01Z
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:14.1279730Z Worker ID: {8c92b781-b18b-4476-805d-db393b7989d9}
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:14.1280419Z Region: westus
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:14.1281056Z Cloud: Azure
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:14.1281584Z ##[endgroup]
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:14.1283117Z ##[group]Operating System
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:14.1283764Z Ubuntu
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:14.1284308Z 26.04.1
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:14.1284972Z LTS
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:14.1285473Z ##[endgroup]
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:14.1286212Z ##[group]Runner Image
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:14.1286828Z Image: ubuntu-26.04
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:14.1287391Z Version: 20261116.202.1
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:14.1288732Z Included Software: https://github.com/actions/runner-images/blob/ubuntu26/20261116.202/images/ubuntu/Ubuntu2604-Readme.md
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:14.1290331Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu26%2F20261116.202
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:14.1291309Z ##[endgroup]
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:14.1292606Z ##[group]GITHUB_TOKEN Permissions
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:14.1294587Z Contents: read
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:14.1295180Z Metadata: read
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:14.1296264Z SecurityEvents: write
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:14.1296870Z ##[endgroup]
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:14.1299054Z Secret source: Actions
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:14.1300103Z Cache mode: write
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:14.1301147Z Prepare workflow directory
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:14.1645044Z Prepare all required actions
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:14.1691985Z Getting action download info
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:14.5279167Z Download action repository 'actions/checkout@v7' (SHA:3d3c42e5aac5ba805825da76410c181273ba90b1)
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:14.6271232Z Download action repository 'pnpm/action-setup@v4' (SHA:b906affcce14559ad1aafd4ab0e942779e9f58b1)
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:15.0246048Z Download action repository 'actions/setup-node@v7' (SHA:949feb2413d6458794dcd2491c4babbbce0c15c1)
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:15.0918089Z Download action repository 'github/codeql-action@v3' (SHA:9418214df1f2c4b8128c770156c409013b07d6b9)
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:15.6658262Z Complete job name: Scan with @deptend/cli and upload SARIF
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:15.7719269Z ##[group]Run actions/checkout@v7
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:15.7720728Z with:
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:15.7721675Z   repository: SpIob/deptend-sarif-scratch
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:15.7731525Z   token: ***
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:15.7732426Z   ssh-strict: true
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:15.7733335Z   ssh-user: git
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:15.7734263Z   persist-credentials: true
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:15.7735300Z   clean: true
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:15.7736336Z   sparse-checkout-cone-mode: true
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:15.7737431Z   fetch-depth: 1
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:15.7738335Z   fetch-tags: false
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:15.7739277Z   show-progress: true
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:15.7740218Z   lfs: false
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:15.7741084Z   submodules: false
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:15.7742033Z   set-safe-directory: true
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:15.7743115Z   allow-unsafe-pr-checkout: false
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:15.7744473Z ##[endgroup]
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.0968267Z Syncing repository: SpIob/deptend-sarif-scratch
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.0972716Z ##[group]Getting Git version info
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.0975209Z Working directory is '/home/runner/work/deptend-sarif-scratch/deptend-sarif-scratch'
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.0978404Z [command]/usr/bin/git version
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.0979509Z git version 2.56.1
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.1007470Z ##[endgroup]
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.1039903Z Temporarily overriding HOME='/home/runner/work/_temp/24172153-38a8-4099-a793-0157eb1a5b13' before making global git config changes
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.1045264Z Adding repository directory to the temporary git global config as a safe directory
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.1050708Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/deptend-sarif-scratch/deptend-sarif-scratch
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.1124971Z Deleting the contents of '/home/runner/work/deptend-sarif-scratch/deptend-sarif-scratch'
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.1130500Z ##[group]Determining repository object format
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.1133964Z ##[endgroup]
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.1137007Z ##[group]Initializing the repository
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.1140346Z [command]/usr/bin/git init /home/runner/work/deptend-sarif-scratch/deptend-sarif-scratch
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.1264583Z hint: Using 'master' as the name for the initial branch. This default branch name
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.1267455Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.1269604Z hint: to use in all of your new repositories, which will suppress this warning,
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.1271514Z hint: call:
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.1272361Z hint:
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.1274253Z hint: 	git config --global init.defaultBranch <name>
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.1276665Z hint:
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.1278693Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.1280902Z hint: 'development'. The just-created branch can be renamed via this command:
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.1282724Z hint:
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.1283604Z hint: 	git branch -m <name>
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.1284600Z hint:
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.1289354Z hint: Disable this message with "git config set advice.defaultBranchName false"
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.1292234Z Initialized empty Git repository in /home/runner/work/deptend-sarif-scratch/deptend-sarif-scratch/.git/
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.1296861Z [command]/usr/bin/git remote add origin https://github.com/SpIob/deptend-sarif-scratch
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.1351294Z ##[endgroup]
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.1353480Z ##[group]Disabling automatic garbage collection
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.1355376Z [command]/usr/bin/git config --local gc.auto 0
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.1391793Z ##[endgroup]
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.1394134Z ##[group]Setting up auth
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.1395829Z Removing SSH command configuration
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.1399116Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.1439934Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.1943958Z Removing HTTP extra header
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.1952440Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.1990920Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.2281414Z Removing includeIf entries pointing to credentials config files
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.2285902Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.2331845Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.2640693Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-762d9a35-00db-4d87-8986-91fa4a869008.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.2681975Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/deptend-sarif-scratch/deptend-sarif-scratch/.git.path /home/runner/work/_temp/git-credentials-762d9a35-00db-4d87-8986-91fa4a869008.config
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.2716670Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/deptend-sarif-scratch/deptend-sarif-scratch/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-762d9a35-00db-4d87-8986-91fa4a869008.config
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.2752345Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-762d9a35-00db-4d87-8986-91fa4a869008.config
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.2786806Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-762d9a35-00db-4d87-8986-91fa4a869008.config
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.2818427Z ##[endgroup]
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.2821171Z ##[group]Fetching the repository
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.2827076Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +a7f6925ed36961fad052af665b85d125040c37d4:refs/remotes/origin/main
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.6496059Z From https://github.com/SpIob/deptend-sarif-scratch
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.6498521Z  * [new ref]         a7f6925ed36961fad052af665b85d125040c37d4 -> origin/main
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.6505772Z [command]/usr/bin/git branch --list --remote origin/main
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.6534492Z   origin/main
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.6543064Z [command]/usr/bin/git rev-parse refs/remotes/origin/main
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.6567721Z a7f6925ed36961fad052af665b85d125040c37d4
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.6572981Z ##[endgroup]
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.6574449Z ##[group]Determining the checkout info
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.6576981Z ##[endgroup]
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.6578278Z [command]/usr/bin/git sparse-checkout disable
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.6632413Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.6666094Z ##[group]Checking out the ref
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.6669148Z [command]/usr/bin/git checkout --progress --force -B main refs/remotes/origin/main
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.6735468Z Switched to a new branch 'main'
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.6741120Z branch 'main' set up to track 'origin/main'.
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.6750523Z ##[endgroup]
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.6798684Z [command]/usr/bin/git log -1 --format=%H
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.6826275Z a7f6925ed36961fad052af665b85d125040c37d4
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.7233723Z ##[group]Run actions/checkout@v7
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.7234779Z with:
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.7235816Z   repository: SpIob/DepTend
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.7236790Z   path: deptend
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.7245762Z   token: ***
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.7246600Z   ssh-strict: true
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.7247440Z   ssh-user: git
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.7248305Z   persist-credentials: true
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.7249281Z   clean: true
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.7250154Z   sparse-checkout-cone-mode: true
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.7251193Z   fetch-depth: 1
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.7252030Z   fetch-tags: false
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.7252908Z   show-progress: true
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.7253776Z   lfs: false
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.7254582Z   submodules: false
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.7255459Z   set-safe-directory: true
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.7256565Z   allow-unsafe-pr-checkout: false
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.7257583Z ##[endgroup]
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.8140179Z Syncing repository: SpIob/DepTend
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.8145039Z ##[group]Getting Git version info
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.8148251Z Working directory is '/home/runner/work/deptend-sarif-scratch/deptend-sarif-scratch/deptend'
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.8197268Z [command]/usr/bin/git version
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.8244835Z git version 2.56.1
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.8268310Z ##[endgroup]
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.8281142Z Temporarily overriding HOME='/home/runner/work/_temp/8eb8fc72-93c4-4c26-99eb-f48f225d0348' before making global git config changes
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.8286705Z Adding repository directory to the temporary git global config as a safe directory
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.8291440Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/deptend-sarif-scratch/deptend-sarif-scratch/deptend
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:16.8336835Z ##[group]Determining repository object format
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:17.1700311Z ##[endgroup]
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:17.1701896Z ##[group]Initializing the repository
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:17.1710950Z [command]/usr/bin/git init /home/runner/work/deptend-sarif-scratch/deptend-sarif-scratch/deptend
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:17.1771761Z hint: Using 'master' as the name for the initial branch. This default branch name
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:17.1773322Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:17.1774504Z hint: to use in all of your new repositories, which will suppress this warning,
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:17.1775318Z hint: call:
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:17.1790547Z hint:
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:17.1791178Z hint: 	git config --global init.defaultBranch <name>
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:17.1792260Z hint:
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:17.1793005Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:17.1794647Z hint: 'development'. The just-created branch can be renamed via this command:
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:17.1795897Z hint:
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:17.1796650Z hint: 	git branch -m <name>
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:17.1797232Z hint:
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:17.1797970Z hint: Disable this message with "git config set advice.defaultBranchName false"
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:17.1799443Z Initialized empty Git repository in /home/runner/work/deptend-sarif-scratch/deptend-sarif-scratch/deptend/.git/
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:17.1827572Z [command]/usr/bin/git remote add origin https://github.com/SpIob/DepTend
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:17.1838143Z ##[endgroup]
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:17.1838917Z ##[group]Disabling automatic garbage collection
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:17.1839381Z [command]/usr/bin/git config --local gc.auto 0
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:17.1879849Z ##[endgroup]
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:17.1880741Z ##[group]Setting up auth
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:17.1881353Z Removing SSH command configuration
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:17.1887089Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:17.1933564Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:17.2237745Z Removing HTTP extra header
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:17.2245270Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:17.2301524Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:17.2593867Z Removing includeIf entries pointing to credentials config files
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:17.2599707Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:17.2638718Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:17.2923827Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-8130f805-d5ab-4be9-b351-7978c370b99e.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:17.2970540Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/deptend-sarif-scratch/deptend-sarif-scratch/deptend/.git.path /home/runner/work/_temp/git-credentials-8130f805-d5ab-4be9-b351-7978c370b99e.config
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:17.3009172Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/deptend-sarif-scratch/deptend-sarif-scratch/deptend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-8130f805-d5ab-4be9-b351-7978c370b99e.config
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:17.3048449Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/deptend/.git.path /github/runner_temp/git-credentials-8130f805-d5ab-4be9-b351-7978c370b99e.config
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:17.3084687Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/deptend/.git/worktrees/*.path /github/runner_temp/git-credentials-8130f805-d5ab-4be9-b351-7978c370b99e.config
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:17.3118152Z ##[endgroup]
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:17.3118648Z ##[group]Determining the default branch
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:17.3120829Z Retrieving the default branch name
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:17.6084430Z Default branch 'main'
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:17.6086048Z ##[endgroup]
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:17.6087052Z ##[group]Fetching the repository
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:17.6093491Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +refs/heads/main:refs/remotes/origin/main
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:18.7183810Z From https://github.com/SpIob/DepTend
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:18.7185041Z  * [new branch]      main       -> origin/main
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:18.7189791Z ##[endgroup]
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:18.7190913Z ##[group]Determining the checkout info
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:18.7192042Z ##[endgroup]
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:18.7197438Z [command]/usr/bin/git sparse-checkout disable
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:18.7262335Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:18.7303486Z ##[group]Checking out the ref
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:18.7303950Z [command]/usr/bin/git checkout --progress --force -B main refs/remotes/origin/main
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:18.9029968Z Switched to a new branch 'main'
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:18.9031377Z branch 'main' set up to track 'origin/main'.
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:18.9047843Z ##[endgroup]
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:18.9102314Z [command]/usr/bin/git log -1 --format=%H
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:18.9140680Z 0e7e762e63aa73adf5c8330916153e4c70841d02
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:18.9331609Z ##[group]Run pnpm/action-setup@v4
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:18.9331948Z with:
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:18.9332182Z   package_json_file: deptend/package.json
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:18.9332467Z   dest: ~/setup-pnpm
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:18.9332681Z   run_install: null
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:18.9332904Z   cache: false
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:18.9333128Z   cache_dependency_path: pnpm-lock.yaml
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:18.9333413Z   standalone: false
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:18.9333617Z ##[endgroup]
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:19.0881385Z ##[group]Running self-installer...
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:19.5440389Z (node:2627) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:19.5442453Z (Use `node --trace-deprecation ...` to show where the warning was created)
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:19.6866975Z Progress: resolved 1, reused 0, downloaded 0, added 0
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:19.6988302Z Packages: +1
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:19.6988901Z +
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:20.0984536Z Progress: resolved 1, reused 0, downloaded 1, added 1, done
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:20.1281106Z 
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:20.1281587Z dependencies:
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:20.1282092Z + pnpm 9.15.0 (12.21.0 is available)
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:20.1282471Z 
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:20.1310833Z Done in 855ms
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:20.1537044Z ##[endgroup]
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:20.1537707Z Installation Completed!
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:20.1734374Z ##[group]Run actions/setup-node@v7
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:20.1734681Z with:
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:20.1734890Z   node-version: 24
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:20.1735101Z   cache: pnpm
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:20.1735351Z   cache-dependency-path: deptend/pnpm-lock.yaml
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:20.1735942Z   check-latest: false
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:20.1738550Z   token: ***
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:20.1738771Z   package-manager-cache: true
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:20.1739014Z env:
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:20.1739278Z   PNPM_HOME: /home/runner/setup-pnpm/node_modules/.bin
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:20.1739588Z ##[endgroup]
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:20.3122406Z Found in cache @ /opt/hostedtoolcache/node/24.22.3/x64
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:20.4087419Z ##[group]Environment details
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:20.8024149Z node: v24.22.3
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:20.8024815Z npm: 11.19.1
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:20.8025198Z yarn: 1.22.22
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:20.8026832Z ##[endgroup]
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:20.8049936Z [command]/home/runner/setup-pnpm/node_modules/.bin/pnpm store path --silent
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:21.2208920Z /home/runner/setup-pnpm/node_modules/.bin/store/v3
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:21.4849240Z pnpm cache is not found
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:21.4989919Z ##[group]Run pnpm install --frozen-lockfile
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:21.4990328Z ^[[36;1mpnpm install --frozen-lockfile^[[0m
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:21.5033851Z shell: /usr/bin/bash -e {0}
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:21.5034107Z env:
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:21.5034354Z   PNPM_HOME: /home/runner/setup-pnpm/node_modules/.bin
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:21.5034661Z ##[endgroup]
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:21.9391086Z Scope: all 5 workspace projects
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:21.9895069Z Lockfile is up to date, resolution step is skipped
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:22.0582555Z Progress: resolved 1, reused 0, downloaded 0, added 0
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:22.1317083Z Packages: +479
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:22.1318008Z ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:23.0587817Z Progress: resolved 479, reused 0, downloaded 124, added 112
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:24.0599731Z Progress: resolved 479, reused 0, downloaded 341, added 331
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:25.0603870Z Progress: resolved 479, reused 0, downloaded 431, added 425
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:26.0603087Z Progress: resolved 479, reused 0, downloaded 478, added 478
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:26.3274063Z Progress: resolved 479, reused 0, downloaded 479, added 479, done
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:26.5075568Z .../esbuild@0.18.20/node_modules/esbuild postinstall$ node install.js
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:26.5637872Z .../esbuild@0.21.5/node_modules/esbuild postinstall$ node install.js
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:26.5644020Z .../esbuild@0.25.12/node_modules/esbuild postinstall$ node install.js
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:26.5649142Z .../esbuild@0.28.2/node_modules/esbuild postinstall$ node install.js
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:26.7207550Z .../esbuild@0.21.5/node_modules/esbuild postinstall: Done
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:26.7234926Z .../esbuild@0.18.20/node_modules/esbuild postinstall: Done
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:26.7270042Z .../esbuild@0.25.12/node_modules/esbuild postinstall: Done
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:26.8030139Z .../esbuild@0.28.2/node_modules/esbuild postinstall: Done
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:27.0484986Z 
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:27.0486091Z dependencies:
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:27.0487163Z + @neondatabase/serverless 1.2.0
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:27.0488193Z + @renovatebot/pep440 5.0.1
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:27.0488980Z + @yarnpkg/lockfile 1.1.0
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:27.0489421Z + drizzle-orm 0.45.4
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:27.0489790Z + semver 7.8.6
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:27.0490154Z + smol-toml 1.9.1
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:27.0490369Z 
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:27.0490520Z devDependencies:
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:27.0490925Z + @types/node 22.20.5
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:27.0491433Z + @typescript-eslint/eslint-plugin 8.72.2
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:27.0492006Z + @typescript-eslint/parser 8.72.2
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:27.0492443Z + dotenv 18.0.10
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:27.0492834Z + drizzle-kit 0.31.11
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:27.0493217Z + eslint 9.39.4
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:27.0493614Z + eslint-config-next 15.5.29
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:27.0494092Z + eslint-plugin-import 2.32.0
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:27.0494606Z + husky 9.1.7
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:27.0494973Z + lint-staged 17.6.0
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:27.0495356Z + postgres 3.4.9
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:27.0495936Z + prettier 3.10.1
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:27.0496434Z + prettier-plugin-tailwindcss 0.8.1
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:27.0496921Z + typescript 5.9.3
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:27.0497322Z + typescript-eslint 8.72.2
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:27.0497578Z 
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:27.0885577Z . postinstall$ pnpm --filter @deptend/core build
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:27.5743219Z . postinstall: > @deptend/core@0.0.1 build /home/runner/work/deptend-sarif-scratch/deptend-sarif-scratch/deptend/packages/core
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:27.5744335Z . postinstall: > rm -rf dist && tsc --project tsconfig.json
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:31.5194095Z . postinstall: Done
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:31.5196221Z . prepare$ husky
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:31.5975896Z . prepare: Done
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:31.6976697Z Done in 10.1s
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:31.8033694Z ##[group]Run pnpm --filter @deptend/cli build
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:31.8034124Z ^[[36;1mpnpm --filter @deptend/cli build^[[0m
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:31.8068895Z shell: /usr/bin/bash -e {0}
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:31.8069151Z env:
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:31.8069401Z   PNPM_HOME: /home/runner/setup-pnpm/node_modules/.bin
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:31.8069710Z ##[endgroup]
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:32.2641565Z 
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:32.2642903Z > @deptend/cli@0.1.2 prebuild /home/runner/work/deptend-sarif-scratch/deptend-sarif-scratch/deptend/cli
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:32.2643784Z > pnpm --filter @deptend/core build
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:32.2644062Z 
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:32.7043049Z 
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:32.7044455Z > @deptend/core@0.0.1 build /home/runner/work/deptend-sarif-scratch/deptend-sarif-scratch/deptend/packages/core
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:32.7045403Z > rm -rf dist && tsc --project tsconfig.json
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:32.7045940Z 
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:36.2405496Z 
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:36.2406934Z > @deptend/cli@0.1.2 build /home/runner/work/deptend-sarif-scratch/deptend-sarif-scratch/deptend/cli
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:36.2408794Z > rm -rf dist && esbuild src/index.ts --bundle --platform=node --format=esm --target=node20 --outfile=dist/index.js --banner:js="import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);"
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:36.2410230Z 
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:36.2926516Z 
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:36.2927094Z   dist/index.js  569.7kb
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:36.2927315Z 
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:36.2927652Z ⚡ Done in 38ms
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:36.3117173Z ##[group]Run node deptend/cli/dist/index.js . --format sarif --output results.sarif
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:36.3117808Z ^[[36;1mnode deptend/cli/dist/index.js . --format sarif --output results.sarif^[[0m
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:36.3150910Z shell: /usr/bin/bash -e {0}
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:36.3151162Z env:
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:36.3151413Z   PNPM_HOME: /home/runner/setup-pnpm/node_modules/.bin
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:36.3151722Z ##[endgroup]
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:36.3780616Z Using https://github.com/SpIob/deptend-sarif-scratch from origin remote
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:36.3784161Z GITHUB_TOKEN is not set. GitHub API calls will be unauthenticated (60 req/hr limit). Set GITHUB_TOKEN (or GH_INGEST_TOKEN in CI) to raise the limit to 5,000 req/hr.
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:38.7557015Z ✓ Wrote 12 mission(s) to results.sarif
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:38.7709417Z ##[group]Run github/codeql-action/upload-sarif@v3
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:38.7709749Z with:
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:38.7709951Z   sarif_file: results.sarif
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:38.7710323Z   checkout_path: /home/runner/work/deptend-sarif-scratch/deptend-sarif-scratch
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:38.7713052Z   token: ***
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:38.7713255Z   matrix: null
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:38.7713468Z   wait-for-processing: true
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:38.7713698Z env:
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:38.7713936Z   PNPM_HOME: /home/runner/setup-pnpm/node_modules/.bin
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:38.7714243Z ##[endgroup]
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:39.0949751Z Job run UUID is f029f7eb-0950-4447-a456-e9d0054e4e93.
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:39.1010297Z ##[warning]CodeQL Action v3 will be deprecated in December 2026. Please update all occurrences of the CodeQL Action in your workflow files to v4. For more information, see https://github.blog/changelog/2025-10-28-upcoming-deprecation-of-codeql-action-v3/
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:39.8653854Z Post-processing sarif files: ["results.sarif"]
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:39.8660558Z Validating results.sarif
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:39.8923670Z Adding fingerprints to SARIF file. See https://docs.github.com/en/code-security/reference/code-scanning/sarif-support-for-code-scanning#data-for-preventing-duplicated-alerts for more information.
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:39.8928250Z ##[group]Uploading code scanning results
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:39.9051853Z Uploading results
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:40.5028648Z Successfully uploaded results
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:40.5029216Z ##[endgroup]
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:40.5034086Z ##[group]Waiting for processing to finish
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:45.7818547Z Analysis upload status is complete.
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:45.7819465Z ##[endgroup]
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:46.0394179Z Post job cleanup.
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:46.3629188Z ##[group]Uploading combined SARIF debug artifact
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:46.3632484Z ##[endgroup]
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:46.3817892Z Post job cleanup.
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:46.5209433Z [command]/usr/bin/tar --posix -cf cache.tzst --exclude cache.tzst -P -C /home/runner/work/deptend-sarif-scratch/deptend-sarif-scratch --files-from manifest.txt --use-compress-program zstdmt
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:50.2221669Z Sent 0 of 194821368 (0.0%), 0.0 MBs/sec
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:51.2223849Z Sent 127712504 of 194821368 (65.6%), 60.9 MBs/sec
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:51.3262699Z Sent 194821368 of 194821368 (100.0%), 88.3 MBs/sec
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:51.6632088Z Cache saved with the key: node-cache-Linux-x64-pnpm-99dd33d93a21906dcebc1ecd83bd77b5162cce4ecc464f6b68cd9879519cfccd
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:51.6774410Z Post job cleanup.
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:51.8261239Z Pruning is unnecessary.
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:51.8486022Z Post job cleanup.
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:51.9446431Z [command]/usr/bin/git version
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:51.9499790Z git version 2.56.1
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:51.9539814Z Temporarily overriding HOME='/home/runner/work/_temp/83df9c9e-77a8-4ca4-b365-52fb98a096d7' before making global git config changes
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:51.9541703Z Adding repository directory to the temporary git global config as a safe directory
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:51.9546151Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/deptend-sarif-scratch/deptend-sarif-scratch/deptend
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:51.9585502Z Removing SSH command configuration
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:51.9592890Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:51.9637902Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:51.9974088Z Removing HTTP extra header
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:51.9980606Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:52.0033673Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:52.0360154Z Removing includeIf entries pointing to credentials config files
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:52.0369693Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:52.0400083Z includeif.gitdir:/home/runner/work/deptend-sarif-scratch/deptend-sarif-scratch/deptend/.git.path
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:52.0401225Z includeif.gitdir:/home/runner/work/deptend-sarif-scratch/deptend-sarif-scratch/deptend/.git/worktrees/*.path
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:52.0402296Z includeif.gitdir:/github/workspace/deptend/.git.path
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:52.0403388Z includeif.gitdir:/github/workspace/deptend/.git/worktrees/*.path
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:52.0409732Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/deptend-sarif-scratch/deptend-sarif-scratch/deptend/.git.path
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:52.0441768Z /home/runner/work/_temp/git-credentials-8130f805-d5ab-4be9-b351-7978c370b99e.config
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:52.0458159Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/deptend-sarif-scratch/deptend-sarif-scratch/deptend/.git.path \/home\/runner\/work\/_temp\/git\-credentials\-8130f805\-d5ab\-4be9\-b351\-7978c370b99e\.config
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:52.0492939Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/deptend-sarif-scratch/deptend-sarif-scratch/deptend/.git/worktrees/*.path
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:52.0525858Z /home/runner/work/_temp/git-credentials-8130f805-d5ab-4be9-b351-7978c370b99e.config
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:52.0537036Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/deptend-sarif-scratch/deptend-sarif-scratch/deptend/.git/worktrees/*.path \/home\/runner\/work\/_temp\/git\-credentials\-8130f805\-d5ab\-4be9\-b351\-7978c370b99e\.config
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:52.0571716Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/deptend/.git.path
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:52.0599270Z /github/runner_temp/git-credentials-8130f805-d5ab-4be9-b351-7978c370b99e.config
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:52.0609673Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/deptend/.git.path \/github\/runner_temp\/git\-credentials\-8130f805\-d5ab\-4be9\-b351\-7978c370b99e\.config
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:52.0647121Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/deptend/.git/worktrees/*.path
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:52.0672130Z /github/runner_temp/git-credentials-8130f805-d5ab-4be9-b351-7978c370b99e.config
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:52.0679711Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/deptend/.git/worktrees/*.path \/github\/runner_temp\/git\-credentials\-8130f805\-d5ab\-4be9\-b351\-7978c370b99e\.config
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:52.0715322Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:52.0997140Z Removing credentials config '/home/runner/work/_temp/git-credentials-8130f805-d5ab-4be9-b351-7978c370b99e.config'
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:52.1169878Z Post job cleanup.
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:52.2129516Z [command]/usr/bin/git version
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:52.2217594Z git version 2.56.1
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:52.2256981Z Temporarily overriding HOME='/home/runner/work/_temp/f22ef052-3a21-4458-8b34-ae04d8d66966' before making global git config changes
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:52.2258447Z Adding repository directory to the temporary git global config as a safe directory
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:52.2264283Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/deptend-sarif-scratch/deptend-sarif-scratch
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:52.2322659Z Removing SSH command configuration
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:52.2331671Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:52.2379706Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:52.2699650Z Removing HTTP extra header
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:52.2707256Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:52.2749229Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:52.3080247Z Removing includeIf entries pointing to credentials config files
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:52.3089867Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:52.3121567Z includeif.gitdir:/home/runner/work/deptend-sarif-scratch/deptend-sarif-scratch/.git.path
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:52.3122396Z includeif.gitdir:/home/runner/work/deptend-sarif-scratch/deptend-sarif-scratch/.git/worktrees/*.path
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:52.3122990Z includeif.gitdir:/github/workspace/.git.path
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:52.3123425Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:52.3131330Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/deptend-sarif-scratch/deptend-sarif-scratch/.git.path
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:52.3156339Z /home/runner/work/_temp/git-credentials-762d9a35-00db-4d87-8986-91fa4a869008.config
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:52.3167276Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/deptend-sarif-scratch/deptend-sarif-scratch/.git.path \/home\/runner\/work\/_temp\/git\-credentials\-762d9a35\-00db\-4d87\-8986\-91fa4a869008\.config
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:52.3205383Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/deptend-sarif-scratch/deptend-sarif-scratch/.git/worktrees/*.path
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:52.3231023Z /home/runner/work/_temp/git-credentials-762d9a35-00db-4d87-8986-91fa4a869008.config
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:52.3241167Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/deptend-sarif-scratch/deptend-sarif-scratch/.git/worktrees/*.path \/home\/runner\/work\/_temp\/git\-credentials\-762d9a35\-00db\-4d87\-8986\-91fa4a869008\.config
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:52.3281249Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:52.3304938Z /github/runner_temp/git-credentials-762d9a35-00db-4d87-8986-91fa4a869008.config
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:52.3315386Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path \/github\/runner_temp\/git\-credentials\-762d9a35\-00db\-4d87\-8986\-91fa4a869008\.config
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:52.3350634Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:52.3375471Z /github/runner_temp/git-credentials-762d9a35-00db-4d87-8986-91fa4a869008.config
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:52.3382973Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path \/github\/runner_temp\/git\-credentials\-762d9a35\-00db\-4d87\-8986\-91fa4a869008\.config
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:52.3423486Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:52.3702607Z Removing credentials config '/home/runner/work/_temp/git-credentials-762d9a35-00db-4d87-8986-91fa4a869008.config'
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:52.3866306Z Cleaning up orphan processes
+Scan with @deptend/cli and upload SARIF	UNKNOWN STEP	2026-11-19T00:00:52.4304120Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: github/codeql-action/upload-sarif@v3, pnpm/action-setup@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
