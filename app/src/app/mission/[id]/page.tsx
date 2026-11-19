@@ -24,7 +24,47 @@ export async function generateMetadata({
   params: Promise<{ id: string }>;
 }): Promise<Metadata> {
   const { id } = await params;
-  return { title: `Mission ${id}` };
+  const mission = await getMissionById(id);
+
+  if (mission === null) {
+    return { title: `Mission ${id} — Not Found` };
+  }
+
+  const { score: _score, advisory: _advisory, dependency, repo } = mission;
+  const title = `${mission.title} — ${repo.owner}/${repo.name}`;
+  const description = mission.description.slice(0, 160);
+  const url = `https://deptend.vercel.app/mission/${id}`;
+
+  return {
+    title,
+    description,
+    openGraph: {
+      type: "website",
+      siteName: "DepTend",
+      title,
+      description,
+      url,
+    },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description,
+    },
+    other: {
+      "script:ld+json": JSON.stringify({
+        "@context": "https://schema.org",
+        "@type": "WebPage",
+        name: title,
+        description,
+        url,
+        about: {
+          "@type": "SoftwareApplication",
+          name: dependency?.packageName ?? "Unknown Package",
+          applicationCategory: "DeveloperApplication",
+        },
+      }),
+    },
+  };
 }
 
 export default async function MissionPage({

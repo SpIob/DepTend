@@ -21,6 +21,42 @@ export const metadata: Metadata = {
     description:
       "A maintenance-first dashboard that turns dependency data into prioritized, explainable maintenance missions.",
   },
+  twitter: {
+    card: "summary_large_image",
+    site: "@devianticarus",
+    creator: "@devianticarus",
+    title: "DepTend",
+    description:
+      "A maintenance-first dashboard that turns dependency data into prioritized, explainable maintenance missions.",
+  },
+};
+
+// JSON-LD SoftwareApplication structured data
+const JSON_LD = {
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  name: "DepTend",
+  applicationCategory: "DeveloperApplication",
+  operatingSystem: "Cloud",
+  offers: {
+    "@type": "Offer",
+    price: "0",
+    priceCurrency: "USD",
+    availability: "https://schema.org/InStock",
+  },
+  description:
+    "A maintenance-first dashboard that turns dependency data into prioritized, explainable maintenance missions.",
+  url: "https://deptend.vercel.app",
+  author: {
+    "@type": "Person",
+    name: "Jan Mico M. Arenga",
+    url: "https://github.com/SpIob",
+  },
+  publisher: {
+    "@type": "Organization",
+    name: "DepTend",
+    url: "https://deptend.vercel.app",
+  },
 };
 
 // Mobile-browser UI tint — the page background, not the accent, so the tint
@@ -32,6 +68,12 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }): React.JSX.Element {
   return (
     <html lang="en">
+      <head>
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(JSON_LD) }}
+        />
+      </head>
       <body>
         <a
           href="#main"
