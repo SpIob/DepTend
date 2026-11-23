@@ -186,7 +186,7 @@
     "vitest": "^2.0.0"
   },
   "dependencies": {
-    "@neondatabase/serverless": "^1.2.0",
+    "@neondatabase/serverless": "^1.2.1",
     "@renovatebot/pep440": "^5.0.1",
     "@yarnpkg/lockfile": "^1.0.0",
     "drizzle-orm": "^0.45.4",

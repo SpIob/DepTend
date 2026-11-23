@@ -22,20 +22,20 @@
   },
   "devDependencies": {
     "@types/node": "^22.20.5",
-    "@typescript-eslint/eslint-plugin": "^8.72.2",
-    "@typescript-eslint/parser": "^8.72.2",
+    "@typescript-eslint/eslint-plugin": "^8.73.0",
+    "@typescript-eslint/parser": "^8.73.0",
     "dotenv": "^18.0.10",
     "drizzle-kit": "^0.31.11",
     "eslint": "^9.0.0",
     "eslint-config-next": "^15.5.29",
     "eslint-plugin-import": "^2.31.0",
     "husky": "^9.0.0",
-    "lint-staged": "^17.6.0",
+    "lint-staged": "^17.6.1",
     "postgres": "^3.4.9",
     "prettier": "^3.10.1",
     "prettier-plugin-tailwindcss": "^0.8.1",
     "typescript": "^5.5.0",
-    "typescript-eslint": "^8.72.2"
+    "typescript-eslint": "^8.73.0"
   },
   "lint-staged": {
     "*.{ts,tsx,js,mjs,cjs}": [
@@ -57,7 +57,7 @@
     }
   },
   "dependencies": {
-    "@neondatabase/serverless": "^1.2.0",
+    "@neondatabase/serverless": "^1.2.1",
     "@renovatebot/pep440": "^5.0.1",
     "@yarnpkg/lockfile": "^1.0.0",
     "drizzle-orm": "^0.45.4",
